@@ -1,0 +1,147 @@
+/* === NOTION HYBRID TYPOGRAPHY === */
+/* Note: Kalam font is imported in index.css to satisfy CSS @import order rules */
+
+:root {
+    /* Font Families */
+    /* Oswald kept for Headings as requested for brand identity */
+    --font-heading: 'Oswald', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    /* Inter for Everything Else (Notion Standard) */
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: 'SFMono-Regular', Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    --font-hand: 'Kalam', cursive;
+
+
+    /* Type Scale */
+    --text-xs: 11px;
+    /* Metadata, very small labels */
+    --text-sm: 13px;
+    /* Secondary text / UI elements */
+    --text-base: 15px;
+    /* Standard body text (Notion default) */
+    --text-lg: 17px;
+    /* Section headers */
+    --text-xl: 20px;
+    /* Large headers */
+    --text-2xl: 24px;
+    /* Page titles */
+    --text-3xl: 32px;
+    /* Major titles */
+    --text-4xl: 40px;
+    /* Massive display */
+
+    /* Font Weights */
+    --font-regular: 400;
+    --font-medium: 500;
+    --font-semibold: 600;
+    --font-bold: 700;
+
+    /* Line Heights (Notion-like tightness) */
+    --leading-tight: 1.2;
+    --leading-normal: 1.5;
+    --leading-relaxed: 1.6;
+
+    /* Letter Spacing */
+    --tracking-tighter: -0.015em;
+    --tracking-tight: -0.01em;
+    --tracking-normal: 0;
+    --tracking-wide: 0.02em;
+    /* For uppercase Oswald */
+    --tracking-widest: 0.05em;
+}
+
+/* Base Typography Reset */
+body {
+    font-family: var(--font-body);
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+    color: var(--notion-text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Heading Styles (Hybrid: Oswald) */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: var(--font-heading);
+    font-weight: var(--font-bold);
+    letter-spacing: var(--tracking-wide);
+    color: var(--notion-text);
+    margin-top: 2rem;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    /* Brand preference */
+}
+
+h1 {
+    font-size: var(--text-4xl);
+    margin-top: 0;
+}
+
+h2 {
+    font-size: var(--text-3xl);
+}
+
+h3 {
+    font-size: var(--text-2xl);
+}
+
+h4 {
+    font-size: var(--text-xl);
+}
+
+h5 {
+    font-size: var(--text-lg);
+}
+
+h6 {
+    font-size: var(--text-base);
+    text-transform: none;
+    font-family: var(--font-body);
+    font-weight: var(--font-semibold);
+}
+
+/* Text Utilities */
+.text-xs {
+    font-size: var(--text-xs);
+}
+
+.text-sm {
+    font-size: var(--text-sm);
+}
+
+.text-base {
+    font-size: var(--text-base);
+}
+
+.text-lg {
+    font-size: var(--text-lg);
+}
+
+.text-xl {
+    font-size: var(--text-xl);
+}
+
+.font-medium {
+    font-weight: var(--font-medium);
+}
+
+.font-semibold {
+    font-weight: var(--font-semibold);
+}
+
+.font-bold {
+    font-weight: var(--font-bold);
+}
+
+.text-muted {
+    color: var(--notion-text-secondary);
+}
+
+.text-subtle {
+    color: var(--notion-text-muted);
+}

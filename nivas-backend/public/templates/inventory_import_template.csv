@@ -1,0 +1,4 @@
+name,quantity,unit,lowStockThreshold,category
+"Rice (Basmati)",500,"kg",50,"Grains"
+"Tomato Sauce",20,"bottles",5,"Condiments"
+"Toilet Paper",100,"rolls",20,"Housekeeping"

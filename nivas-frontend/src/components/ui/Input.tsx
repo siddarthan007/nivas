@@ -1,0 +1,149 @@
+'use client';
+
+import { forwardRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
+
+interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
+    label?: string;
+    error?: string;
+    hint?: string;
+    icon?: ReactNode;
+    fullWidth?: boolean;
+}
+
+const Input = forwardRef<HTMLInputElement, InputProps>(
+    (
+        {
+            label,
+            error,
+            hint,
+            icon,
+            fullWidth = true,
+            type = 'text',
+            className = '',
+            style,
+            ...props
+        },
+        ref
+    ) => {
+        const [showPassword, setShowPassword] = useState(false);
+        const [isFocused, setIsFocused] = useState(false);
+        const isPassword = type === 'password';
+        const inputType = isPassword && showPassword ? 'text' : type;
+
+        return (
+            <div style={{ width: fullWidth ? '100%' : 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {label && (
+                    <label style={{
+                        fontSize: '12px',
+                        color: 'var(--notion-text-secondary)',
+                        marginBottom: '4px'
+                    }}>
+                        {label}
+                    </label>
+                )}
+
+                <div style={{
+                    position: 'relative',
+                    display: 'flex',
+                    alignItems: 'center',
+                    backgroundColor: isFocused ? 'var(--notion-bg-secondary)' : 'rgba(255,255,255,0.03)',
+                    border: '1px solid',
+                    borderColor: isFocused ? 'rgba(255,255,255,0.1)' : 'transparent',
+                    borderRadius: 'var(--radius-sm)',
+                    transition: 'all 0.1s ease',
+                    boxShadow: isFocused ? '0 0 0 2px rgba(78, 149, 198, 0.2)' : 'none'
+                }}>
+                    {icon && (
+                        <span style={{
+                            paddingLeft: '10px',
+                            color: 'var(--notion-text-muted)',
+                            display: 'flex'
+                        }}>
+                            {icon}
+                        </span>
+                    )}
+
+                    <input
+                        ref={ref}
+                        type={inputType}
+                        style={{
+                            width: '100%',
+                            backgroundColor: 'transparent',
+                            border: 'none',
+                            padding: '8px 12px',
+                            fontSize: '14px',
+                            color: 'var(--notion-text)',
+                            outline: 'none',
+                            paddingLeft: icon ? '8px' : '12px',
+                            ...style
+                        }}
+                        onFocus={(e) => {
+                            setIsFocused(true);
+                            props.onFocus?.(e);
+                        }}
+                        onBlur={(e) => {
+                            setIsFocused(false);
+                            props.onBlur?.(e);
+                        }}
+                        onKeyDown={(e) => {
+                            // Handle Enter - move to next focusable element
+                            if (e.key === 'Enter' && type !== 'textarea') {
+                                e.preventDefault();
+                                const form = e.currentTarget.form;
+                                if (form) {
+                                    const focusable = Array.from(form.querySelectorAll(
+                                        'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])'
+                                    )) as HTMLElement[];
+                                    const currentIndex = focusable.indexOf(e.currentTarget);
+                                    if (currentIndex < focusable.length - 1) {
+                                        focusable[currentIndex + 1]?.focus();
+                                    } else {
+                                        // Submit form if on last field
+                                        const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+                                        submitBtn?.click();
+                                    }
+                                }
+                            }
+                            // Handle Escape - blur current field
+                            if (e.key === 'Escape') {
+                                e.currentTarget.blur();
+                            }
+                            props.onKeyDown?.(e);
+                        }}
+                        {...props}
+                        value={props.value ?? ''}
+                    />
+
+                    {isPassword && (
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            style={{
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--notion-text-muted)',
+                                cursor: 'pointer',
+                                padding: '0 10px',
+                                display: 'flex'
+                            }}
+                        >
+                            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                    )}
+                </div>
+
+                {error && (
+                    <span style={{ fontSize: '12px', color: 'var(--notion-red)' }}>{error}</span>
+                )}
+                {hint && !error && (
+                    <span style={{ fontSize: '12px', color: 'var(--notion-text-muted)' }}>{hint}</span>
+                )}
+            </div>
+        );
+    }
+);
+
+Input.displayName = 'Input';
+
+export default Input;

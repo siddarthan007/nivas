@@ -1,0 +1,98 @@
+/* === NOTION MICRO-INTERACTIONS === */
+
+:root {
+    /* Animation Timings */
+    --duration-75: 75ms;
+    --duration-100: 100ms;
+    --duration-150: 150ms;
+    --duration-200: 200ms;
+    --duration-300: 300ms;
+    --duration-500: 500ms;
+
+    /* Easing Functions */
+    --ease-notion: cubic-bezier(0.3, 0, 0.4, 1);
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Fade In */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn var(--duration-200) var(--ease-notion);
+}
+
+/* Slide Up (Subtle) */
+@keyframes slideUp {
+    from {
+        transform: translateY(8px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.animate-slide-up {
+    animation: slideUp var(--duration-300) var(--ease-notion);
+}
+
+/* Sidebar Expand/Collapse */
+.transition-width {
+    transition: width var(--duration-200) var(--ease-notion);
+}
+
+/* Hover Reveals */
+.hover-reveal {
+    opacity: 0;
+    transition: opacity var(--duration-150) var(--ease-notion);
+}
+
+*:hover>.hover-reveal,
+.hover-reveal:focus-within {
+    opacity: 1;
+}
+
+/* Hover Backgrounds */
+.hover-bg {
+    transition: background-color var(--duration-75) var(--ease-notion);
+}
+
+.hover-bg:hover {
+    background-color: var(--notion-bg-hover);
+}
+
+/* Interactive Click Scale (Buttons) */
+.active-scale:active {
+    transform: scale(0.98);
+}
+
+/* Skeleton Loading (Notion Grey) */
+.skeleton {
+    background-color: var(--notion-bg-tertiary);
+    border-radius: var(--radius-sm);
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}

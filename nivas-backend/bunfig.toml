@@ -1,0 +1,6 @@
+[test]
+# Run tests with module isolation to prevent mock.module cache collisions
+coverage = false
+
+# Preload file for common test setup
+# preload = ["./tests/preload.ts"]

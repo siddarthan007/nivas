@@ -1,0 +1,103 @@
+/* === NOTION HYBRID DARK TOKENS === */
+
+:root {
+   /* === CORE PALETTE (Notion Dark Mode) === */
+   /* Main Background: #191919 is the classic Notion Dark bg */
+   --notion-bg: #191919;
+
+   /* Secondary Background: Used for sidebar, elevated cards, hovering rows */
+   --notion-bg-secondary: #202020;
+
+   /* Tertiary Background: Modals, popovers, active states */
+   --notion-bg-tertiary: #252525;
+
+   /* Hover Background: Extremely subtle overlay for interactions */
+   --notion-bg-hover: rgba(255, 255, 255, 0.055);
+
+   /* Active Background: Slightly stronger for pressed states */
+   --notion-bg-active: rgba(255, 255, 255, 0.09);
+
+   /* === BORDERS & DIVIDERS === */
+   /* Extremely subtle, almost invisible borders */
+   --notion-border: rgba(255, 255, 255, 0.07);
+
+   /* Separators between sections */
+   --notion-divider: rgba(255, 255, 255, 0.05);
+
+   /* === TEXT COLORS === */
+   /* Primary Text: Not pure white, slightly softened */
+   --notion-text: rgba(255, 255, 255, 0.87);
+
+   /* Secondary Text: Muted but readable */
+   --notion-text-secondary: rgba(255, 255, 255, 0.45);
+
+   /* Muted/Placeholder Text */
+   --notion-text-muted: rgba(255, 255, 255, 0.25);
+
+   /* Inverted Text (for dark on light situations, if any) */
+   --notion-text-inverse: #191919;
+
+   /* === ACCENT COLORS (Muted/Pastel implementation) === */
+   --notion-blue: #4E95C6;
+   --notion-red: #E06C6C;
+   --notion-green: #4CAB9A;
+   --notion-yellow: #D99834;
+   --notion-orange: #D77D43;
+   --notion-purple: #9A6DD7;
+   --notion-pink: #DA679A;
+
+   /* Background versions of accents (for tags/badges) */
+   --notion-blue-bg: rgba(78, 149, 198, 0.2);
+   --notion-red-bg: rgba(224, 108, 108, 0.2);
+   --notion-green-bg: rgba(76, 171, 154, 0.2);
+   --notion-yellow-bg: rgba(217, 152, 52, 0.2);
+
+   /* === SPACING SYSTEM (4px Grid) === */
+   --space-0: 0px;
+   --space-0-5: 2px;
+   --space-1: 4px;
+   --space-1-5: 6px;
+   --space-2: 8px;
+   --space-3: 12px;
+   --space-4: 16px;
+   --space-5: 20px;
+   --space-6: 24px;
+   --space-8: 32px;
+   --space-10: 40px;
+   --space-12: 48px;
+   --space-16: 64px;
+   --space-20: 80px;
+
+   /* === SHADOWS (Hover-focused) === */
+   --shadow-none: none;
+   --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.2);
+   --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.05);
+   --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.3), 0 4px 8px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.05);
+   --shadow-popover: 0 8px 30px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+
+   /* === RADIUS === */
+   --radius-sm: 3px;
+   --radius-md: 4px;
+   /* Notion uses very slight rounding */
+   --radius-lg: 6px;
+   --radius-full: 9999px;
+
+   /* === Z-INDEX === */
+   --z-base: 0;
+   --z-card: 10;
+   --z-header: 40;
+   --z-sidebar: 50;
+   --z-dropdown: 60;
+   --z-modal: 100;
+   --z-toast: 110;
+
+   /* === ALIASES FOR COMPONENT USE === */
+   --color-bg: var(--notion-bg);
+   --color-bg-elevated: var(--notion-bg-secondary);
+   --color-surface: var(--notion-bg-secondary);
+   --color-border: var(--notion-border);
+   --color-text: var(--notion-text);
+   --color-text-muted: var(--notion-text-secondary);
+   --color-primary: var(--notion-text);
+   /* In Notion, primary action is usually just white text or simple button */
+}
