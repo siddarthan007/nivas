@@ -21,6 +21,7 @@ export const analyticsController = new Elysia({ prefix: '/analytics' })
         return createResponse(data, 'Dashboard stats fetched successfully');
     }, {
         isSignedIn: true,
+        hasPermission: PERMISSIONS.ANALYTICS.VIEW_OPERATIONS,
         detail: { summary: 'Get real-time dashboard stats', tags: ['Analytics'] }
     })
     /**
@@ -30,13 +31,25 @@ export const analyticsController = new Elysia({ prefix: '/analytics' })
         if (!user?.hotelId) {
             throw new ValidationError('Hotel ID is required');
         }
-        const days = parseInt(query.days ?? '30');
+        // Support both startDate/endDate and days params
+        let days = 30;
+        if (query.startDate && query.endDate) {
+            const start = new Date(query.startDate);
+            const end = new Date(query.endDate);
+            days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+        } else if (query.days) {
+            days = parseInt(query.days);
+        }
         const data = await AnalyticsService.getRevenueAnalytics(user.hotelId, days);
         return createResponse(data, 'Revenue analytics fetched successfully');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.ANALYTICS.VIEW_FINANCIALS,
-        query: t.Object({ days: t.Optional(t.String()) }),
+        query: t.Object({
+            days: t.Optional(t.String()),
+            startDate: t.Optional(t.String()),
+            endDate: t.Optional(t.String())
+        }),
         detail: { summary: 'Get revenue analytics with trends', tags: ['Analytics'] }
     })
     /**
@@ -46,13 +59,24 @@ export const analyticsController = new Elysia({ prefix: '/analytics' })
         if (!user?.hotelId) {
             throw new ValidationError('Hotel ID is required');
         }
-        const days = parseInt(query.days ?? '30');
+        let days = 30;
+        if (query.startDate && query.endDate) {
+            const start = new Date(query.startDate);
+            const end = new Date(query.endDate);
+            days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+        } else if (query.days) {
+            days = parseInt(query.days);
+        }
         const data = await AnalyticsService.getOccupancyAnalytics(user.hotelId, days);
         return createResponse(data, 'Occupancy analytics fetched successfully');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.ANALYTICS.VIEW_OPERATIONS,
-        query: t.Object({ days: t.Optional(t.String()) }),
+        query: t.Object({
+            days: t.Optional(t.String()),
+            startDate: t.Optional(t.String()),
+            endDate: t.Optional(t.String())
+        }),
         detail: { summary: 'Get occupancy analytics', tags: ['Analytics'] }
     })
     /**
@@ -82,6 +106,7 @@ export const analyticsController = new Elysia({ prefix: '/analytics' })
         return createResponse(data, 'SaaS overview fetched successfully');
     }, {
         isSignedIn: true,
+        hasPermission: PERMISSIONS.SYSTEM.VIEW_SAAS_ANALYTICS,
         detail: { summary: 'Get SaaS-level overview', tags: ['Analytics'] }
     })
     .get('/metrics', async ({ user, query }) => {
@@ -96,4 +121,18 @@ export const analyticsController = new Elysia({ prefix: '/analytics' })
         hasPermission: PERMISSIONS.ANALYTICS.VIEW_FINANCIALS,
         query: t.Object({ days: t.Optional(t.String()) }),
         detail: { summary: 'Key Performance Metrics (ADR/RevPAR)', tags: ['Analytics'] }
+    })
+    // Alias: frontend calls /key-metrics
+    .get('/key-metrics', async ({ user, query }) => {
+        if (!user?.hotelId) {
+            throw new ValidationError('Hotel ID is required');
+        }
+        const days = parseInt(query.days ?? '30');
+        const data = await AnalyticsService.getKeyMetrics(user.hotelId, days);
+        return createResponse(data, 'Key metrics fetched successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.ANALYTICS.VIEW_FINANCIALS,
+        query: t.Object({ days: t.Optional(t.String()) }),
+        detail: { summary: 'Key Performance Metrics (alias)', tags: ['Analytics'] }
     });

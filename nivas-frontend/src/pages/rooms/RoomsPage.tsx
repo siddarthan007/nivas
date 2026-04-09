@@ -24,6 +24,8 @@ import {
     Settings2,
 } from 'lucide-react';
 import type { Room, RoomStatus, RoomType, CreateRoomPayload } from '@/lib/types/api.types';
+import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal';
+import { toast } from 'sonner';
 
 // Status color mapping
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
@@ -41,11 +43,13 @@ const DEFAULT_STATUS_COLOR = { bg: 'var(--notion-green-bg)', text: 'var(--notion
 function RoomCard({
     room,
     onEdit,
-    onStatusChange
+    onStatusChange,
+    onDelete
 }: {
     room: Room;
     onEdit: (room: Room) => void;
     onStatusChange: (id: number, status: RoomStatus) => void;
+    onDelete: (room: Room) => void;
 }) {
     const [showMenu, setShowMenu] = useState(false);
     const statusInfo = STATUS_COLORS[room.status] || DEFAULT_STATUS_COLOR;
@@ -181,6 +185,24 @@ function RoomCard({
                                     <Wrench size={14} /> Maintenance
                                 </button>
                             )}
+                            <button
+                                onClick={() => { onDelete(room); setShowMenu(false); }}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 'var(--space-2)',
+                                    width: '100%',
+                                    padding: '8px 12px',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: '13px',
+                                    color: 'var(--notion-red)',
+                                    borderRadius: 'var(--radius-sm)',
+                                }}
+                            >
+                                <Trash2 size={14} /> Delete
+                            </button>
                         </div>
                     )}
                 </div>
@@ -414,6 +436,7 @@ function RoomTypesManager({
     const [editName, setEditName] = useState('');
     const [editRate, setEditRate] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const [deleteTypeTarget, setDeleteTypeTarget] = useState<number | null>(null);
 
     const handleCreate = async () => {
         if (!newName.trim()) return;
@@ -443,8 +466,7 @@ function RoomTypesManager({
     };
 
     const handleDelete = async (id: number) => {
-        if (!confirm('Delete this room type? Rooms using it will keep their current type.')) return;
-        await onDelete(id);
+        setDeleteTypeTarget(id);
     };
 
     if (!isOpen) return null;
@@ -552,19 +574,35 @@ function RoomTypesManager({
                         </p>
                     )}
                 </div>
+
+                {/* Delete Room Type Confirmation */}
+                <SecurityConfirmModal
+                    isOpen={!!deleteTypeTarget}
+                    onClose={() => setDeleteTypeTarget(null)}
+                    onConfirm={async () => {
+                        if (!deleteTypeTarget) return;
+                        await onDelete(deleteTypeTarget);
+                        setDeleteTypeTarget(null);
+                    }}
+                    title="Delete Room Type"
+                    message="Delete this room type? Rooms using it will keep their current type."
+                    confirmText="Delete Type"
+                    isDestructive
+                />
             </div>
         </div>
     );
 }
 
 export default function RoomsPage() {
-    const { rooms, isLoading, stats, fetchRooms, createRoom, updateRoom, updateStatus } = useRooms();
+    const { rooms, isLoading, stats, fetchRooms, createRoom, updateRoom, updateStatus, deleteRoom } = useRooms();
     const { roomTypes, createRoomType, updateRoomType, deleteRoomType } = useRoomTypes();
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<RoomStatus | 'ALL'>('ALL');
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingRoom, setEditingRoom] = useState<Room | null>(null);
     const [showRoomTypes, setShowRoomTypes] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<Room | null>(null);
 
     // Filter rooms
     const filteredRooms = rooms.filter(room => {
@@ -659,31 +697,13 @@ export default function RoomsPage() {
                     marginBottom: 'var(--space-6)',
                     flexWrap: 'wrap',
                 }}>
-                    <div style={{ position: 'relative', flex: 1, minWidth: '200px', maxWidth: '300px' }}>
-                        <Search
-                            size={16}
-                            style={{
-                                position: 'absolute',
-                                left: '12px',
-                                top: '50%',
-                                transform: 'translateY(-50%)',
-                                color: 'var(--notion-text-secondary)',
-                            }}
-                        />
-                        <input
+                    <div style={{ flex: 1, minWidth: '200px', maxWidth: '300px' }}>
+                        <Input
                             type="text"
                             placeholder="Search rooms..."
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '10px 12px 10px 36px',
-                                fontSize: '14px',
-                                border: '1px solid var(--notion-border)',
-                                borderRadius: 'var(--radius-md)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                            }}
+                            icon={<Search size={16} />}
                         />
                     </div>
 
@@ -743,6 +763,7 @@ export default function RoomsPage() {
                                 room={room}
                                 onEdit={handleEdit}
                                 onStatusChange={handleStatusChange}
+                                onDelete={(r) => setDeleteTarget(r)}
                             />
                         ))}
                     </div>
@@ -766,6 +787,25 @@ export default function RoomsPage() {
                 onCreate={createRoomType}
                 onUpdate={updateRoomType}
                 onDelete={deleteRoomType}
+            />
+
+            {/* Delete Room Confirmation */}
+            <SecurityConfirmModal
+                isOpen={!!deleteTarget}
+                onClose={() => setDeleteTarget(null)}
+                onConfirm={async () => {
+                    if (!deleteTarget) return;
+                    const result = await deleteRoom(deleteTarget.id);
+                    if (result.success) {
+                        toast.success(`Room #${deleteTarget.number} deleted`);
+                    } else {
+                        toast.error(result.error || 'Failed to delete room');
+                    }
+                }}
+                title="Delete Room"
+                message={`Are you sure you want to delete Room #${deleteTarget?.number}${deleteTarget?.name ? ` (${deleteTarget.name})` : ''}? This action cannot be undone.`}
+                confirmText="Delete Room"
+                isDestructive
             />
         </DashboardLayout>
     );

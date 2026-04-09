@@ -3,6 +3,7 @@ import { roles, users } from '../../db/schema';
 import { eq, and, count } from 'drizzle-orm';
 import { ConflictError } from '../../utils/errors';
 import { PERMISSIONS } from '../../config/permissions';
+import { validatePermissionStrings } from '../../utils/tenant.guard';
 
 export const RolesService = {
     async getRoles(hotelId: number) {
@@ -12,6 +13,8 @@ export const RolesService = {
     },
 
     async createRole(hotelId: number, data: { name: string; permissions: string[] }) {
+        validatePermissionStrings(data.permissions);
+
         const [newRole] = await db.insert(roles).values({
             hotelId,
             name: data.name,
@@ -21,6 +24,10 @@ export const RolesService = {
     },
 
     async updateRole(hotelId: number, roleId: number, data: { name?: string; permissions?: string[] }) {
+        if (data.permissions) {
+            validatePermissionStrings(data.permissions);
+        }
+
         const [updatedRole] = await db.update(roles)
             .set({
                 ...data,

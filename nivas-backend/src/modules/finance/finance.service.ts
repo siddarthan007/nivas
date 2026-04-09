@@ -92,6 +92,10 @@ export class FinanceService {
             recordedById: userId
         }).returning();
 
+        if (!reversalPayment) {
+            throw new BusinessLogicError('Failed to create reversal payment');
+        }
+
         await AuditService.log(hotelId, userId, 'VOID_PAYMENT', 'PAYMENT', paymentId, {
             originalAmount: existing.amount,
             reason: reason || 'No reason provided',
@@ -101,3 +105,4 @@ export class FinanceService {
         return reversalPayment;
     }
 }
+

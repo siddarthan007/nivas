@@ -10,13 +10,13 @@ export const roomTypesController = new Elysia({ prefix: '/room-types' })
     .get('/', async ({ user }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
         let types = await RoomTypesService.getByHotel(user.hotelId);
-        // Seed defaults if empty
         if (types.length === 0) {
             types = await RoomTypesService.seedDefaults(user.hotelId);
         }
         return createResponse(types, 'Room types fetched');
     }, {
         isSignedIn: true,
+        hasPermission: PERMISSIONS.ROOMS.READ,
         detail: { summary: 'Get hotel room types', tags: ['Rooms'] }
     })
     .post('/', async ({ body, user }) => {

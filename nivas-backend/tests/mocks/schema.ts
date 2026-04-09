@@ -1,4 +1,3 @@
-
 const createTable = (tableName: string) => {
     return new Proxy({ name: tableName }, {
         get(target: any, prop: string) {
@@ -31,6 +30,7 @@ export const mockedSchema = {
     inventoryItems: createTable("inventory_items"),
     inventoryRequests: createTable("inventory_requests"),
     menuItems: createTable("menu_items"),
+    menuCategories: createTable("menu_categories"),
     purchaseOrders: createTable("purchase_orders"),
     purchaseOrderItems: createTable("purchase_order_items"),
     outlets: createTable("outlets"),
@@ -43,6 +43,7 @@ export const mockedSchema = {
     notifications: createTable("notifications"),
     auditLogs: createTable("audit_logs"),
     guestProfiles: createTable("guest_profiles"),
+    guests: createTable("guests"),
     shifts: createTable("shifts"),
     staffAttendance: createTable("staff_attendance"),
     parkingSpaces: createTable("parking_spaces"),
@@ -76,4 +77,3 @@ export const mockedSchema = {
     subscriptions: createTable("subscriptions"),
     subscriptionPayments: createTable("subscription_payments")
 };
-

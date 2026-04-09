@@ -12,6 +12,14 @@ export class RoomsService {
         });
     }
 
+    static async getRoomById(hotelId: number, roomId: number) {
+        const room = await db.query.rooms.findFirst({
+            where: and(eq(rooms.id, roomId), eq(rooms.hotelId, hotelId))
+        });
+        if (!room) throw new NotFoundError('Room');
+        return room;
+    }
+
     static async createRoom(hotelId: number, data: {
         number: number;
         name?: string;

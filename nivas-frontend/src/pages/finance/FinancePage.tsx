@@ -6,6 +6,9 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
+import CustomDatePicker from '@/components/ui/DatePicker';
+import { SkeletonCard, SkeletonList, Skeleton } from '@/components/ui/Skeleton';
 import {
     Receipt,
     CreditCard,
@@ -226,7 +229,11 @@ function RecordPaymentModal({ isOpen, onClose, onSubmit }: {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
-        const success = await onSubmit(formData);
+        const payload: RecordPaymentPayload = { ...formData };
+        if (!payload.bookingId) delete payload.bookingId;
+        if (!payload.transactionId) delete payload.transactionId;
+        if (!payload.notes) delete payload.notes;
+        const success = await onSubmit(payload);
         setIsSubmitting(false);
         if (success) {
             setFormData({ amount: 0, paymentMethod: 'CASH' });
@@ -237,6 +244,18 @@ function RecordPaymentModal({ isOpen, onClose, onSubmit }: {
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Record Payment">
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                <div>
+                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
+                        Booking ID (optional)
+                    </label>
+                    <Input
+                        type="text"
+                        value={formData.bookingId || ''}
+                        onChange={e => setFormData({ ...formData, bookingId: e.target.value })}
+                        placeholder="Link payment to a booking"
+                    />
+                </div>
+
                 <div>
                     <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
                         Amount (₹) *
@@ -250,33 +269,22 @@ function RecordPaymentModal({ isOpen, onClose, onSubmit }: {
                     />
                 </div>
 
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Payment Method *
-                    </label>
-                    <select
-                        value={formData.paymentMethod}
-                        onChange={e => setFormData({ ...formData, paymentMethod: e.target.value as any })}
-                        style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            fontSize: '14px',
-                            border: '1px solid var(--notion-border)',
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: 'var(--notion-bg-secondary)',
-                            color: 'var(--notion-text)',
-                        }}
-                    >
-                        <option value="CASH">Cash</option>
-                        <option value="CARD">Card</option>
-                        <option value="ESEWA">eSewa</option>
-                        <option value="KHALTI">Khalti</option>
-                        <option value="UPI">UPI</option>
-                        <option value="CONNECT_IPS">Connect IPS</option>
-                        <option value="BANK_TRANSFER">Bank Transfer</option>
-                        <option value="OTHER">Other</option>
-                    </select>
-                </div>
+                <Select
+                    label="Payment Method *"
+                    value={formData.paymentMethod}
+                    onChange={e => setFormData({ ...formData, paymentMethod: e.target.value as any })}
+                    options={[
+                        { value: 'CASH', label: 'Cash' },
+                        { value: 'CARD', label: 'Card' },
+                        { value: 'ESEWA', label: 'eSewa' },
+                        { value: 'KHALTI', label: 'Khalti' },
+                        { value: 'UPI', label: 'UPI' },
+                        { value: 'CONNECT_IPS', label: 'Connect IPS' },
+                        { value: 'BANK_TRANSFER', label: 'Bank Transfer' },
+                        { value: 'OTHER', label: 'Other' },
+                    ]}
+                    fullWidth
+                />
 
                 <div>
                     <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
@@ -434,12 +442,13 @@ function ExportsPanel({ onExportTally, onExportAnnex5, onRetryFailed }: {
                 <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--notion-text)', marginBottom: 'var(--space-3)' }}>
                     Tally Exports (XML)
                 </div>
-                <Input
-                    type="date"
-                    value={date}
-                    onChange={e => setDate(e.target.value)}
-                    style={{ marginBottom: 'var(--space-3)' }}
-                />
+                <div style={{ marginBottom: 'var(--space-3)' }}>
+                    <CustomDatePicker
+                        selected={date ? new Date(date) : null}
+                        onChange={d => setDate(d ? d.toISOString().split('T')[0] : '')}
+                        placeholder="Select date"
+                    />
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                     <Button variant="secondary" onClick={() => onExportTally(date, 'sales')}>
                         <Download size={14} style={{ marginRight: '6px' }} />
@@ -466,12 +475,13 @@ function ExportsPanel({ onExportTally, onExportAnnex5, onRetryFailed }: {
                 <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--notion-text)', marginBottom: 'var(--space-3)' }}>
                     IRD Annex 5 (CSV)
                 </div>
-                <Input
-                    type="date"
-                    value={date}
-                    onChange={e => setDate(e.target.value)}
-                    style={{ marginBottom: 'var(--space-3)' }}
-                />
+                <div style={{ marginBottom: 'var(--space-3)' }}>
+                    <CustomDatePicker
+                        selected={date ? new Date(date) : null}
+                        onChange={d => setDate(d ? d.toISOString().split('T')[0] : '')}
+                        placeholder="Select date"
+                    />
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                     <Button variant="secondary" onClick={() => onExportAnnex5(date, 'sales')}>
                         <Download size={14} style={{ marginRight: '6px' }} />
@@ -617,12 +627,7 @@ export default function FinancePage() {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 'var(--space-4)' }}>
                         {isLoading ? (
                             Array.from({ length: 6 }).map((_, i) => (
-                                <div key={i} style={{
-                                    height: '160px',
-                                    backgroundColor: 'var(--notion-bg-secondary)',
-                                    borderRadius: 'var(--radius-lg)',
-                                    animation: 'pulse 1.5s ease-in-out infinite',
-                                }} />
+                                <SkeletonCard key={i} />
                             ))
                         ) : invoices.length === 0 ? (
                             <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
@@ -644,7 +649,9 @@ export default function FinancePage() {
 
                 {activeTab === 'payments' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                        {payments.length === 0 ? (
+                        {isLoading ? (
+                            <SkeletonList items={4} />
+                        ) : payments.length === 0 ? (
                             <div style={{
                                 textAlign: 'center',
                                 padding: 'var(--space-12)',
@@ -675,7 +682,9 @@ export default function FinancePage() {
 
                 {activeTab === 'credit-notes' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                        {creditNotes.length === 0 ? (
+                        {isLoading ? (
+                            <SkeletonList items={3} />
+                        ) : creditNotes.length === 0 ? (
                             <div style={{
                                 textAlign: 'center',
                                 padding: 'var(--space-12)',
@@ -721,12 +730,19 @@ export default function FinancePage() {
                 )}
 
                 {activeTab === 'shifts' && (
-                    <ShiftPanel
-                        currentShift={currentShift}
-                        onStart={startShift}
-                        onEnd={endShift}
-                        isLoading={isLoading}
-                    />
+                    isLoading ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                            <Skeleton variant="line" width="40%" height={20} />
+                            <Skeleton variant="card" height={180} />
+                        </div>
+                    ) : (
+                        <ShiftPanel
+                            currentShift={currentShift}
+                            onStart={startShift}
+                            onEnd={endShift}
+                            isLoading={isLoading}
+                        />
+                    )
                 )}
 
                 {activeTab === 'night-audit' && (

@@ -4,6 +4,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
 import type { User, Role, CreateUserPayload, UpdateUserPayload, CreateRolePayload } from '@/lib/types/api.types';
 
+type UserMutationPayload = UpdateUserPayload & {
+    password?: string;
+};
+
 /**
  * Hook for user (staff) management
  */
@@ -62,14 +66,37 @@ export function useUsers() {
     };
 
     // Update user
-    const updateUser = async (id: string, data: UpdateUserPayload) => {
+    const updateUser = async (id: string, data: UserMutationPayload) => {
         try {
-            const response = await api.patch<User>(`/users/${id}`, data);
-            if (response.data) {
-                setUsers(prev => prev.map(u => u.id === id ? response.data! : u));
-                return { success: true, user: response.data };
+            const user = users.find((item) => item.id === id);
+            if (!user) {
+                return { success: false, error: 'User not found' };
             }
-            return { success: false, error: 'Failed to update user' };
+
+            const requests: Promise<unknown>[] = [];
+
+            if (data.fullName !== undefined || data.phone !== undefined) {
+                requests.push(api.put(`/users/${id}`, {
+                    fullName: data.fullName ?? user.fullName,
+                    phone: data.phone ?? user.phone,
+                }));
+            }
+
+            if (data.roleId !== undefined && data.roleId !== user.role?.id) {
+                requests.push(api.patch(`/users/${id}/role`, { roleId: data.roleId }));
+            }
+
+            if (data.password) {
+                requests.push(api.patch(`/users/${id}/password`, { password: data.password }));
+            }
+
+            if (requests.length === 0) {
+                return { success: true, user };
+            }
+
+            await Promise.all(requests);
+            await fetchUsers();
+            return { success: true };
         } catch (err) {
             return { success: false, error: err instanceof Error ? err.message : 'Failed to update user' };
         }
@@ -79,18 +106,19 @@ export function useUsers() {
     const toggleActive = async (id: string) => {
         const user = users.find(u => u.id === id);
         if (!user) return { success: false, error: 'User not found' };
-        return updateUser(id, { isActive: !user.isActive });
+
+        try {
+            await api.patch(`/users/${id}/status`, { isActive: !user.isActive });
+            await fetchUsers();
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err instanceof Error ? err.message : 'Failed to update user status' };
+        }
     };
 
     // Delete user
-    const deleteUser = async (id: string) => {
-        try {
-            await api.delete(`/users/${id}`);
-            setUsers(prev => prev.filter(u => u.id !== id));
-            return { success: true };
-        } catch (err) {
-            return { success: false, error: err instanceof Error ? err.message : 'Failed to delete user' };
-        }
+    const deleteUser = async (_id: string) => {
+        return { success: false, error: 'Deleting users is not supported by the current backend.' };
     };
 
     // Create a new role

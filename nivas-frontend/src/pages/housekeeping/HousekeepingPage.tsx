@@ -6,7 +6,10 @@ import { useRooms } from '@/lib/hooks/useRooms';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
 import EmptyState from '@/components/ui/EmptyState';
+import { Skeleton, SkeletonCard } from '@/components/ui/Skeleton';
 import {
     Sparkles,
     RefreshCw,
@@ -15,9 +18,11 @@ import {
     Play,
     CheckCircle,
     AlertTriangle,
-    User
+    User,
+    Trash2
 } from 'lucide-react';
 import type { HousekeepingTask, HousekeepingStatus, HousekeepingPriority, HousekeepingTaskType, CreateHousekeepingPayload } from '@/lib/types/api.types';
+import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal';
 
 // Status colors
 const STATUS_COLORS: Record<HousekeepingStatus, { bg: string; text: string; label: string }> = {
@@ -42,11 +47,13 @@ const PRIORITIES: HousekeepingPriority[] = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
 function TaskCard({
     task,
     onStart,
-    onComplete
+    onComplete,
+    onDelete
 }: {
     task: HousekeepingTask;
     onStart: () => void;
     onComplete: () => void;
+    onDelete: () => void;
 }) {
     const statusInfo = STATUS_COLORS[task.status];
     const priorityInfo = PRIORITY_COLORS[task.priority];
@@ -195,6 +202,10 @@ function TaskCard({
                         Complete
                     </Button>
                 )}
+                <Button size="sm" variant="secondary" onClick={onDelete}
+                    style={{ color: 'var(--notion-red)', padding: '4px 8px' }}>
+                    <Trash2 size={14} />
+                </Button>
             </div>
         </div>
     );
@@ -206,13 +217,15 @@ function KanbanColumn({
     tasks,
     color,
     onStart,
-    onComplete
+    onComplete,
+    onDelete
 }: {
     title: string;
     tasks: HousekeepingTask[];
     color: string;
     onStart: (id: number) => void;
     onComplete: (id: number) => void;
+    onDelete: (task: HousekeepingTask) => void;
 }) {
     return (
         <div style={{
@@ -275,6 +288,7 @@ function KanbanColumn({
                             task={task}
                             onStart={() => onStart(task.id)}
                             onComplete={() => onComplete(task.id)}
+                            onDelete={() => onDelete(task)}
                         />
                     ))
                 )}
@@ -305,7 +319,9 @@ function TaskFormModal({
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
-        await onSubmit(formData);
+        const payload: CreateHousekeepingPayload = { ...formData };
+        if (!payload.bookingId) delete payload.bookingId;
+        await onSubmit(payload);
         setIsSubmitting(false);
         onClose();
     };
@@ -314,76 +330,49 @@ function TaskFormModal({
         <Modal isOpen={isOpen} onClose={onClose} title="New Task">
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                 <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Room *
-                    </label>
-                    <select
+                    <Select
+                        label="Room *"
                         value={formData.roomId}
                         onChange={e => setFormData({ ...formData, roomId: parseInt(e.target.value) })}
                         required
-                        style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            fontSize: '14px',
-                            border: '1px solid var(--notion-border)',
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: 'var(--notion-bg)',
-                            color: 'var(--notion-text)',
-                        }}
-                    >
-                        <option value={0}>Select Room</option>
-                        {rooms.map(room => (
-                            <option key={room.id} value={room.id}>Room {room.number}</option>
-                        ))}
-                    </select>
+                        fullWidth
+                        options={[
+                            { value: 0, label: 'Select Room' },
+                            ...rooms.map(room => ({ value: room.id, label: `Room ${room.number}` })),
+                        ]}
+                    />
                 </div>
 
                 <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Task Type *
-                    </label>
-                    <select
+                    <Select
+                        label="Task Type *"
                         value={formData.taskType}
                         onChange={e => setFormData({ ...formData, taskType: e.target.value as HousekeepingTaskType })}
-                        style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            fontSize: '14px',
-                            border: '1px solid var(--notion-border)',
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: 'var(--notion-bg)',
-                            color: 'var(--notion-text)',
-                        }}
-                    >
-                        {TASK_TYPES.map(type => (
-                            <option key={type} value={type}>
-                                {type.replace(/_/g, ' ')}
-                            </option>
-                        ))}
-                    </select>
+                        fullWidth
+                        options={TASK_TYPES.map(type => ({ value: type, label: type.replace(/_/g, ' ') }))}
+                    />
+                </div>
+
+                <div>
+                    <Select
+                        label="Priority"
+                        value={formData.priority}
+                        onChange={e => setFormData({ ...formData, priority: e.target.value as HousekeepingPriority })}
+                        fullWidth
+                        options={PRIORITIES.map(priority => ({ value: priority, label: priority }))}
+                    />
                 </div>
 
                 <div>
                     <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Priority
+                        Booking ID (optional)
                     </label>
-                    <select
-                        value={formData.priority}
-                        onChange={e => setFormData({ ...formData, priority: e.target.value as HousekeepingPriority })}
-                        style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            fontSize: '14px',
-                            border: '1px solid var(--notion-border)',
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: 'var(--notion-bg)',
-                            color: 'var(--notion-text)',
-                        }}
-                    >
-                        {PRIORITIES.map(priority => (
-                            <option key={priority} value={priority}>{priority}</option>
-                        ))}
-                    </select>
+                    <Input
+                        type="text"
+                        value={formData.bookingId || ''}
+                        onChange={e => setFormData({ ...formData, bookingId: e.target.value })}
+                        placeholder="Link to an active booking"
+                    />
                 </div>
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
@@ -409,10 +398,12 @@ export default function HousekeepingPage() {
         fetchTasks,
         createTask,
         startTask,
-        completeTask
+        completeTask,
+        deleteTask
     } = useHousekeeping();
     const { rooms } = useRooms();
     const [isFormOpen, setIsFormOpen] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<HousekeepingTask | null>(null);
 
     const handleCreateTask = async (data: CreateHousekeepingPayload) => {
         await createTask(data);
@@ -488,11 +479,17 @@ export default function HousekeepingPage() {
                             {Array.from({ length: 3 }).map((_, i) => (
                                 <div key={i} style={{
                                     flex: 1,
-                                    height: '400px',
                                     backgroundColor: 'var(--notion-bg-tertiary)',
                                     borderRadius: 'var(--radius-lg)',
-                                    animation: 'pulse 1.5s ease-in-out infinite',
-                                }} />
+                                    padding: 'var(--space-4)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 'var(--space-3)',
+                                }}>
+                                    <Skeleton variant="line" width="50%" height={16} />
+                                    <SkeletonCard />
+                                    <SkeletonCard />
+                                </div>
                             ))}
                         </div>
                     ) : stats.total === 0 ? (
@@ -520,6 +517,7 @@ export default function HousekeepingPage() {
                                 color="var(--notion-orange)"
                                 onStart={startTask}
                                 onComplete={completeTask}
+                                onDelete={(task) => setDeleteTarget(task)}
                             />
                             <KanbanColumn
                                 title="In Progress"
@@ -527,6 +525,7 @@ export default function HousekeepingPage() {
                                 color="var(--notion-blue)"
                                 onStart={startTask}
                                 onComplete={completeTask}
+                                onDelete={(task) => setDeleteTarget(task)}
                             />
                             <KanbanColumn
                                 title="Completed"
@@ -534,6 +533,7 @@ export default function HousekeepingPage() {
                                 color="var(--notion-green)"
                                 onStart={startTask}
                                 onComplete={completeTask}
+                                onDelete={(task) => setDeleteTarget(task)}
                             />
                         </div>
                     )}
@@ -545,6 +545,20 @@ export default function HousekeepingPage() {
                 onClose={() => setIsFormOpen(false)}
                 onSubmit={handleCreateTask}
                 rooms={roomsList}
+            />
+
+            {/* Delete Confirmation */}
+            <SecurityConfirmModal
+                isOpen={!!deleteTarget}
+                onClose={() => setDeleteTarget(null)}
+                onConfirm={async () => {
+                    if (!deleteTarget) return;
+                    await deleteTask(deleteTarget.id);
+                }}
+                title="Delete Task"
+                message={`Delete housekeeping task for Room ${deleteTarget?.room?.number || deleteTarget?.roomId}? This action cannot be undone.`}
+                confirmText="Delete Task"
+                isDestructive
             />
         </DashboardLayout>
     );

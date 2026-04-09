@@ -4,6 +4,7 @@ import { createTestApp } from "../../test-utils";
 // 1. Mock DB
 const mockFindMany = mock();
 const mockFindFirst = mock();
+const mockGuestsFindFirst = mock();
 const mockInsert = mock();
 const mockValues = mock();
 const mockReturning = mock();
@@ -20,6 +21,7 @@ const mockDb: any = {
         bookings: { findMany: mockFindMany },
         hotels: { findFirst: mockFindFirst },
         rooms: { findFirst: mockFindFirst },
+        guests: { findFirst: mockGuestsFindFirst },
         tenantFeatures: { findFirst: mockFindFirst },
         channelManagerSettings: { findMany: mockFindMany },
         users: { findFirst: mockUserFind }
@@ -31,7 +33,7 @@ const mockDb: any = {
 // Setup select chain
 mockSelect.mockReturnValue({ from: mockFrom });
 mockFrom.mockReturnValue({ where: mockCountWhere });
-mockCountWhere.mockResolvedValue([{ count: 10 }]); // Default mock count
+mockCountWhere.mockResolvedValue([{ count: 10 }]);
 mockDb.transaction = (cb: any) => cb(mockDb);
 
 mock.module("../../../src/db", () => ({
@@ -43,9 +45,11 @@ mock.module("../../../src/db/schema", () => ({
     bookings: { name: "bookings" },
     rooms: { name: "rooms" },
     hotels: { name: "hotels" },
+    guests: { name: "guests" },
     channelManagerSettings: { name: "channel_manager_settings" },
     channelSyncLogs: { name: "channel_sync_logs" },
-    tenantFeatures: { name: "tenant_features" }
+    tenantFeatures: { name: "tenant_features" },
+    users: { name: "users" }
 }));
 
 // 2. Mock Audit
@@ -73,6 +77,7 @@ describe("Bookings Controller", () => {
         // Reset mocks
         mockFindMany.mockReset();
         mockFindFirst.mockReset();
+        mockGuestsFindFirst.mockReset();
         mockInsert.mockReset();
         mockValues.mockReset();
         mockReturning.mockReset();
@@ -92,6 +97,7 @@ describe("Bookings Controller", () => {
         mockCountWhere.mockResolvedValue([{ count: 10 }]);
 
         mockUserFind.mockResolvedValue({ id: "staff-1", isActive: true, hotelId: 1 });
+        mockGuestsFindFirst.mockResolvedValue(null);
         mockSendBookingConfirmation.mockResolvedValue(true);
 
         // Setup chain for insert
@@ -101,7 +107,7 @@ describe("Bookings Controller", () => {
         // Setup chain for update
         mockUpdate.mockReturnValue({ set: mockSet });
         mockSet.mockReturnValue({ where: mockWhere });
-        mockWhere.mockReturnValue({ returning: mockReturning }); // Some updates return
+        mockWhere.mockReturnValue({ returning: mockReturning });
 
         app = createTestApp(bookingsController);
 
@@ -115,7 +121,7 @@ describe("Bookings Controller", () => {
             id: "staff-1",
             hotelId: 1,
             type: "HOTEL_STAFF",
-            permissions: ["GUESTS.CHECK_IN", "GUESTS.CHECK_OUT"]
+            permissions: ["*"]
         });
     });
 
@@ -135,18 +141,20 @@ describe("Bookings Controller", () => {
     });
 
     it("POST /bookings - should create booking successfully", async () => {
-        // Mock conflict check (empty array = no conflict)
         mockFindMany.mockResolvedValue([]);
+        mockFindFirst
+            .mockResolvedValueOnce({ id: 1, name: "Test Hotel" })
+            .mockResolvedValueOnce({ id: 101, number: "101", type: "Standard" });
 
-        // Mock hotel lookup
-        mockFindFirst.mockResolvedValue({ id: 1, name: "Test Hotel" });
+        mockGuestsFindFirst.mockResolvedValue({
+            id: "guest-1",
+            fullName: "Alice",
+            phone: "9812345678",
+            idNumber: null
+        });
 
-        // Mock insert return
         const newBooking = { id: "new-b1", guestName: "Alice", roomId: 101 };
         mockReturning.mockResolvedValue([newBooking]);
-
-        // Mock room lookup for notification
-        mockFindFirst.mockResolvedValue({ id: 101, number: "101", type: "Standard" });
 
         const payload = {
             roomId: 101,
@@ -183,7 +191,6 @@ describe("Bookings Controller", () => {
     });
 
     it("POST /bookings - should fail if room occupied", async () => {
-        // Mock conflict check returns existing booking
         mockFindMany.mockResolvedValue([{ id: "existing-b1", status: "CONFIRMED" }]);
 
         const payload = {
@@ -208,7 +215,7 @@ describe("Bookings Controller", () => {
         const res = await app.handle(req);
         const body = await res.json() as any;
 
-        expect(res.status).toBe(409); // ConflictError
+        expect(res.status).toBe(409);
         expect(body.message).toContain("Room not available");
     });
 });

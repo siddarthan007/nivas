@@ -9,6 +9,8 @@ import CustomDatePicker from '@/components/ui/DatePicker';
 import Modal from '@/components/ui/Modal';
 import Select from '@/components/ui/Select';
 import { useRooms } from '@/lib/hooks/useRooms';
+import { useCorporate } from '@/lib/hooks/useCorporate';
+import { Skeleton } from '@/components/ui/Skeleton';
 import {
     CalendarDays,
     Plus,
@@ -33,6 +35,9 @@ import {
     MoreHorizontal
 } from 'lucide-react';
 import Pagination from '@/components/ui/Pagination';
+import { GuestSearchInput } from '@/components/features/guests/GuestSearchInput';
+import type { GuestSearchResult } from '@/lib/services/guest.service';
+import NationalitySelect from '@/components/features/guests/NationalitySelect';
 import type { CreateBookingPayload, BookingSource, Booking, BookingStatus } from '@/lib/types/api.types';
 import { format } from 'date-fns';
 
@@ -160,7 +165,11 @@ function CreateBookingModal({
     onCreate: (data: CreateBookingPayload) => Promise<void>;
 }) {
     const { rooms } = useRooms();
+    const { companies, agents } = useCorporate();
     const [loading, setLoading] = useState(false);
+    const [step, setStep] = useState(1);
+    const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
+    const [isExistingGuest, setIsExistingGuest] = useState(false);
     const [formData, setFormData] = useState<Partial<CreateBookingPayload>>({
         roomId: undefined,
         guestName: '',
@@ -171,8 +180,16 @@ function CreateBookingModal({
         checkOut: new Date(Date.now() + 86400000).toISOString().split('T')[0],
         totalAmount: 0,
         advancePayment: 0,
-        source: 'WALK_IN'
+        source: 'WALK_IN',
+        nationality: '',
+        corporateAccountId: undefined,
+        travelAgentId: undefined,
     });
+
+    // Reset step on open
+    useEffect(() => {
+        if (isOpen) setStep(1);
+    }, [isOpen]);
 
     // Auto-calculate amount
     useEffect(() => {
@@ -187,8 +204,33 @@ function CreateBookingModal({
         }
     }, [formData.roomId, formData.checkIn, formData.checkOut, rooms]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleGuestSelect = (guest: GuestSearchResult) => {
+        setSelectedGuestId(guest.id);
+        setIsExistingGuest(true);
+        setFormData(prev => ({
+            ...prev,
+            guestName: guest.fullName,
+            guestPhone: guest.phone || '',
+            guestEmail: guest.email || '',
+            nationality: guest.nationality || '',
+            guestId: guest.id
+        }));
+    };
+
+    const handleAddNewGuest = (name: string) => {
+        setSelectedGuestId(null);
+        setIsExistingGuest(false);
+        setFormData(prev => ({
+            ...prev,
+            guestName: name,
+            guestPhone: '',
+            guestEmail: '',
+            nationality: '',
+            guestId: undefined
+        }));
+    };
+
+    const handleSubmit = async () => {
         setLoading(true);
         try {
             await onCreate(formData as CreateBookingPayload);
@@ -198,136 +240,339 @@ function CreateBookingModal({
         }
     };
 
-    // Filter available rooms (both VACANT and AVAILABLE statuses)
     const availableRooms = rooms.filter(r => r.status === 'VACANT' || r.status === 'AVAILABLE');
+    const selectedRoom = rooms.find(r => r.id === Number(formData.roomId));
+    const nights = formData.checkIn && formData.checkOut
+        ? Math.max(1, Math.ceil((new Date(formData.checkOut).getTime() - new Date(formData.checkIn).getTime()) / 86400000))
+        : 0;
+
+    const canProceedStep1 = formData.roomId && formData.checkIn && formData.checkOut;
+    const canProceedStep2 = formData.guestName && formData.guestPhone;
+
+    const stepLabelStyle: React.CSSProperties = { fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center', whiteSpace: 'nowrap' };
+    const labelStyle: React.CSSProperties = { display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' };
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="New Booking">
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                    <div>
+            {/* Step Indicator */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', marginBottom: 'var(--space-5)', position: 'relative' }}>
+                {/* Connecting lines layer */}
+                <div style={{ position: 'absolute', top: '14px', left: '16.66%', right: '16.66%', display: 'flex' }}>
+                    <div style={{
+                        flex: 1, height: '2px',
+                        backgroundColor: step > 1 ? 'var(--notion-blue)' : 'var(--notion-border)',
+                        transition: 'background-color 200ms ease',
+                    }} />
+                    <div style={{
+                        flex: 1, height: '2px',
+                        backgroundColor: step > 2 ? 'var(--notion-blue)' : 'var(--notion-border)',
+                        transition: 'background-color 200ms ease',
+                    }} />
+                </div>
+                {/* Steps */}
+                {[
+                    { num: 1, label: 'Room &\nDates' },
+                    { num: 2, label: 'Guest Info' },
+                    { num: 3, label: 'Payment' },
+                ].map((s) => (
+                    <div key={s.num} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', zIndex: 1 }}>
+                        <div style={{
+                            width: '28px', height: '28px', borderRadius: '50%',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '12px', fontWeight: '600',
+                            backgroundColor: step >= s.num ? 'var(--notion-blue)' : 'var(--notion-bg-secondary)',
+                            color: step >= s.num ? 'white' : 'var(--notion-text-secondary)',
+                            border: step >= s.num ? 'none' : '1px solid var(--notion-border)',
+                            transition: 'all 200ms ease',
+                        }}>
+                            {step > s.num ? <Check size={14} /> : s.num}
+                        </div>
+                        <span style={{
+                            ...stepLabelStyle,
+                            marginTop: '6px',
+                            color: step >= s.num ? 'var(--notion-blue)' : 'var(--notion-text-secondary)',
+                            lineHeight: '1.3',
+                        }}>
+                            {s.label}
+                        </span>
+                    </div>
+                ))}
+            </div>
+
+            {/* Step 1: Room & Dates */}
+            {step === 1 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', animation: 'fadeIn 0.2s ease-out' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                         <CustomDatePicker
                             label="Check-in"
                             required
                             selected={formData.checkIn ? new Date(formData.checkIn) : null}
                             onChange={(date) => {
-                                if (date) {
-                                    const dateStr = date.toISOString().split('T')[0];
-                                    setFormData({ ...formData, checkIn: dateStr });
-                                }
+                                if (date) setFormData({ ...formData, checkIn: date.toISOString().split('T')[0] });
                             }}
                             minDate={new Date()}
                         />
-                    </div>
-                    <div>
                         <CustomDatePicker
                             label="Check-out"
                             required
                             selected={formData.checkOut ? new Date(formData.checkOut) : null}
                             onChange={(date) => {
-                                if (date) {
-                                    const dateStr = date.toISOString().split('T')[0];
-                                    setFormData({ ...formData, checkOut: dateStr });
-                                }
+                                if (date) setFormData({ ...formData, checkOut: date.toISOString().split('T')[0] });
                             }}
                             minDate={formData.checkIn ? new Date(formData.checkIn) : new Date()}
                         />
                     </div>
-                </div>
 
-                <div>
-                    <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Room</label>
-                    <Select
-                        value={formData.roomId?.toString() || ''}
-                        onChange={e => setFormData({ ...formData, roomId: Number(e.target.value) })}
-                        options={availableRooms.map(r => ({
-                            value: r.id.toString(),
-                            label: `${r.number} - ${r.type} (₹${r.rate})`
-                        }))}
-                        disabled={availableRooms.length === 0}
-                    />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                     <div>
-                        <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Guest Name</label>
-                        <Input
-                            required
-                            placeholder="John Doe"
-                            value={formData.guestName}
-                            onChange={e => setFormData({ ...formData, guestName: e.target.value })}
-                            icon={<User size={14} />}
+                        <label style={labelStyle}>Room *</label>
+                        <Select
+                            value={formData.roomId?.toString() || ''}
+                            onChange={e => setFormData({ ...formData, roomId: Number(e.target.value) })}
+                            options={[
+                                { value: '', label: 'Select a room...' },
+                                ...availableRooms.map(r => ({
+                                    value: r.id.toString(),
+                                    label: `${r.number} - ${r.type} (₹${r.rate}/night)`
+                                }))
+                            ]}
                         />
                     </div>
+
+                    {/* Room Preview */}
+                    {selectedRoom && (
+                        <div style={{
+                            padding: 'var(--space-3)',
+                            backgroundColor: 'var(--notion-bg-secondary)',
+                            borderRadius: 'var(--radius-md)',
+                            border: '1px solid var(--notion-border)',
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                    <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>
+                                        Room {selectedRoom.number} — {selectedRoom.type}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', marginTop: '2px' }}>
+                                        {nights} night{nights !== 1 ? 's' : ''} × ₹{selectedRoom.rate?.toLocaleString()}
+                                    </div>
+                                </div>
+                                <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--notion-blue)' }}>
+                                    ₹{(formData.totalAmount || 0).toLocaleString()}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Step 2: Guest Info */}
+            {step === 2 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', animation: 'fadeIn 0.2s ease-out' }}>
                     <div>
-                        <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Guest Phone</label>
-                        <Input
-                            required
-                            placeholder="9876543210"
-                            value={formData.guestPhone}
-                            onChange={e => setFormData({ ...formData, guestPhone: e.target.value })}
-                            icon={<Phone size={14} />}
+                        <label style={labelStyle}>Guest *</label>
+                        <GuestSearchInput
+                            onSelect={handleGuestSelect}
+                            onAddNew={handleAddNewGuest}
+                            placeholder="Search existing guest or type to create new..."
                         />
+                        {isExistingGuest && selectedGuestId && (
+                            <div style={{
+                                display: 'flex', alignItems: 'center', gap: '6px',
+                                marginTop: '6px', fontSize: '12px', color: 'var(--notion-green)',
+                                padding: '4px 8px', backgroundColor: 'var(--notion-green-bg)',
+                                borderRadius: 'var(--radius-sm)', width: 'fit-content'
+                            }}>
+                                <CheckCircle2 size={12} />
+                                Existing guest linked
+                            </div>
+                        )}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                        <div>
+                            <label style={labelStyle}>Phone *</label>
+                            <Input required placeholder="9876543210" value={formData.guestPhone}
+                                onChange={e => setFormData({ ...formData, guestPhone: e.target.value })}
+                                icon={<Phone size={14} />} disabled={isExistingGuest}
+                            />
+                        </div>
+                        <div>
+                            <label style={labelStyle}>Email</label>
+                            <Input type="email" placeholder="john@example.com" value={formData.guestEmail}
+                                onChange={e => setFormData({ ...formData, guestEmail: e.target.value })}
+                                icon={<Mail size={14} />} disabled={isExistingGuest}
+                            />
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                        <NationalitySelect label="Nationality" value={formData.nationality || ''} onChange={val => setFormData({ ...formData, nationality: val })} />
+                        <div>
+                            <label style={labelStyle}>Guests</label>
+                            <Input type="number" min={1} value={formData.guestCount}
+                                onChange={e => setFormData({ ...formData, guestCount: Number(e.target.value) })}
+                            />
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                        <div>
+                            <label style={labelStyle}>ID Type</label>
+                            <Select
+                                value={formData.idType || ''}
+                                onChange={e => setFormData({ ...formData, idType: e.target.value })}
+                                fullWidth
+                                options={[
+                                    { value: '', label: 'Select ID type' },
+                                    { value: 'CITIZENSHIP', label: 'Citizenship' },
+                                    { value: 'PASSPORT', label: 'Passport' },
+                                    { value: 'DRIVING_LICENSE', label: 'Driving License' },
+                                    { value: 'NATIONAL_ID', label: 'National ID' },
+                                    { value: 'OTHER', label: 'Other' },
+                                ]}
+                            />
+                        </div>
+                        <div>
+                            <label style={labelStyle}>ID Number</label>
+                            <Input placeholder="Enter ID number" value={formData.idNumber || ''}
+                                onChange={e => setFormData({ ...formData, idNumber: e.target.value })} disabled={isExistingGuest}
+                            />
+                        </div>
                     </div>
                 </div>
+            )}
 
-                <div>
-                    <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Email (Optional)</label>
-                    <Input
-                        type="email"
-                        placeholder="john@example.com"
-                        value={formData.guestEmail}
-                        onChange={e => setFormData({ ...formData, guestEmail: e.target.value })}
-                        icon={<Mail size={14} />}
-                    />
-                </div>
+            {/* Step 3: Payment & Source */}
+            {step === 3 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', animation: 'fadeIn 0.2s ease-out' }}>
+                    {/* Booking Summary */}
+                    <div style={{
+                        padding: 'var(--space-4)',
+                        backgroundColor: 'var(--notion-bg-secondary)',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px solid var(--notion-border)',
+                    }}>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--notion-text)', marginBottom: 'var(--space-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Booking Summary
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
+                            <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Room</div>
+                            <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--notion-text)', textAlign: 'right' }}>
+                                {selectedRoom ? `${selectedRoom.number} (${selectedRoom.type})` : '—'}
+                            </div>
+                            <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Guest</div>
+                            <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--notion-text)', textAlign: 'right' }}>
+                                {formData.guestName || '—'}
+                            </div>
+                            <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Duration</div>
+                            <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--notion-text)', textAlign: 'right' }}>
+                                {nights} night{nights !== 1 ? 's' : ''} ({formData.checkIn} → {formData.checkOut})
+                            </div>
+                        </div>
+                    </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                    <div>
-                        <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Total Amount (₹)</label>
-                        <Input
-                            type="number"
-                            required
-                            value={formData.totalAmount}
-                            onChange={e => setFormData({ ...formData, totalAmount: Number(e.target.value) })}
-                            icon={<CreditCard size={14} />}
-                        />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                        <div>
+                            <label style={labelStyle}>Total Amount (₹) *</label>
+                            <Input type="number" required value={formData.totalAmount}
+                                onChange={e => setFormData({ ...formData, totalAmount: Number(e.target.value) })}
+                                icon={<CreditCard size={14} />}
+                            />
+                        </div>
+                        <div>
+                            <label style={labelStyle}>Advance Payment (₹)</label>
+                            <Input type="number" value={formData.advancePayment}
+                                onChange={e => setFormData({ ...formData, advancePayment: Number(e.target.value) })}
+                            />
+                        </div>
                     </div>
-                    <div>
-                        <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Advance (₹)</label>
-                        <Input
-                            type="number"
-                            value={formData.advancePayment}
-                            onChange={e => setFormData({ ...formData, advancePayment: Number(e.target.value) })}
-                        />
-                    </div>
-                </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                     <div>
-                        <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Guests</label>
-                        <Input
-                            type="number"
-                            min={1}
-                            value={formData.guestCount}
-                            onChange={e => setFormData({ ...formData, guestCount: Number(e.target.value) })}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Source</label>
+                        <label style={labelStyle}>Booking Source</label>
                         <Select
                             value={formData.source || 'WALK_IN'}
-                            onChange={e => setFormData({ ...formData, source: e.target.value as BookingSource })}
+                            onChange={e => {
+                                const source = e.target.value as BookingSource;
+                                setFormData({
+                                    ...formData,
+                                    source,
+                                    corporateAccountId: source !== 'CORPORATE' ? undefined : formData.corporateAccountId,
+                                    travelAgentId: source !== 'TRAVEL_AGENT' ? undefined : formData.travelAgentId,
+                                });
+                            }}
                             options={BOOKING_SOURCES.map(s => ({ value: s, label: s.replace('_', ' ') }))}
                         />
                     </div>
-                </div>
 
-                <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end', marginTop: 'var(--space-2)' }}>
-                    <Button variant="secondary" onClick={onClose} disabled={loading} type="button">Cancel</Button>
-                    <Button variant="primary" type="submit" loading={loading}>Create Booking</Button>
+                    {formData.source === 'CORPORATE' && (
+                        <div>
+                            <label style={labelStyle}>Corporate Account</label>
+                            <Select
+                                value={formData.corporateAccountId?.toString() || ''}
+                                onChange={e => setFormData({ ...formData, corporateAccountId: e.target.value ? Number(e.target.value) : undefined })}
+                                options={[
+                                    { value: '', label: 'Select corporate account...' },
+                                    ...companies.filter(c => c.status === 'ACTIVE').map(c => ({
+                                        value: c.id.toString(),
+                                        label: c.companyName,
+                                    })),
+                                ]}
+                            />
+                        </div>
+                    )}
+
+                    {formData.source === 'TRAVEL_AGENT' && (
+                        <div>
+                            <label style={labelStyle}>Travel Agent</label>
+                            <Select
+                                value={formData.travelAgentId?.toString() || ''}
+                                onChange={e => setFormData({ ...formData, travelAgentId: e.target.value ? Number(e.target.value) : undefined })}
+                                options={[
+                                    { value: '', label: 'Select travel agent...' },
+                                    ...agents.filter(a => a.status === 'ACTIVE').map(a => ({
+                                        value: a.id.toString(),
+                                        label: a.agencyName ? `${a.name} (${a.agencyName})` : a.name,
+                                    })),
+                                ]}
+                            />
+                        </div>
+                    )}
+
+                    {/* Balance indicator */}
+                    {formData.totalAmount && formData.advancePayment !== undefined && (
+                        <div style={{
+                            padding: 'var(--space-3)',
+                            backgroundColor: (formData.totalAmount - (formData.advancePayment || 0)) > 0 ? 'var(--notion-red-bg)' : 'var(--notion-green-bg)',
+                            borderRadius: 'var(--radius-md)',
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        }}>
+                            <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--notion-text)' }}>
+                                Balance Due
+                            </span>
+                            <span style={{ fontSize: '16px', fontWeight: '700', color: (formData.totalAmount - (formData.advancePayment || 0)) > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>
+                                ₹{((formData.totalAmount || 0) - (formData.advancePayment || 0)).toLocaleString()}
+                            </span>
+                        </div>
+                    )}
                 </div>
-            </form>
+            )}
+
+            {/* Navigation Buttons */}
+            <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'space-between', marginTop: 'var(--space-5)' }}>
+                <Button variant="secondary" onClick={step === 1 ? onClose : () => setStep(step - 1)} disabled={loading} type="button">
+                    {step === 1 ? 'Cancel' : '← Back'}
+                </Button>
+                {step < 3 ? (
+                    <Button variant="primary" onClick={() => setStep(step + 1)}
+                        disabled={step === 1 ? !canProceedStep1 : !canProceedStep2}
+                    >
+                        Next →
+                    </Button>
+                ) : (
+                    <Button variant="primary" onClick={handleSubmit} disabled={loading}>
+                        {loading ? 'Creating...' : 'Create Booking'}
+                    </Button>
+                )}
+            </div>
         </Modal>
     );
 }
@@ -346,6 +591,7 @@ function EditBookingModal({
     const { rooms } = useRooms();
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState<any>({});
+
 
     useEffect(() => {
         if (booking) {
@@ -506,8 +752,11 @@ function ChangeRoomModal({
                     <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">New Room</label>
                     <Select
                         value={selectedRoom?.toString() || ''}
-                        onChange={e => setSelectedRoom(Number(e.target.value))}
-                        options={availableRooms.map(r => ({ value: r.id.toString(), label: `Room ${r.number} - ${r.type} (₹${r.rate})` }))}
+                        onChange={e => setSelectedRoom(e.target.value ? Number(e.target.value) : null)}
+                        options={[
+                            { value: '', label: 'Select a room...' },
+                            ...availableRooms.map(r => ({ value: r.id.toString(), label: `Room ${r.number} - ${r.type} (₹${r.rate})` })),
+                        ]}
                     />
                 </div>
                 <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
@@ -573,22 +822,12 @@ export default function BookingsPage() {
                 </div>
 
                 {/* Filters */}
-                <div style={{ marginBottom: 'var(--space-6)', maxWidth: '400px', position: 'relative' }}>
-                    <Search style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--notion-text-secondary)' }} size={16} />
-                    <input
-                        type="text"
+                <div style={{ marginBottom: 'var(--space-6)', maxWidth: '400px' }}>
+                    <Input
                         placeholder="Search by guest name, phone, or booking ID..."
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
-                        style={{
-                            width: '100%',
-                            padding: '8px 12px 8px 36px',
-                            fontSize: '14px',
-                            border: '1px solid var(--notion-border)',
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: 'var(--notion-bg-secondary)',
-                            color: 'var(--notion-text)'
-                        }}
+                        icon={<Search size={16} />}
                     />
                 </div>
 
@@ -597,7 +836,7 @@ export default function BookingsPage() {
                     backgroundColor: 'var(--notion-bg)',
                     border: '1px solid var(--notion-border)',
                     borderRadius: 'var(--radius-lg)',
-                    overflow: 'hidden'
+                    overflow: 'visible'
                 }}>
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
@@ -617,11 +856,30 @@ export default function BookingsPage() {
                             </thead>
                             <tbody style={{ borderTop: '1px solid var(--notion-border)' }}>
                                 {isLoading ? (
-                                    <tr>
-                                        <td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
-                                            Loading...
-                                        </td>
-                                    </tr>
+                                    Array.from({ length: 5 }).map((_, i) => (
+                                        <tr key={`skeleton-${i}`} style={{ borderBottom: '1px solid var(--notion-border)' }}>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <Skeleton width="70%" height={14} style={{ marginBottom: '6px' }} />
+                                                <Skeleton width="50%" height={12} />
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <Skeleton width="60%" height={14} style={{ marginBottom: '6px' }} />
+                                                <Skeleton width="40%" height={12} />
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <Skeleton width="80%" height={14} />
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <Skeleton width="50%" height={14} />
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <Skeleton width={72} height={24} borderRadius="4px" />
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <Skeleton width={80} height={28} borderRadius="var(--radius-md)" />
+                                            </td>
+                                        </tr>
+                                    ))
                                 ) : filteredBookings.length === 0 ? (
                                     <tr>
                                         <td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
@@ -677,10 +935,10 @@ export default function BookingsPage() {
                                                             </Button>
                                                             {actionMenuId === booking.id && (
                                                                 <div style={{
-                                                                    position: 'absolute', right: 0, top: '100%', zIndex: 50,
-                                                                    backgroundColor: 'var(--notion-bg-elevated)', border: '1px solid var(--notion-border)',
+                                                                    position: 'absolute', right: 0, top: '100%', zIndex: 9999,
+                                                                    backgroundColor: 'var(--notion-bg)', border: '1px solid var(--notion-border)',
                                                                     borderRadius: 'var(--radius-md)', padding: '4px 0', minWidth: '160px',
-                                                                    boxShadow: 'var(--shadow-lg)', marginTop: '4px'
+                                                                    boxShadow: '0 8px 24px rgba(0,0,0,0.4)', marginTop: '4px'
                                                                 }}>
                                                                     <button onClick={() => { setEditBooking(booking); setActionMenuId(null); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', fontSize: '13px', color: 'var(--notion-text)', background: 'none', border: 'none', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--notion-bg-hover)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
                                                                         <Pencil size={14} /> Edit Booking

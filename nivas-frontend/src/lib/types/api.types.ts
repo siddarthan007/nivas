@@ -1,6 +1,9 @@
 /**
  * Nivas PMS API Types
  * TypeScript interfaces matching backend response shapes
+ *
+ * NOTE: ApiResponse is defined in @/lib/api.ts (single source of truth).
+ * Import it from there: `import { ApiResponse } from '@/lib/api'`
  */
 
 // ============================================================================
@@ -12,14 +15,6 @@ export interface PaginationMeta {
     limit: number;
     total: number;
     totalPages: number;
-}
-
-export interface ApiResponse<T = unknown> {
-    status: 'success' | 'error';
-    message?: string;
-    data?: T;
-    meta?: PaginationMeta;
-    code?: string;
 }
 
 // ============================================================================
@@ -63,6 +58,11 @@ export interface LoginResponse {
         name: string;
         role?: string;
     };
+}
+
+export interface Login2FAResponse {
+    require2FA: true;
+    userId: string;
 }
 
 // ============================================================================
@@ -137,6 +137,7 @@ export interface Booking {
 
 export interface CreateBookingPayload {
     roomId: number;
+    guestId?: string;
     guestName: string;
     guestPhone: string;
     guestEmail?: string;
@@ -146,6 +147,11 @@ export interface CreateBookingPayload {
     totalAmount: number;
     advancePayment?: number;
     source?: BookingSource;
+    nationality?: string;
+    idNumber?: string;
+    idType?: string;
+    corporateAccountId?: number;
+    travelAgentId?: number;
 }
 
 // ============================================================================
@@ -185,7 +191,11 @@ export interface Order {
 export interface CreateOrderPayload {
     roomId?: number;
     customerName?: string;
+    restaurantTableId?: number;
+    guestId?: string;
+    outletId?: number;
     orderType: OrderType;
+    addToGuestBill?: boolean;
     items: {
         menuItemId: number;
         quantity: number;
@@ -246,6 +256,7 @@ export interface HousekeepingTask {
 
 export interface CreateHousekeepingPayload {
     roomId: number;
+    bookingId?: string;
     assignedToId?: string;
     taskType: HousekeepingTaskType;
     priority: HousekeepingPriority;

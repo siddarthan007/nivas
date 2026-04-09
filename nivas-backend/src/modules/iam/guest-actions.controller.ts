@@ -5,6 +5,12 @@ import { createResponse } from '../../utils/response.helper';
 
 export const guestActionsController = new Elysia({ prefix: '/guest/actions' })
     .use(authMiddleware)
+    .onBeforeHandle(({ user, set }) => {
+        if (!user) {
+            set.status = 401;
+            return { status: 'error', message: 'Unauthorized: Please login first.' };
+        }
+    })
     .patch('/dnd', async ({ body, user }) => {
         const { hotelId, roomId } = await GuestActionsService.validateGuestAccess(user);
         await GuestActionsService.toggleDnd(hotelId, roomId, body.enabled);

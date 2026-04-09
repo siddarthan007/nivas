@@ -1,5 +1,5 @@
 import { db } from '../../db';
-import { bookings, rooms, hotels, channelManagerSettings, channelSyncLogs, tenantFeatures, users } from '../../db/schema';
+import { bookings, rooms, hotels, channelManagerSettings, channelSyncLogs, tenantFeatures, users, guests } from '../../db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { BusinessLogicError, ConflictError, NotFoundError, ValidationError } from '../../utils/errors';
 import { logAction } from '../system/audit.service';
@@ -28,12 +28,15 @@ export class BookingsService {
                 throw new ConflictError('Room not available for selected dates');
             }
 
+            // Verify room belongs to this hotel
+            const room = await tx.query.rooms.findFirst({
+                where: and(eq(rooms.id, data.roomId), eq(rooms.hotelId, hotelId))
+            });
+            if (!room) throw new NotFoundError('Room');
+
             // Apply dynamic pricing if no explicit totalAmount provided
             let finalAmount = data.totalAmount;
             if (!finalAmount || finalAmount <= 0) {
-                const room = await tx.query.rooms.findFirst({
-                    where: eq(rooms.id, data.roomId)
-                });
                 if (room) {
                     const basePrice = parseFloat(room.rate || '0');
                     try {
@@ -56,10 +59,55 @@ export class BookingsService {
                 }
             }
 
+            // Handle Guest Profile (Find or Create)
+            let guestId = data.guestId;
+
+            if (!guestId && data.guestPhone) {
+                const existingGuest = await tx.query.guests.findFirst({
+                    where: and(
+                        eq(guests.hotelId, hotelId),
+                        eq(guests.phone, data.guestPhone)
+                    )
+                });
+
+                if (existingGuest) {
+                    guestId = existingGuest.id;
+                    const updateFields: Record<string, any> = {};
+                    if (data.nationality) updateFields.nationality = data.nationality;
+                    if (data.idNumber && !existingGuest.idNumber) {
+                        updateFields.idNumber = data.idNumber;
+                        updateFields.idType = data.idType;
+                    }
+                    if (Object.keys(updateFields).length > 0) {
+                        updateFields.updatedAt = new Date();
+                        await tx.update(guests)
+                            .set(updateFields)
+                            .where(eq(guests.id, guestId));
+                    }
+                } else {
+                    const [newGuest] = await tx.insert(guests).values({
+                        hotelId,
+                        fullName: data.guestName,
+                        phone: data.guestPhone,
+                        email: data.guestEmail,
+                        nationality: data.nationality,
+                        idNumber: data.idNumber,
+                        idType: data.idType,
+                    }).returning();
+                    if (!newGuest) throw new Error('Failed to create guest profile');
+                    guestId = newGuest.id;
+                }
+            } else if (guestId && data.nationality) {
+                await tx.update(guests)
+                    .set({ nationality: data.nationality, updatedAt: new Date() })
+                    .where(eq(guests.id, guestId));
+            }
+
             // Create Booking
             const [newBooking] = await tx.insert(bookings).values({
                 hotelId,
                 roomId: data.roomId,
+                guestId: guestId,
                 guestName: data.guestName,
                 guestPhone: data.guestPhone,
                 guestEmail: data.guestEmail,
@@ -70,7 +118,9 @@ export class BookingsService {
                 advancePayment: data.advancePayment?.toString() || '0',
                 source: data.source || 'WALK_IN',
                 status: 'CONFIRMED',
-                createdById: userId
+                createdById: userId,
+                corporateAccountId: data.corporateAccountId,
+                travelAgentId: data.travelAgentId,
             }).returning();
 
             // Side Effects
@@ -198,6 +248,18 @@ export class BookingsService {
         });
 
         if (!booking) throw new NotFoundError('Booking');
+        return booking;
+    }
+
+    static async findActiveByRoom(hotelId: number, roomId: number) {
+        const booking = await db.query.bookings.findFirst({
+            where: and(
+                eq(bookings.roomId, roomId),
+                eq(bookings.hotelId, hotelId),
+                eq(bookings.status, 'CHECKED_IN')
+            )
+        });
+        if (!booking) throw new NotFoundError('Active booking for this room');
         return booking;
     }
 

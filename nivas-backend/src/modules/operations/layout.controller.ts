@@ -5,6 +5,7 @@ import { eq, and } from 'drizzle-orm';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { PERMISSIONS } from '../../config/permissions';
 import { NotFoundError } from '../../utils/errors';
+import { createResponse } from '../../utils/response.helper';
 
 export const layoutController = new Elysia({ prefix: '/layout' })
     .use(authMiddleware)
@@ -38,13 +39,7 @@ export const layoutController = new Elysia({ prefix: '/layout' })
             }
         });
 
-        return {
-            status: 'success',
-            data: {
-                rooms: roomNodes,
-                tables: tableNodes
-            }
-        };
+        return createResponse({ rooms: roomNodes, tables: tableNodes }, 'Floor plan fetched');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.ROOMS.VIEW_STATUS,
@@ -84,7 +79,7 @@ export const layoutController = new Elysia({ prefix: '/layout' })
 
         await Promise.all(updates);
 
-        return { status: 'success', message: 'Layout saved successfully' };
+        return createResponse(null, 'Layout saved successfully');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.ROOMS.UPDATE,
@@ -128,7 +123,7 @@ export const layoutController = new Elysia({ prefix: '/layout' })
 
         if (!updated) throw new NotFoundError('Room');
 
-        return { status: 'success', data: updated };
+        return createResponse(updated, 'Room position updated');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.ROOMS.UPDATE,
@@ -152,22 +147,19 @@ export const layoutController = new Elysia({ prefix: '/layout' })
             }
         });
 
-        return {
-            status: 'success',
-            data: floorsList.map(floor => ({
-                id: floor.id,
-                name: floor.name,
-                number: floor.number,
-                rooms: floor.rooms.map(room => ({
-                    id: room.id,
-                    number: room.number,
-                    name: room.name,
-                    type: room.type,
-                    status: room.status,
-                    layoutProps: room.layoutProps || { x: 0, y: 0, width: 80, height: 60 }
-                }))
+        return createResponse(floorsList.map(floor => ({
+            id: floor.id,
+            name: floor.name,
+            number: floor.number,
+            rooms: floor.rooms.map(room => ({
+                id: room.id,
+                number: room.number,
+                name: room.name,
+                type: room.type,
+                status: room.status,
+                layoutProps: room.layoutProps || { x: 0, y: 0, width: 80, height: 60 }
             }))
-        };
+        })), 'Floor structure fetched');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.ROOMS.VIEW_STATUS,

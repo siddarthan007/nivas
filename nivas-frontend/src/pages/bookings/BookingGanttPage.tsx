@@ -265,10 +265,11 @@ export default function BookingGanttPage() {
                                         const statusColors: Record<string, string> = {
                                             'CHECKED_IN': 'var(--notion-blue)',
                                             'CONFIRMED': 'var(--notion-green)',
-                                            'CHECKED_OUT': 'var(--notion-gray)',
-                                            'CANCELLED': 'var(--notion-red)',
+                                            'CHECKED_OUT': '#6B7280',
+                                            'CANCELLED': '#9CA3AF',
                                             'NO_SHOW': 'var(--notion-red)',
                                         };
+                                        const isCancelledOrOut = bar.booking.status === 'CANCELLED' || bar.booking.status === 'CHECKED_OUT';
                                         const barColor = statusColors[bar.booking.status] || 'var(--notion-orange)';
                                         const barWidth = Math.max(bar.width * cellWidth - 8, cellWidth - 8);
                                         const sourceLabel = bar.booking.source === 'OTA' ? 'OTA' : bar.booking.source === 'PHONE' ? 'Ph' : '';
@@ -280,8 +281,8 @@ export default function BookingGanttPage() {
                                                     position: 'absolute',
                                                     left: `${bar.left * cellWidth + 4}px`,
                                                     width: `${barWidth}px`,
-                                                    top: '6px',
-                                                    bottom: '6px',
+                                                    top: isCancelledOrOut ? '10px' : '6px',
+                                                    bottom: isCancelledOrOut ? '10px' : '6px',
                                                     backgroundColor: barColor,
                                                     borderRadius: '6px',
                                                     padding: '4px 8px',
@@ -292,13 +293,18 @@ export default function BookingGanttPage() {
                                                     textOverflow: 'ellipsis',
                                                     cursor: 'pointer',
                                                     pointerEvents: 'auto',
-                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                                                    boxShadow: isCancelledOrOut ? 'none' : '0 1px 3px rgba(0,0,0,0.2)',
                                                     display: 'flex',
                                                     flexDirection: 'column',
                                                     justifyContent: 'center',
                                                     gap: '1px',
+                                                    opacity: isCancelledOrOut ? 0.45 : 1,
+                                                    textDecoration: bar.booking.status === 'CANCELLED' ? 'line-through' : 'none',
+                                                    borderStyle: isCancelledOrOut ? 'dashed' : 'solid',
+                                                    borderWidth: isCancelledOrOut ? '1px' : '0',
+                                                    borderColor: isCancelledOrOut ? 'rgba(255,255,255,0.3)' : 'transparent',
                                                 }}
-                                                title={`${bar.booking.guestName}\nStatus: ${bar.booking.status}\nSource: ${bar.booking.source || 'Walk-in'}\nAmount: ${bar.booking.totalAmount || '-'}`}
+                                                title={`${bar.booking.guestName}\nStatus: ${bar.booking.status}${isCancelledOrOut ? ' (Room available for new booking)' : ''}\nSource: ${bar.booking.source || 'Walk-in'}\nAmount: ${bar.booking.totalAmount || '-'}`}
                                             >
                                                 <span style={{ fontWeight: 600, lineHeight: 1.2 }}>{bar.booking.guestName}</span>
                                                 {barWidth > 120 && (

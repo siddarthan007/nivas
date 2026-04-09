@@ -3,7 +3,7 @@ import { authMiddleware } from '../../middlewares/auth.middleware';
 import { PERMISSIONS } from '../../config/permissions';
 import { IamService } from './iam.service';
 import { createResponse } from '../../utils/response.helper';
-import { UnauthorizedError } from '../../utils/errors';
+import { ForbiddenError, UnauthorizedError } from '../../utils/errors';
 
 export const iamController = new Elysia({ prefix: '/iam' })
     .use(authMiddleware)
@@ -12,14 +12,10 @@ export const iamController = new Elysia({ prefix: '/iam' })
         const result = await IamService.login(body.email, body.password, ipAddress);
 
         if (result.require2FA) {
-            return {
-                status: 'success',
+            return createResponse({
                 require2FA: true,
                 userId: result.userId,
-                message: result.message,
-                debugOtp: (result as any).debugOtp,
-                testField: 'ALIVE' // Confirming reload
-            };
+            }, result.message || 'OTP sent');
         }
 
         const { user, permissions } = result;
@@ -126,6 +122,7 @@ export const iamController = new Elysia({ prefix: '/iam' })
     })
     .post('/change-password', async ({ body, user }) => {
         if (!user) throw new UnauthorizedError();
+        if (user.type === 'GUEST' || user.id.startsWith('guest-')) throw new ForbiddenError('Not available for guest portal sessions');
 
         await IamService.changePassword(user.id, body.currentPassword, body.newPassword);
 
@@ -144,6 +141,7 @@ export const iamController = new Elysia({ prefix: '/iam' })
 
     .post('/verify-password', async ({ body, user }) => {
         if (!user) throw new UnauthorizedError();
+        if (user.type === 'GUEST' || user.id.startsWith('guest-')) throw new ForbiddenError('Not available for guest portal sessions');
         await IamService.verifyPassword(user.id, body.password);
         return createResponse({ success: true }, 'Password verified');
     }, {
@@ -154,6 +152,16 @@ export const iamController = new Elysia({ prefix: '/iam' })
     .get('/profile', async ({ user }) => {
         if (!user) throw new UnauthorizedError();
 
+        if (user.type === 'GUEST' || user.id.startsWith('guest-')) {
+            const profile = IamService.buildGuestProfile({
+                id: user.id,
+                hotelId: user.hotelId,
+                roomId: user.roomId,
+                permissions: user.permissions,
+            });
+            return createResponse(profile, 'Profile fetched successfully');
+        }
+
         const profile = await IamService.getProfile(user.id);
 
         return createResponse(profile, 'Profile fetched successfully');
@@ -163,6 +171,7 @@ export const iamController = new Elysia({ prefix: '/iam' })
     })
     .put('/profile', async ({ body, user }) => {
         if (!user) throw new UnauthorizedError();
+        if (user.type === 'GUEST' || user.id.startsWith('guest-')) throw new ForbiddenError('Not available for guest portal sessions');
 
         const updatedProfile = await IamService.updateProfile(user.id, body);
 

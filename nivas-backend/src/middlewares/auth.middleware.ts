@@ -39,33 +39,63 @@ export const authMiddleware = (app: Elysia) => app.use(
         return { user: null };
     }
 
-    // STAGE 2: Database Verification (Strict Security)
-    // We verify the user exists, is active, and fetch fresh permissions
-    // This ensures banned users are blocked immediately and role changes apply instantly
-    const dbUser = await db.query.users.findFirst({
-        where: eq(users.id, profile.id as string),
-        with: { role: true }
-    });
+    const profileId = profile.id as string | undefined;
+    if (!profileId) {
+        return { user: null };
+    }
+
+    // Guest tokens use synthetic IDs like "guest-{roomId}" — not real DB users.
+    // Do not require profile.type === 'GUEST' (some JWT verify paths omit custom claims).
+    if (profileId.startsWith('guest-') && profile.hotelId != null) {
+        const fromClaim = typeof (profile as { roomId?: unknown }).roomId === 'number'
+            ? (profile as { roomId: number }).roomId
+            : NaN;
+        const roomId = !Number.isNaN(fromClaim) ? fromClaim : parseInt(profileId.replace('guest-', ''), 10);
+        if (Number.isNaN(roomId)) {
+            return { user: null };
+        }
+        const user: User = {
+            id: profileId,
+            hotelId: profile.hotelId as number,
+            type: 'GUEST',
+            permissions: (profile.permissions as string[]) || [],
+            roomId,
+            role: { name: 'Guest' },
+            licenseStatus: 'ACTIVE',
+        };
+        return { user };
+    }
+
+    // Staff/Admin tokens must have a valid UUID
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(profileId)) {
+        return { user: null };
+    }
+
+    let dbUser;
+    try {
+        dbUser = await db.query.users.findFirst({
+            where: eq(users.id, profileId),
+            with: { role: true }
+        });
+    } catch {
+        return { user: null };
+    }
 
     if (!dbUser || !dbUser.isActive) {
         return { user: null };
     }
 
-    // Refresh user object with DB data
     const user: User = {
         id: dbUser.id,
         hotelId: dbUser.hotelId,
-        type: dbUser.userType as 'SUPER_ADMIN' | 'HOTEL_STAFF' | 'GUEST', // Strict usage of DB column
-        permissions: (dbUser.role?.permissions as string[]) || [], // Fresh permissions
-        roomId: undefined, // Guest logic separate
+        type: dbUser.userType as 'SUPER_ADMIN' | 'HOTEL_STAFF' | 'GUEST',
+        permissions: (dbUser.role?.permissions as string[]) || [],
+        roomId: undefined,
         role: { name: dbUser.role?.name || '' },
-        licenseStatus: 'ACTIVE' // Handled by separate middleware
+        licenseStatus: 'ACTIVE',
     };
 
-    // STAGE 3: Fail-Safe Context Check
-    // If not super admin, hotelId MUST be present
     if (user.type !== 'SUPER_ADMIN' && user.type !== 'GUEST' && !user.hotelId) {
-        // This is a zombie user state (staff without hotel). Block.
         return { user: null };
     }
 

@@ -7,6 +7,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
 import {
     Key,
     Plus,
@@ -271,30 +272,19 @@ function RenewalModal({
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Renew License - ${tenantName}`}>
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Duration (Months) *
-                    </label>
-                    <select
-                        value={formData.durationMonths}
-                        onChange={e => setFormData({ ...formData, durationMonths: Number(e.target.value) })}
-                        style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            fontSize: '14px',
-                            border: '1px solid var(--notion-border)',
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: 'var(--notion-bg)',
-                            color: 'var(--notion-text)',
-                        }}
-                    >
-                        <option value={1}>1 Month</option>
-                        <option value={3}>3 Months</option>
-                        <option value={6}>6 Months</option>
-                        <option value={12}>12 Months</option>
-                        <option value={24}>24 Months</option>
-                    </select>
-                </div>
+                <Select
+                    label="Duration (Months) *"
+                    value={formData.durationMonths}
+                    onChange={e => setFormData({ ...formData, durationMonths: Number(e.target.value) })}
+                    options={[
+                        { value: 1, label: '1 Month' },
+                        { value: 3, label: '3 Months' },
+                        { value: 6, label: '6 Months' },
+                        { value: 12, label: '12 Months' },
+                        { value: 24, label: '24 Months' },
+                    ]}
+                    fullWidth
+                />
 
                 <div>
                     <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
@@ -309,28 +299,17 @@ function RenewalModal({
                     />
                 </div>
 
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Payment Method *
-                    </label>
-                    <select
-                        value={formData.paymentMethod}
-                        onChange={e => setFormData({ ...formData, paymentMethod: e.target.value as 'CASH' | 'BANK_TRANSFER' | 'QR' })}
-                        style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            fontSize: '14px',
-                            border: '1px solid var(--notion-border)',
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: 'var(--notion-bg)',
-                            color: 'var(--notion-text)',
-                        }}
-                    >
-                        <option value="BANK_TRANSFER">Bank Transfer</option>
-                        <option value="CASH">Cash</option>
-                        <option value="QR">QR Payment</option>
-                    </select>
-                </div>
+                <Select
+                    label="Payment Method *"
+                    value={formData.paymentMethod}
+                    onChange={e => setFormData({ ...formData, paymentMethod: e.target.value as 'CASH' | 'BANK_TRANSFER' | 'QR' })}
+                    options={[
+                        { value: 'BANK_TRANSFER', label: 'Bank Transfer' },
+                        { value: 'CASH', label: 'Cash' },
+                        { value: 'QR', label: 'QR Payment' },
+                    ]}
+                    fullWidth
+                />
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
                     <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>
@@ -526,42 +505,26 @@ export default function LicensesPage() {
                             />
                         </div>
 
-                        <select
+                        <Select
                             value={statusFilter}
                             onChange={e => setStatusFilter(e.target.value as 'ALL' | LicenseStatus)}
-                            style={{
-                                padding: '10px 12px',
-                                fontSize: '14px',
-                                border: '1px solid var(--notion-border)',
-                                borderRadius: 'var(--radius-md)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                            }}
-                        >
-                            <option value="ALL">All Status</option>
-                            <option value="ACTIVE">Active</option>
-                            <option value="EXPIRED">Expired</option>
-                            <option value="SUSPENDED">Suspended</option>
-                            <option value="TRIAL">Trial</option>
-                        </select>
+                            options={[
+                                { value: 'ALL', label: 'All Status' },
+                                { value: 'ACTIVE', label: 'Active' },
+                                { value: 'EXPIRED', label: 'Expired' },
+                                { value: 'SUSPENDED', label: 'Suspended' },
+                                { value: 'TRIAL', label: 'Trial' },
+                            ]}
+                        />
 
-                        <select
+                        <Select
                             value={planFilter}
                             onChange={e => setPlanFilter(e.target.value)}
-                            style={{
-                                padding: '10px 12px',
-                                fontSize: '14px',
-                                border: '1px solid var(--notion-border)',
-                                borderRadius: 'var(--radius-md)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                            }}
-                        >
-                            <option value="ALL">All Plans</option>
-                            {plans.map(plan => (
-                                <option key={plan.id} value={plan.code}>{plan.name}</option>
-                            ))}
-                        </select>
+                            options={[
+                                { value: 'ALL', label: 'All Plans' },
+                                ...plans.map(plan => ({ value: plan.code, label: plan.name })),
+                            ]}
+                        />
                     </div>
 
                     {/* Licenses Grid */}

@@ -41,6 +41,7 @@ export function usePermissions() {
      */
     const isAdmin = (): boolean => {
         return user?.userType === 'SUPER_ADMIN' ||
+            user?.role?.toUpperCase() === 'OWNER' ||
             can('system:manage_tenants') ||
             can('users:manage_roles');
     };

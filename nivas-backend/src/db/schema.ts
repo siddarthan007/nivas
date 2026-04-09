@@ -183,7 +183,9 @@ export const floors = pgTable('floors', {
     name: text('name'),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow()
-});
+}, (table) => [
+    index('floors_hotel_id_idx').on(table.hotelId),
+]);
 
 /**
  * Room Types - Hotel-customizable room categories
@@ -251,6 +253,10 @@ export const bookings = pgTable('bookings', {
 
     source: bookingSourceEnum('source').default('WALK_IN'),
 
+    guestId: uuid('guest_id').references(() => guests.id),
+    corporateAccountId: integer('corporate_account_id').references(() => corporateAccounts.id, { onDelete: 'set null' }),
+    travelAgentId: integer('travel_agent_id').references(() => travelAgents.id, { onDelete: 'set null' }),
+
     createdById: uuid('created_by_id').references(() => users.id),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow()
@@ -261,6 +267,8 @@ export const bookings = pgTable('bookings', {
     index('booking_guest_phone_idx').on(table.guestPhone),
     index('booking_check_in_idx').on(table.checkIn),
     index('booking_check_out_idx').on(table.checkOut),
+    index('booking_corporate_idx').on(table.corporateAccountId),
+    index('booking_agent_idx').on(table.travelAgentId),
 ]);
 
 export const orders = pgTable('orders', {
@@ -268,6 +276,9 @@ export const orders = pgTable('orders', {
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
     roomId: integer('room_id').references(() => rooms.id),
     bookingId: uuid('booking_id').references(() => bookings.id),
+    guestId: uuid('guest_id').references(() => guests.id, { onDelete: 'set null' }),
+    restaurantTableId: integer('restaurant_table_id').references(() => restaurantTables.id, { onDelete: 'set null' }),
+    outletId: integer('outlet_id').references(() => outlets.id, { onDelete: 'set null' }),
 
     orderNumber: text('order_number').unique().notNull(),
     customerName: text('customer_name'),
@@ -288,11 +299,14 @@ export const orders = pgTable('orders', {
     index('order_status_idx').on(table.status),
     index('order_number_idx').on(table.orderNumber),
     index('order_created_by_idx').on(table.createdById),
+    index('order_guest_idx').on(table.guestId),
+    index('order_table_idx').on(table.restaurantTableId),
+    index('order_outlet_idx').on(table.outletId),
 ]);
 
 export const orderItems = pgTable('order_items', {
     id: serial('id').primaryKey(),
-    orderId: uuid('order_id').references(() => orders.id).notNull(),
+    orderId: uuid('order_id').references(() => orders.id, { onDelete: 'cascade' }).notNull(),
     menuItemId: integer('menu_item_id').references(() => menuItems.id).notNull(),
 
     quantity: integer('quantity').notNull(),
@@ -300,7 +314,10 @@ export const orderItems = pgTable('order_items', {
     notes: text('notes'),
 
     createdAt: timestamp('created_at').defaultNow()
-});
+}, (table) => [
+    index('order_items_order_id_idx').on(table.orderId),
+    index('order_items_menu_item_id_idx').on(table.menuItemId),
+]);
 
 export const inventoryItems = pgTable('inventory_items', {
     id: serial('id').primaryKey(),
@@ -342,6 +359,7 @@ export const menuItems = pgTable('menu_items', {
     description: text('description'),
     price: decimal('price', { precision: 10, scale: 2 }).notNull(),
     category: text('category'),
+    categoryId: integer('category_id').references(() => menuCategories.id, { onDelete: 'set null' }),
     imageUrl: text('image_url'),
     isAvailable: boolean('is_available').default(true),
     createdAt: timestamp('created_at').defaultNow(),
@@ -349,6 +367,7 @@ export const menuItems = pgTable('menu_items', {
 }, (table) => [
     index('menu_item_hotel_idx').on(table.hotelId),
     index('menu_item_category_idx').on(table.category),
+    index('menu_item_category_id_idx').on(table.categoryId),
 ]);
 
 export const housekeepingTasks = pgTable('housekeeping_tasks', {
@@ -356,6 +375,7 @@ export const housekeepingTasks = pgTable('housekeeping_tasks', {
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
     roomId: integer('room_id').references(() => rooms.id).notNull(),
     assignedToId: uuid('assigned_to_id').references(() => users.id),
+    bookingId: uuid('booking_id').references(() => bookings.id, { onDelete: 'set null' }),
 
     taskType: text('task_type').default('CLEANING'),
     priority: text('priority').default('NORMAL'),
@@ -372,6 +392,7 @@ export const housekeepingTasks = pgTable('housekeeping_tasks', {
     index('hk_task_room_idx').on(table.roomId),
     index('hk_task_status_idx').on(table.status),
     index('hk_task_assigned_to_idx').on(table.assignedToId),
+    index('hk_task_booking_idx').on(table.bookingId),
 ]);
 
 export const payments = pgTable('payments', {
@@ -379,6 +400,7 @@ export const payments = pgTable('payments', {
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
     bookingId: uuid('booking_id').references(() => bookings.id),
     orderId: uuid('order_id').references(() => orders.id),
+    invoiceId: uuid('invoice_id').references(() => invoices.id, { onDelete: 'set null' }),
 
     amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
     paymentMethod: paymentMethodEnum('payment_method').notNull(),
@@ -391,6 +413,7 @@ export const payments = pgTable('payments', {
     index('payment_hotel_idx').on(table.hotelId),
     index('payment_booking_idx').on(table.bookingId),
     index('payment_order_idx').on(table.orderId),
+    index('payment_invoice_idx').on(table.invoiceId),
 ]);
 
 export const messages = pgTable('messages', {
@@ -456,6 +479,7 @@ export const auditLogs = pgTable('audit_logs', {
 export const guestProfiles = pgTable('guest_profiles', {
     id: uuid('id').defaultRandom().primaryKey(),
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    guestId: uuid('guest_id').references(() => guests.id, { onDelete: 'set null' }),
     fullName: text('full_name').notNull(),
     phone: text('phone').notNull(),
     email: text('email'),
@@ -471,6 +495,7 @@ export const guestProfiles = pgTable('guest_profiles', {
     index('guest_profile_hotel_idx').on(table.hotelId),
     index('guest_profile_phone_idx').on(table.phone),
     index('guest_profile_email_idx').on(table.email),
+    index('guest_profile_guest_idx').on(table.guestId),
 ]);
 
 // Added facilities table
@@ -552,6 +577,7 @@ export const folioCharges = pgTable('folio_charges', {
     id: serial('id').primaryKey(),
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
     bookingId: uuid('booking_id').references(() => bookings.id).notNull(),
+    orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
 
     date: date('date').notNull(),
     description: text('description').notNull(),
@@ -559,7 +585,11 @@ export const folioCharges = pgTable('folio_charges', {
     type: text('type').default('ROOM_CHARGE'),
 
     createdAt: timestamp('created_at').defaultNow()
-});
+}, (table) => [
+    index('folio_charges_hotel_id_idx').on(table.hotelId),
+    index('folio_charges_booking_id_idx').on(table.bookingId),
+    index('folio_charges_order_id_idx').on(table.orderId),
+]);
 
 export const nightAudits = pgTable('night_audits', {
     id: serial('id').primaryKey(),
@@ -630,7 +660,10 @@ export const notifications = pgTable('notifications', {
     metadata: json('metadata'),
 
     createdAt: timestamp('created_at').defaultNow()
-});
+}, (table) => [
+    index('notifications_hotel_id_idx').on(table.hotelId),
+    index('notifications_recipient_id_idx').on(table.recipientId),
+]);
 
 export const creditNotes = pgTable('credit_notes', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -649,7 +682,9 @@ export const creditNotes = pgTable('credit_notes', {
 
     createdById: uuid('created_by_id').references(() => users.id),
     createdAt: timestamp('created_at').defaultNow()
-});
+}, (table) => [
+    index('credit_notes_hotel_id_idx').on(table.hotelId),
+]);
 
 export const outlets = pgTable('outlets', {
     id: serial('id').primaryKey(),
@@ -671,7 +706,10 @@ export const staffAttendance = pgTable('staff_attendance', {
     date: date('date').notNull(),
     notes: text('notes'),
     createdAt: timestamp('created_at').defaultNow()
-});
+}, (table) => [
+    index('staff_attendance_hotel_id_idx').on(table.hotelId),
+    index('staff_attendance_user_id_idx').on(table.userId),
+]);
 
 export const pricingRules = pgTable('pricing_rules', {
     id: serial('id').primaryKey(),
@@ -726,11 +764,12 @@ export const travelAgents = pgTable('travel_agents', {
 
 
 
-export const restaurantTablesRelations = relations(restaurantTables, ({ one }) => ({
+export const restaurantTablesRelations = relations(restaurantTables, ({ one, many }) => ({
     hotel: one(hotels, {
         fields: [restaurantTables.hotelId],
         references: [hotels.id]
-    })
+    }),
+    orders: many(orders),
 }));
 
 
@@ -797,6 +836,11 @@ export const bookingsRelations = relations(bookings, ({ one, many }) => ({
         fields: [bookings.roomId],
         references: [rooms.id]
     }),
+    guest: one(guests, { fields: [bookings.guestId], references: [guests.id] }),
+    corporateAccount: one(corporateAccounts, { fields: [bookings.corporateAccountId], references: [corporateAccounts.id] }),
+    travelAgent: one(travelAgents, { fields: [bookings.travelAgentId], references: [travelAgents.id] }),
+    orders: many(orders),
+    payment: one(payments, { fields: [bookings.id], references: [payments.bookingId] }),
     createdBy: one(users, {
         fields: [bookings.createdById],
         references: [users.id]
@@ -805,9 +849,17 @@ export const bookingsRelations = relations(bookings, ({ one, many }) => ({
 }));
 
 export const ordersRelations = relations(orders, ({ one, many }) => ({
+    hotel: one(hotels, {
+        fields: [orders.hotelId],
+        references: [hotels.id]
+    }),
     room: one(rooms, {
         fields: [orders.roomId],
         references: [rooms.id]
+    }),
+    booking: one(bookings, {
+        fields: [orders.bookingId],
+        references: [bookings.id]
     }),
     createdBy: one(users, {
         fields: [orders.createdById],
@@ -817,6 +869,9 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
         fields: [orders.assignedToId],
         references: [users.id]
     }),
+    guest: one(guests, { fields: [orders.guestId], references: [guests.id] }),
+    restaurantTable: one(restaurantTables, { fields: [orders.restaurantTableId], references: [restaurantTables.id] }),
+    outlet: one(outlets, { fields: [orders.outletId], references: [outlets.id] }),
     items: many(orderItems),
     payments: many(payments)
 }));
@@ -870,7 +925,8 @@ export const housekeepingTasksRelations = relations(housekeepingTasks, ({ one })
     createdBy: one(users, {
         fields: [housekeepingTasks.createdById],
         references: [users.id]
-    })
+    }),
+    booking: one(bookings, { fields: [housekeepingTasks.bookingId], references: [bookings.id] })
 }));
 
 export const paymentsRelations = relations(payments, ({ one }) => ({
@@ -886,6 +942,7 @@ export const paymentsRelations = relations(payments, ({ one }) => ({
         fields: [payments.orderId],
         references: [orders.id]
     }),
+    invoice: one(invoices, { fields: [payments.invoiceId], references: [invoices.id] }),
     recordedBy: one(users, {
         fields: [payments.recordedById],
         references: [users.id]
@@ -917,7 +974,8 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
 }));
 
 export const guestProfilesRelations = relations(guestProfiles, ({ one }) => ({
-    hotel: one(hotels, { fields: [guestProfiles.hotelId], references: [hotels.id] })
+    hotel: one(hotels, { fields: [guestProfiles.hotelId], references: [hotels.id] }),
+    guest: one(guests, { fields: [guestProfiles.guestId], references: [guests.id] })
 }));
 
 
@@ -953,7 +1011,8 @@ export const folioChargesRelations = relations(folioCharges, ({ one }) => ({
     booking: one(bookings, {
         fields: [folioCharges.bookingId],
         references: [bookings.id]
-    })
+    }),
+    order: one(orders, { fields: [folioCharges.orderId], references: [orders.id] })
 }));
 
 export const backgroundJobsRelations = relations(backgroundJobs, ({ one }) => ({
@@ -1419,6 +1478,71 @@ export const channelSyncLogsRelations = relations(channelSyncLogs, ({ one }) => 
 
 export const revenueRulesRelations = relations(revenueRules, ({ one }) => ({
     hotel: one(hotels, { fields: [revenueRules.hotelId], references: [hotels.id] })
+}));
+
+// ============================================
+// MENU CATEGORIES
+// ============================================
+
+export const menuCategories = pgTable('menu_categories', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    sortOrder: integer('sort_order').default(0),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow()
+}, (table) => [
+    index('menu_cat_hotel_idx').on(table.hotelId),
+]);
+
+export const menuCategoriesRelations = relations(menuCategories, ({ one }) => ({
+    hotel: one(hotels, { fields: [menuCategories.hotelId], references: [hotels.id] })
+}));
+
+export const menuItemsRelations = relations(menuItems, ({ one }) => ({
+    hotel: one(hotels, { fields: [menuItems.hotelId], references: [hotels.id] }),
+    menuCategory: one(menuCategories, { fields: [menuItems.categoryId], references: [menuCategories.id] }),
+}));
+
+// ============================================
+// GUEST MANAGEMENT
+// ============================================
+
+export const guests = pgTable('guests', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+
+    fullName: text('full_name').notNull(),
+    phone: text('phone'), // Not unique because multiple hotels might share guests conceptualy, but separated by hotelId logic usually. For now, we keep it simple.
+    email: text('email'),
+    nationality: text('nationality'),
+
+    idType: text('id_type'), // Passport, National ID, etc.
+    idNumber: text('id_number'),
+
+    address: text('address'),
+    city: text('city'),
+    country: text('country'),
+
+    notes: text('notes'),
+
+    isVip: boolean('is_vip').default(false),
+    isBanned: boolean('is_banned').default(false),
+
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow()
+}, (table) => [
+    index('guest_hotel_idx').on(table.hotelId),
+    index('guest_phone_idx').on(table.phone),
+    index('guest_name_idx').on(table.fullName),
+]);
+
+export const guestsRelations = relations(guests, ({ one, many }) => ({
+    hotel: one(hotels, { fields: [guests.hotelId], references: [hotels.id] }),
+    bookings: many(bookings),
+    orders: many(orders),
 }));
 
 // ============================================

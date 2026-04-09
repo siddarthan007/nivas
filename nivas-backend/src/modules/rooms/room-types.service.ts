@@ -23,10 +23,12 @@ export const RoomTypesService = {
         });
         if (existing.length > 0) return existing;
 
-        const inserted = [];
-        for (const rt of DEFAULT_ROOM_TYPES) {
-            const [row] = await db.insert(roomTypes).values({ hotelId, ...rt }).returning();
-            inserted.push(row);
+        const inserted: Awaited<ReturnType<typeof db.query.roomTypes.findMany>> = [];
+        for (const roomType of DEFAULT_ROOM_TYPES) {
+            const [row] = await db.insert(roomTypes).values({ hotelId, ...roomType }).returning();
+            if (row) {
+                inserted.push(row);
+            }
         }
         return inserted;
     },
@@ -73,3 +75,4 @@ export const RoomTypesService = {
         return true;
     },
 };
+

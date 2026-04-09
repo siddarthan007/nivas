@@ -125,7 +125,7 @@ const Modal = ({
                     maxHeight: 'calc(100vh - 40px)', // Prevent going off screen
                     display: 'flex',
                     flexDirection: 'column',
-                    overflow: 'hidden' // Let body scroll
+                    overflow: 'visible' // Allow dropdowns to render outside modal bounds
                 }}
                 role="dialog"
                 aria-modal="true"

@@ -1,6 +1,7 @@
-import { Elysia } from 'elysia';
+import { Elysia, t } from 'elysia';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { NotificationsService } from './notifications.service';
+import { createResponse } from '../../utils/response.helper';
 
 export const notificationsController = new Elysia({ prefix: '/notifications' })
     .use(authMiddleware)
@@ -10,21 +11,22 @@ export const notificationsController = new Elysia({ prefix: '/notifications' })
             user!.hotelId!,
             user!.role?.name || ''
         );
-        return { status: 'success', data: list };
+        return createResponse(list, 'Notifications fetched');
     }, {
         isSignedIn: true,
         detail: { summary: 'Get unread notifications', tags: ['Notifications'] }
     })
     .patch('/:id/read', async ({ params, user }) => {
         await NotificationsService.markAsRead(params.id, user!.id);
-        return { status: 'success' };
+        return createResponse(null, 'Notification marked as read');
     }, {
         isSignedIn: true,
+        params: t.Object({ id: t.String() }),
         detail: { summary: 'Mark notification as read', tags: ['Notifications'] }
     })
     .post('/read-all', async ({ user }) => {
         await NotificationsService.markAllRead(user!.id, user!.role?.name || '');
-        return { status: 'success' };
+        return createResponse(null, 'All notifications marked as read');
     }, {
         isSignedIn: true,
         detail: { summary: 'Mark all as read', tags: ['Notifications'] }

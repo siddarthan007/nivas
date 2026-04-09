@@ -5,6 +5,8 @@ import { db } from '../../db';
 import { invoices, bookings, rooms, hotels, folioCharges, orders } from '../../db/schema';
 import NepaliDate from 'nepali-date-converter';
 import { PdfService } from '../../utils/pdf.service';
+import { NotFoundError } from '../../utils/errors';
+import { BookingsService } from '../bookings/bookings.service';
 
 /**
  * Invoice Service - Handles invoice number generation, creation, and data preparation
@@ -53,12 +55,7 @@ export const InvoiceService = {
         const discountAmount = data.discount ?? 0;
         const finalGrandTotal = billingSummary.grandTotal - discountAmount;
 
-        const booking = await db.query.bookings.findFirst({
-            where: eq(bookings.id, data.bookingId),
-            with: { room: true }
-        });
-
-        if (!booking) throw new Error('Booking not found');
+        const booking = await BookingsService.getBookingById(hotelId, data.bookingId);
 
         // 2. Transaction
         const newInvoice = await db.transaction(async (tx) => {
@@ -111,9 +108,11 @@ export const InvoiceService = {
     /**
      * Get invoice data with hotel branding
      */
-    async getInvoiceData(invoiceId: string) {
+    async getInvoiceData(invoiceId: string, hotelId?: number) {
         const invoice = await db.query.invoices.findFirst({
-            where: eq(invoices.id, invoiceId),
+            where: hotelId
+                ? and(eq(invoices.id, invoiceId), eq(invoices.hotelId, hotelId))
+                : eq(invoices.id, invoiceId),
             with: {
                 hotel: true,
                 booking: {
@@ -122,7 +121,7 @@ export const InvoiceService = {
             }
         });
 
-        if (!invoice) throw new Error('Invoice not found');
+        if (!invoice) throw new NotFoundError('Invoice');
 
         // Get folio charges
         const charges = await db.query.folioCharges.findMany({
@@ -267,8 +266,8 @@ export const InvoiceService = {
     /**
      * Generate PDF for an invoice
      */
-    async generatePdf(invoiceId: string): Promise<Buffer> {
-        const data = await this.getInvoiceData(invoiceId);
+    async generatePdf(invoiceId: string, hotelId?: number): Promise<Buffer> {
+        const data = await this.getInvoiceData(invoiceId, hotelId);
         const docDefinition = PdfService.generateInvoiceDefinition(data);
         return await PdfService.generatePdf(docDefinition);
     }

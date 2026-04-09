@@ -120,7 +120,8 @@ export const accountingController = new Elysia({ prefix: '/finance/accounting' }
      * Manually sync invoice to CBMS
      */
     .post('/cbms/sync/:invoiceId', async ({ params, user }) => {
-        return await CbmsService.syncInvoice(params.invoiceId, user!.hotelId!);
+        const result = await CbmsService.syncInvoice(params.invoiceId, user!.hotelId!);
+        return createResponse(result, 'CBMS sync completed');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.FINANCE.GENERATE_INVOICE,
@@ -131,7 +132,7 @@ export const accountingController = new Elysia({ prefix: '/finance/accounting' }
      */
     .post('/cbms/retry-failed', async ({ user }) => {
         const results = await CbmsService.retryFailedSyncs(user!.hotelId!);
-        return { status: 'success', data: results };
+        return createResponse(results, 'Failed CBMS syncs retried');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.FINANCE.VIEW_RECORDS,
@@ -157,14 +158,11 @@ export const accountingController = new Elysia({ prefix: '/finance/accounting' }
         if (query.ad) {
             const adDate = new Date(query.ad);
             const bsDate = new NepaliDate(adDate);
-            return {
-                status: 'success',
-                data: {
-                    ad: query.ad,
-                    bs: bsDate.format('YYYY-MM-DD'),
-                    bsFull: bsDate.format('DD MMMM YYYY', 'np')
-                }
-            };
+            return createResponse({
+                ad: query.ad,
+                bs: bsDate.format('YYYY-MM-DD'),
+                bsFull: bsDate.format('DD MMMM YYYY', 'np')
+            }, 'Date converted');
         } else if (query.bs) {
             const parts = query.bs.split('-').map(Number);
             const year = parts[0] ?? 2081;
@@ -172,16 +170,13 @@ export const accountingController = new Elysia({ prefix: '/finance/accounting' }
             const day = parts[2] ?? 1;
             const bsDate = new NepaliDate(year, month - 1, day);
             const adDate = bsDate.toJsDate();
-            return {
-                status: 'success',
-                data: {
-                    bs: query.bs,
-                    ad: adDate.toISOString().split('T')[0],
-                    adFull: adDate.toLocaleDateString('en-US', { dateStyle: 'long' })
-                }
-            };
+            return createResponse({
+                bs: query.bs,
+                ad: adDate.toISOString().split('T')[0],
+                adFull: adDate.toLocaleDateString('en-US', { dateStyle: 'long' })
+            }, 'Date converted');
         }
-        return { status: 'error', message: 'Provide either ad or bs date parameter' };
+        throw new ValidationError('Provide either ad or bs date parameter');
     }, {
         isSignedIn: true,
         query: t.Object({

@@ -7,15 +7,34 @@ export const AttendanceService = {
     async clockIn(hotelId: number, userId: string) {
         const today = new Date().toISOString().split('T')[0];
 
-        const existing = await db.query.staffAttendance.findFirst({
+        // Auto-close stale sessions from previous days
+        const staleSessions = await db.query.staffAttendance.findMany({
             where: and(
                 eq(staffAttendance.userId, userId),
                 isNull(staffAttendance.clockOut)
             )
         });
+        for (const stale of staleSessions) {
+            const sessionDate = stale.date ? new Date(stale.date).toISOString().split('T')[0] : null;
+            if (sessionDate && sessionDate !== today) {
+                // Auto-close with end-of-day time
+                await db.update(staffAttendance)
+                    .set({ clockOut: new Date(sessionDate + 'T23:59:59'), notes: 'Auto-closed (missed clock-out)' })
+                    .where(eq(staffAttendance.id, stale.id));
+            }
+        }
+
+        // Check for existing today session
+        const existing = await db.query.staffAttendance.findFirst({
+            where: and(
+                eq(staffAttendance.userId, userId),
+                eq(staffAttendance.date, sql`${today}::date`),
+                isNull(staffAttendance.clockOut)
+            )
+        });
 
         if (existing) {
-            throw new BusinessLogicError('You are already clocked in');
+            throw new BusinessLogicError('You are already clocked in today');
         }
 
         const [entry] = await db.insert(staffAttendance).values({

@@ -5,6 +5,8 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import PageContainer from '@/components/layout/PageContainer';
 import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
 import { useAttendance, type AttendanceEntry } from '@/lib/hooks/useAttendance';
 import {
     Clock,
@@ -18,7 +20,8 @@ import {
     Filter,
     RefreshCw,
     Loader2,
-    Users
+    Users,
+    MoreVertical
 } from 'lucide-react';
 
 // Status badge helper
@@ -43,7 +46,7 @@ const formatElapsedTime = (startTime: string): string => {
     return `${hours}h ${mins}m`;
 };
 
-// Clock widget component
+// Compact Horizontal Clock Widget
 function ClockWidget({ isClocked, clockInTime, onClockIn, onClockOut, isLoading }: {
     isClocked: boolean;
     clockInTime: string | null;
@@ -77,75 +80,62 @@ function ClockWidget({ isClocked, clockInTime, onClockIn, onClockOut, isLoading 
             backgroundColor: 'var(--notion-bg)',
             border: '1px solid var(--notion-border)',
             borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-6)',
-            textAlign: 'center',
-            boxShadow: 'var(--shadow-md)'
+            padding: 'var(--space-5)',
+            boxShadow: 'var(--shadow-sm)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 'var(--space-4)',
+            flexWrap: 'wrap'
         }}>
-            {/* Current Time */}
-            <div style={{ marginBottom: 'var(--space-4)' }}>
-                <div style={{ fontSize: '48px', fontWeight: '700', color: 'var(--notion-text)', fontFamily: 'monospace' }}>
-                    {time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+            {/* Time Display */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+                <div style={{
+                    backgroundColor: 'var(--notion-bg-secondary)',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--notion-border)'
+                }}>
+                    <div style={{ fontSize: '24px', fontWeight: '700', color: 'var(--notion-text)', fontFamily: 'monospace', lineHeight: 1 }}>
+                        {time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                    </div>
                 </div>
-                <div style={{ fontSize: '14px', color: 'var(--notion-text-secondary)' }}>
-                    {time.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                <div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>
+                        {time.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
+                        {isClocked ? `Clocked in for ${elapsedTime}` : 'Not clocked in'}
+                    </div>
                 </div>
             </div>
 
-            {/* Status */}
-            <div style={{
-                padding: 'var(--space-3)',
-                backgroundColor: isClocked ? 'var(--notion-green-bg)' : 'var(--notion-yellow-bg)',
-                borderRadius: 'var(--radius-md)',
-                marginBottom: 'var(--space-4)'
-            }}>
-                <div style={{
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    color: isClocked ? 'var(--notion-green)' : 'var(--notion-yellow)'
-                }}>
-                    {isClocked ? (
-                        <>
-                            <CheckCircle2 size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
-                            Clocked In • Working for {elapsedTime}
-                        </>
-                    ) : (
-                        <>
-                            <Clock size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
-                            Not Clocked In
-                        </>
-                    )}
-                </div>
-                {clockInTime && (
-                    <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', marginTop: '4px' }}>
-                        Clock-in time: {new Date(clockInTime).toLocaleTimeString()}
-                    </div>
+            {/* Action Button */}
+            <div style={{ minWidth: '140px' }}>
+                {isClocked ? (
+                    <Button
+                        variant="danger"
+                        size="lg"
+                        style={{ width: '100%' }}
+                        onClick={onClockOut}
+                        disabled={isLoading}
+                        icon={isLoading ? <Loader2 size={16} className="animate-spin" /> : <LogOut size={16} />}
+                    >
+                        Clock Out
+                    </Button>
+                ) : (
+                    <Button
+                        variant="primary"
+                        size="lg"
+                        style={{ width: '100%', backgroundColor: 'var(--notion-green)' }}
+                        onClick={onClockIn}
+                        disabled={isLoading}
+                        icon={isLoading ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
+                    >
+                        Clock In
+                    </Button>
                 )}
             </div>
-
-            {/* Action Buttons */}
-            {isClocked ? (
-                <Button
-                    variant="danger"
-                    size="lg"
-                    style={{ width: '100%' }}
-                    onClick={onClockOut}
-                    disabled={isLoading}
-                    icon={isLoading ? <Loader2 size={18} className="animate-spin" /> : <LogOut size={18} />}
-                >
-                    Clock Out
-                </Button>
-            ) : (
-                <Button
-                    variant="primary"
-                    size="lg"
-                    style={{ width: '100%', backgroundColor: 'var(--notion-green)' }}
-                    onClick={onClockIn}
-                    disabled={isLoading}
-                    icon={isLoading ? <Loader2 size={18} className="animate-spin" /> : <LogIn size={18} />}
-                >
-                    Clock In
-                </Button>
-            )}
         </div>
     );
 }
@@ -160,22 +150,23 @@ function StatCard({ label, value, icon: Icon, color }: { label: string; value: n
             padding: 'var(--space-4)',
             display: 'flex',
             alignItems: 'center',
-            gap: 'var(--space-3)'
+            gap: 'var(--space-3)',
+            boxShadow: 'var(--shadow-sm)'
         }}>
             <div style={{
-                width: '40px',
-                height: '40px',
+                width: '36px',
+                height: '36px',
                 borderRadius: 'var(--radius-md)',
-                backgroundColor: `${color}20`,
+                backgroundColor: `${color}15`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
             }}>
-                <Icon size={20} color={color} />
+                <Icon size={18} color={color} />
             </div>
             <div>
-                <div style={{ fontSize: '24px', fontWeight: '700', color: 'var(--notion-text)' }}>{value}</div>
-                <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{label}</div>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--notion-text)' }}>{value}</div>
+                <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>{label}</div>
             </div>
         </div>
     );
@@ -267,14 +258,13 @@ export default function AttendancePage() {
     return (
         <DashboardLayout>
             <PageContainer>
-                <div style={{ padding: 'var(--space-6)' }}>
+                <div style={{ padding: 'var(--space-6)', maxWidth: '1200px', margin: '0 auto' }}>
                     {/* Header */}
                     <div style={{
                         display: 'flex',
                         justifyContent: 'space-between',
-                        alignItems: 'flex-start',
+                        alignItems: 'center',
                         marginBottom: 'var(--space-6)',
-                        flexWrap: 'wrap',
                         gap: 'var(--space-3)'
                     }}>
                         <div>
@@ -290,7 +280,7 @@ export default function AttendancePage() {
                                 Staff Attendance
                             </h1>
                             <p style={{ color: 'var(--notion-text-secondary)', fontSize: '14px' }}>
-                                Track staff check-ins, check-outs, and attendance history
+                                Manage daily staff attendance and shifts
                             </p>
                         </div>
                         <Button
@@ -316,175 +306,164 @@ export default function AttendancePage() {
                         </div>
                     )}
 
-                    {/* Main Grid - responsive */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 'var(--space-6)' }}>
-                        {/* Left Column - Clock Widget */}
-                        <div style={{ maxWidth: '400px' }}> {/* Limit width for better alignment */}
-                            <ClockWidget
-                                isClocked={isClocked}
-                                clockInTime={currentEntry?.clockIn || null}
-                                onClockIn={handleClockIn}
-                                onClockOut={handleClockOut}
-                                isLoading={isClocking}
-                            />
+                    {/* Top Row: Clock & Stats */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
+                        {/* Clock Widget */}
+                        <ClockWidget
+                            isClocked={isClocked}
+                            clockInTime={currentEntry?.clockIn || null}
+                            onClockIn={handleClockIn}
+                            onClockOut={handleClockOut}
+                            isLoading={isClocking}
+                        />
+
+                        {/* Quick Stats - 1x4 horizontal row */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'var(--space-3)' }}>
+                            <StatCard label="Present" value={stats.present} icon={CheckCircle2} color="var(--notion-green)" />
+                            <StatCard label="Absent" value={stats.absent} icon={XCircle} color="var(--notion-red)" />
+                            <StatCard label="Late" value={stats.late} icon={Clock} color="var(--notion-yellow)" />
+                            <StatCard label="On Leave" value={stats.onLeave} icon={Calendar} color="var(--notion-blue)" />
+                        </div>
+                    </div>
+
+                    {/* Table Section */}
+                    <div style={{
+                        backgroundColor: 'var(--notion-bg)',
+                        border: '1px solid var(--notion-border)',
+                        borderRadius: 'var(--radius-lg)',
+                        overflow: 'hidden' // contain children
+                    }}>
+                        {/* Filters Bar */}
+                        <div style={{
+                            padding: 'var(--space-4)',
+                            borderBottom: '1px solid var(--notion-border)',
+                            display: 'flex',
+                            gap: 'var(--space-3)',
+                            flexWrap: 'wrap',
+                            alignItems: 'center'
+                        }}>
+                            <div style={{ flex: 1, minWidth: '200px' }}>
+                                <Input
+                                    type="text"
+                                    placeholder="Search staff..."
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    icon={<Search size={16} />}
+                                />
+                            </div>
+
+                            <div style={{ position: 'relative', minWidth: '150px' }}>
+                                <Filter size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--notion-text-secondary)' }} />
+                                <Select
+                                    value={filterDept}
+                                    onChange={e => setFilterDept(e.target.value)}
+                                    options={departments.map(dept => ({ value: dept, label: dept }))}
+                                    fullWidth
+                                />
+                            </div>
                         </div>
 
-                        {/* Right Column - Stats & Table */}
-                        <div style={{ flex: 1 }}>
-                            {/* Stats Row - responsive */}
-                            <div style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                                gap: 'var(--space-3)',
-                                marginBottom: 'var(--space-6)'
-                            }}>
-                                <StatCard label="Present" value={stats.present} icon={CheckCircle2} color="var(--notion-green)" />
-                                <StatCard label="Absent" value={stats.absent} icon={XCircle} color="var(--notion-red)" />
-                                <StatCard label="Late" value={stats.late} icon={Clock} color="var(--notion-yellow)" />
-                                <StatCard label="On Leave" value={stats.onLeave} icon={Calendar} color="var(--notion-blue)" />
-                            </div>
-
-                            {/* Filters */}
-                            <div style={{
-                                display: 'flex',
-                                gap: 'var(--space-4)',
-                                marginBottom: 'var(--space-4)',
-                                flexWrap: 'wrap'
-                            }}>
-                                <div style={{ position: 'relative', flex: 1, minWidth: '200px', maxWidth: '300px' }}>
-                                    <Search size={16} style={{
-                                        position: 'absolute',
-                                        left: '12px',
-                                        top: '50%',
-                                        transform: 'translateY(-50%)',
-                                        color: 'var(--notion-text-secondary)'
-                                    }} />
-                                    <input
-                                        type="text"
-                                        placeholder="Search staff..."
-                                        value={searchQuery}
-                                        onChange={e => setSearchQuery(e.target.value)}
-                                        style={{
-                                            width: '100%',
-                                            padding: '8px 12px 8px 36px',
-                                            fontSize: '14px',
-                                            border: '1px solid var(--notion-border)',
-                                            borderRadius: 'var(--radius-md)',
-                                            backgroundColor: 'var(--notion-bg)',
-                                            color: 'var(--notion-text)',
-                                            outline: 'none'
-                                        }}
-                                    />
-                                </div>
-
-                                <div style={{ position: 'relative' }}>
-                                    <Filter size={16} style={{
-                                        position: 'absolute',
-                                        left: '12px',
-                                        top: '50%',
-                                        transform: 'translateY(-50%)',
-                                        color: 'var(--notion-text-secondary)'
-                                    }} />
-                                    <select
-                                        value={filterDept}
-                                        onChange={e => setFilterDept(e.target.value)}
-                                        style={{
-                                            padding: '8px 12px 8px 36px',
-                                            fontSize: '14px',
-                                            border: '1px solid var(--notion-border)',
-                                            borderRadius: 'var(--radius-md)',
-                                            backgroundColor: 'var(--notion-bg)',
-                                            color: 'var(--notion-text)',
-                                            outline: 'none',
-                                            cursor: 'pointer',
-                                            appearance: 'none',
-                                            paddingRight: '32px'
-                                        }}
-                                    >
-                                        {departments.map(dept => (
-                                            <option key={dept} value={dept}>{dept}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-
-                            {/* Table */}
-                            <div style={{
-                                backgroundColor: 'var(--notion-bg)',
-                                border: '1px solid var(--notion-border)',
-                                borderRadius: 'var(--radius-lg)',
-                                overflow: 'hidden'
-                            }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                    <thead>
-                                        <tr style={{ backgroundColor: 'var(--notion-bg-secondary)', borderBottom: '1px solid var(--notion-border)' }}>
-                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Staff</th>
-                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Department</th>
-                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Clock In</th>
-                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Clock Out</th>
-                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Status</th>
+                        {/* Full Width Table */}
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead>
+                                    <tr style={{ backgroundColor: 'var(--notion-bg-secondary)', borderBottom: '1px solid var(--notion-border)' }}>
+                                        <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Staff Member</th>
+                                        <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Department</th>
+                                        <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Clock In / Out</th>
+                                        <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Status</th>
+                                        <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {isLoading ? (
+                                        <tr>
+                                            <td colSpan={5} style={{ padding: '24px' }}>
+                                                <TableSkeleton />
+                                            </td>
                                         </tr>
-                                    </thead>
-                                    <tbody>
-                                        {isLoading ? (
-                                            <tr>
-                                                <td colSpan={5} style={{ padding: '20px' }}>
-                                                    <TableSkeleton />
-                                                </td>
-                                            </tr>
-                                        ) : filteredEntries.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
-                                                    <Users size={32} style={{ marginBottom: '8px', opacity: 0.5 }} />
-                                                    <div>No attendance records found</div>
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            filteredEntries.map(record => {
-                                                const statusStyle = getStatusStyle(record.status);
-                                                const StatusIcon = statusStyle.icon;
-                                                return (
-                                                    <tr key={record.id} style={{ borderBottom: '1px solid var(--notion-divider)' }}>
-                                                        <td style={{ padding: '12px 16px' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                                <UserAvatar name={record.staffName || 'Unknown'} />
-                                                                <span style={{ fontSize: '14px', fontWeight: '500' }}>
+                                    ) : filteredEntries.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={5} style={{ padding: '60px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
+                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                                                    <Users size={40} style={{ opacity: 0.2 }} />
+                                                    <span>No attendance records found</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        filteredEntries.map(record => {
+                                            const statusStyle = getStatusStyle(record.status);
+                                            const StatusIcon = statusStyle.icon;
+                                            return (
+                                                <tr key={record.id} style={{ borderBottom: '1px solid var(--notion-divider)' }}>
+                                                    <td style={{ padding: '12px 20px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                            <UserAvatar name={record.staffName || 'Unknown'} />
+                                                            <div>
+                                                                <div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--notion-text)' }}>
                                                                     {record.staffName || 'Unknown Staff'}
-                                                                </span>
+                                                                </div>
+                                                                <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
+                                                                    ID: {record.id.toString().slice(0, 6)}
+                                                                </div>
                                                             </div>
-                                                        </td>
-                                                        <td style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
-                                                            {record.department || '-'}
-                                                        </td>
-                                                        <td style={{ padding: '12px 16px', fontSize: '13px' }}>
-                                                            {record.clockIn ? new Date(record.clockIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '-'}
-                                                        </td>
-                                                        <td style={{ padding: '12px 16px', fontSize: '13px' }}>
-                                                            {record.clockOut ? new Date(record.clockOut).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '-'}
-                                                        </td>
-                                                        <td style={{ padding: '12px 16px' }}>
-                                                            <span style={{
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap: '4px',
-                                                                padding: '4px 10px',
-                                                                fontSize: '11px',
-                                                                fontWeight: '600',
-                                                                borderRadius: 'var(--radius-full)',
-                                                                backgroundColor: statusStyle.bg,
-                                                                color: statusStyle.text
-                                                            }}>
-                                                                <StatusIcon size={12} />
-                                                                {record.status}
-                                                            </span>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td style={{ padding: '12px 20px', fontSize: '14px', color: 'var(--notion-text)' }}>
+                                                        <span style={{
+                                                            padding: '2px 8px',
+                                                            backgroundColor: 'var(--notion-bg-secondary)',
+                                                            borderRadius: '4px',
+                                                            fontSize: '12px',
+                                                            border: '1px solid var(--notion-border)'
+                                                        }}>
+                                                            {record.department || 'General'}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ padding: '12px 20px' }}>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '13px' }}>
+                                                            {record.clockIn ? (
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--notion-green)' }}>
+                                                                    <LogIn size={12} />
+                                                                    {new Date(record.clockIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                                                </div>
+                                                            ) : <span style={{ color: 'var(--notion-text-tertiary)' }}>--:--</span>}
+
+                                                            {record.clockOut ? (
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--notion-red)' }}>
+                                                                    <LogOut size={12} />
+                                                                    {new Date(record.clockOut).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                                                </div>
+                                                            ) : <span style={{ color: 'var(--notion-text-tertiary)' }}>--:--</span>}
+                                                        </div>
+                                                    </td>
+                                                    <td style={{ padding: '12px 20px' }}>
+                                                        <span style={{
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '6px',
+                                                            padding: '4px 10px',
+                                                            fontSize: '12px',
+                                                            fontWeight: '500',
+                                                            borderRadius: 'var(--radius-full)',
+                                                            backgroundColor: statusStyle.bg,
+                                                            color: statusStyle.text,
+                                                            border: `1px solid ${statusStyle.bg}` // slightly darker border check if needed
+                                                        }}>
+                                                            <StatusIcon size={12} />
+                                                            {record.status}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ padding: '12px 20px', textAlign: 'right' }}>
+                                                        <Button variant="ghost" size="sm" icon={<MoreVertical size={16} />} />
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>

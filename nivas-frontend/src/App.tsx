@@ -1,9 +1,20 @@
 import { lazy, Suspense } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/lib/contexts/AuthContext";
 import { usePathname } from "@/lib/router";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import LicenseGuard from "@/components/auth/LicenseGuard";
 import { PERMISSIONS } from "@/lib/constants/permissions";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 // Lazy-loaded page imports for code splitting
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
@@ -39,6 +50,8 @@ const FacilitiesPage = lazy(() => import("@/pages/operations/FacilitiesPage"));
 const CorporatePage = lazy(() => import("@/pages/corporate/CorporatePage"));
 const ChannelManagerPage = lazy(() => import("@/pages/saas/ChannelManagerPage"));
 const SaaSBillingPage = lazy(() => import("@/pages/saas/SaaSBillingPage"));
+const GuestPage = lazy(() => import("@/pages/guests/GuestPage"));
+const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 const CommandPalette = lazy(() => import("@/components/ui/CommandPalette"));
 
 // CSS imports
@@ -83,7 +96,9 @@ const protectedRoutes: Record<string, RouteConfig> = {
   '/dashboard/operations/facilities': { component: FacilitiesPage, permission: PERMISSIONS.OPERATIONS.SETUP_FACILITIES },
   '/dashboard/corporate': { component: CorporatePage, permission: PERMISSIONS.CRM.MANAGE_GUESTS },
   '/dashboard/channel-manager': { component: ChannelManagerPage, permission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS },
-  '/dashboard/saas-billing': { component: SaaSBillingPage },
+  '/dashboard/saas-billing': { component: SaaSBillingPage, permission: PERMISSIONS.FINANCE.VIEW_RECORDS },
+  '/dashboard/guests': { component: GuestPage, permission: PERMISSIONS.CRM.VIEW_GUESTS },
+  '/dashboard/profile': { component: ProfilePage },
 };
 
 function PageLoadingFallback() {
@@ -154,14 +169,25 @@ function AppContent() {
     );
   }
 
-  // Fallback for /dashboard prefix
   if (pathname.startsWith('/dashboard')) {
     return (
       <ProtectedRoute>
         <LicenseGuard>
-          <Suspense fallback={<PageLoadingFallback />}>
-            <DashboardPage />
-          </Suspense>
+          <div style={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'var(--notion-bg)',
+            flexDirection: 'column',
+            gap: 'var(--space-4)',
+          }}>
+            <h1 style={{ fontSize: '48px', fontWeight: '700', color: 'var(--notion-text)' }}>404</h1>
+            <p style={{ fontSize: '14px', color: 'var(--notion-text-secondary)' }}>Page not found</p>
+            <a href="/dashboard" style={{ color: 'var(--notion-blue)', textDecoration: 'none', fontSize: '14px' }}>
+              Go to Dashboard
+            </a>
+          </div>
         </LicenseGuard>
       </ProtectedRoute>
     );
@@ -202,23 +228,65 @@ function AppContent() {
 }
 
 import { CommandPaletteProvider } from "@/lib/contexts/CommandPaletteContext";
+import { WebSocketProvider } from "@/lib/contexts/WebSocketContext";
 import GlobalKeyboardShortcuts from "@/components/ui/GlobalKeyboardShortcuts";
 import ErrorBoundary from "@/components/ui/ErrorBoundary";
 import OfflineBanner from "@/components/ui/OfflineBanner";
+import { Toaster, toast } from 'sonner';
+import { useEffect } from 'react';
+import { ApiError } from '@/lib/api';
+
+function GlobalErrorHandler() {
+  useEffect(() => {
+    const handler = (event: PromiseRejectionEvent) => {
+      const error = event.reason;
+      if (error instanceof ApiError) {
+        toast.error(error.message || 'An unexpected error occurred');
+        event.preventDefault();
+      } else if (error instanceof Error) {
+        if (error.message.includes('fetch') || error.message.includes('network')) {
+          toast.error('Network error. Please check your connection.');
+        } else {
+          toast.error(error.message || 'Something went wrong');
+        }
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('unhandledrejection', handler);
+    return () => window.removeEventListener('unhandledrejection', handler);
+  }, []);
+  return null;
+}
 
 export function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <CommandPaletteProvider>
-          <GlobalKeyboardShortcuts />
-          <AppContent />
-          <Suspense fallback={null}>
-            <CommandPalette />
-          </Suspense>
-          <OfflineBanner />
-        </CommandPaletteProvider>
-      </AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <WebSocketProvider>
+          <CommandPaletteProvider>
+            <GlobalKeyboardShortcuts />
+            <GlobalErrorHandler />
+            <AppContent />
+            <Suspense fallback={null}>
+              <CommandPalette />
+            </Suspense>
+            <OfflineBanner />
+            <Toaster
+              position="bottom-right"
+              richColors
+              closeButton
+              toastOptions={{
+                style: {
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '13px',
+                },
+              }}
+            />
+          </CommandPaletteProvider>
+          </WebSocketProvider>
+        </AuthProvider>
+      </QueryClientProvider>
     </ErrorBoundary>
   );
 }

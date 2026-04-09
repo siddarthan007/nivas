@@ -1,6 +1,6 @@
 import { db } from '../../db';
-import { rooms } from '../../db/schema';
-import { eq } from 'drizzle-orm';
+import { rooms, bookings } from '../../db/schema';
+import { eq, and } from 'drizzle-orm';
 import { ValidationError, UnauthorizedError } from '../../utils/errors';
 import { PERMISSIONS } from '../../config/permissions';
 
@@ -30,6 +30,13 @@ export const GuestAuthService = {
             throw new UnauthorizedError('Invalid pin');
         }
 
+        const activeBooking = await db.query.bookings.findFirst({
+            where: and(
+                eq(bookings.roomId, room.id),
+                eq(bookings.status, 'CHECKED_IN')
+            ),
+        });
+
         const accessToken = await jwt.sign({
             id: `guest-${room.id}`,
             hotelId: room.hotelId,
@@ -43,8 +50,14 @@ export const GuestAuthService = {
             room: {
                 id: room.id,
                 number: room.number,
-                type: room.type
-            }
+                type: room.type,
+            },
+            booking: activeBooking ? {
+                id: activeBooking.id,
+                guestName: activeBooking.guestName,
+                checkInDate: activeBooking.checkIn.toISOString(),
+                checkOutDate: activeBooking.checkOut.toISOString(),
+            } : null,
         };
     }
 };

@@ -16,10 +16,11 @@ export const kotController = new Elysia({ prefix: '/orders/kot' })
                 eq(kotPrinters.id, parseInt(params.id)),
                 eq(kotPrinters.hotelId, user!.hotelId!)
             ));
-        return { status: 'success', message: 'Printer deleted' };
+        return createResponse(null, 'Printer deleted');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS,
+        params: t.Object({ id: t.String() }),
         detail: { summary: 'Delete KOT printer', tags: ['KOT'] }
     })
     .get('/route/:orderId', async ({ params, user }) => {
@@ -99,20 +100,18 @@ export const kotController = new Elysia({ prefix: '/orders/kot' })
             itemCount: r.items.length
         }));
 
-        return {
-            status: 'success',
-            data: {
-                orderNumber: order.orderNumber,
-                orderType: order.orderType,
-                createdAt: order.createdAt,
-                totalItems: (order.items || []).length,
-                printerCount: kotData.length,
-                routing: kotData
-            }
-        };
+        return createResponse({
+            orderNumber: order.orderNumber,
+            orderType: order.orderType,
+            createdAt: order.createdAt,
+            totalItems: (order.items || []).length,
+            printerCount: kotData.length,
+            routing: kotData
+        }, 'KOT routing fetched');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.ORDERS.READ,
+        params: t.Object({ orderId: t.String() }),
         detail: { summary: 'Get KOT routing for order', tags: ['KOT'] }
     })
     .post('/printers/:id/test', async ({ params, user }) => {
@@ -125,18 +124,15 @@ export const kotController = new Elysia({ prefix: '/orders/kot' })
 
         if (!printer) throw new NotFoundError('Printer');
 
-        return {
-            status: 'success',
-            data: {
-                printer: printer.name,
-                ipAddress: printer.ipAddress,
-                port: printer.port,
-                testResult: 'CONNECTION_OK',
-                message: 'Test print sent successfully'
-            }
-        };
+        return createResponse({
+            printer: printer.name,
+            ipAddress: printer.ipAddress,
+            port: printer.port,
+            testResult: 'CONNECTION_OK',
+        }, 'Test print sent successfully');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS,
+        params: t.Object({ id: t.String() }),
         detail: { summary: 'Test printer connection', tags: ['KOT'] }
     });

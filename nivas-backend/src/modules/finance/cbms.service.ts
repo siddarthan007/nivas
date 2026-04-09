@@ -62,7 +62,7 @@ export const CbmsService = {
         }
 
         const invoice = await db.query.invoices.findFirst({
-            where: eq(invoices.id, invoiceId)
+            where: and(eq(invoices.id, invoiceId), eq(invoices.hotelId, hotelId))
         });
 
         if (!invoice) {
@@ -107,7 +107,7 @@ export const CbmsService = {
         }
 
         const creditNote = await db.query.creditNotes.findFirst({
-            where: eq(creditNotes.id, creditNoteId),
+            where: and(eq(creditNotes.id, creditNoteId), eq(creditNotes.hotelId, hotelId)),
             with: { originalInvoice: true }
         });
 

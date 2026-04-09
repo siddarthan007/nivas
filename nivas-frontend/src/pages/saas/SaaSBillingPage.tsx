@@ -1,55 +1,63 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { useAuth } from '@/lib/contexts/AuthContext';
-import DashboardLayout from '@/components/layout/DashboardLayout';
-import PageContainer from '@/components/layout/PageContainer';
-import Button from '@/components/ui/Button';
-import { useSaaSBilling, type SubscriptionPackage, type Payment, type CreatePackagePayload, type RecordPaymentPayload } from '@/lib/hooks/useSaaSBilling';
+import { useMemo, useState } from 'react';
 import {
     CreditCard,
     Package,
-    Plus,
     Check,
     Star,
     Zap,
     Crown,
-    Building2,
     Calendar,
-    DollarSign,
     Download,
     Receipt,
     RefreshCw,
     Loader2,
     AlertCircle,
-    X,
-    Trash2
+    ShieldCheck,
 } from 'lucide-react';
-import Modal from '@/components/ui/Modal';
-import Input from '@/components/ui/Input';
-import Select from '@/components/ui/Select';
+import DashboardLayout from '@/components/layout/DashboardLayout';
+import PageContainer from '@/components/layout/PageContainer';
+import Button from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { api } from '@/lib/api';
+import { usePermissions } from '@/lib/hooks/usePermissions';
+import { useSaaSBilling, type SubscriptionPackage, type Payment } from '@/lib/hooks/useSaaSBilling';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
-// Helpers
 const getPackageIcon = (name: string) => {
-    const lowerName = (name || '').toLowerCase();
+    const lowerName = name.toLowerCase();
     if (lowerName.includes('starter')) return Zap;
     if (lowerName.includes('pro') || lowerName.includes('professional')) return Star;
     if (lowerName.includes('enterprise')) return Crown;
     return Package;
 };
 
-const formatDate = (dateStr: string | null | undefined) => {
+const formatDate = (dateStr?: string | null) => {
     if (!dateStr) return '-';
-    const d = new Date(dateStr);
-    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const date = new Date(dateStr);
+    return Number.isNaN(date.getTime())
+        ? '-'
+        : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
-const formatCurrency = (amount: number | null | undefined) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount || 0);
 
-// Tab Navigation
+const formatCurrency = (amount?: number | null, currency = 'NPR') => {
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency,
+        maximumFractionDigits: 2,
+    }).format(amount || 0);
+};
+
+const formatBillingCycle = (value?: string) => {
+    if (!value) return 'Monthly';
+    return value.replaceAll('_', ' ').toLowerCase().replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
+};
+
 function TabNav({ activeTab, onTabChange }: { activeTab: string; onTabChange: (tab: string) => void }) {
     const tabs = [
         { id: 'packages', label: 'Packages', icon: Package },
-        { id: 'payments', label: 'Payments', icon: Receipt }
+        { id: 'payments', label: 'Payments', icon: Receipt },
     ];
 
     return (
@@ -59,9 +67,9 @@ function TabNav({ activeTab, onTabChange }: { activeTab: string; onTabChange: (t
             backgroundColor: 'var(--notion-bg-secondary)',
             padding: '4px',
             borderRadius: 'var(--radius-md)',
-            marginBottom: 'var(--space-4)'
+            marginBottom: 'var(--space-4)',
         }}>
-            {tabs.map(tab => (
+            {tabs.map((tab) => (
                 <button
                     key={tab.id}
                     onClick={() => onTabChange(tab.id)}
@@ -76,7 +84,7 @@ function TabNav({ activeTab, onTabChange }: { activeTab: string; onTabChange: (t
                         backgroundColor: activeTab === tab.id ? 'var(--notion-bg)' : 'transparent',
                         border: 'none',
                         borderRadius: 'var(--radius-sm)',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
                     }}
                 >
                     <tab.icon size={16} />
@@ -87,26 +95,34 @@ function TabNav({ activeTab, onTabChange }: { activeTab: string; onTabChange: (t
     );
 }
 
-// Package Card
-function PackageCard({ pkg, onSubscribe, isSubscribing }: {
+function PackageCard({
+    pkg,
+    isCurrentPlan,
+    canSubscribe,
+    isSubscribing,
+    onSubscribe,
+}: {
     pkg: SubscriptionPackage;
-    onSubscribe: (id: number) => void;
+    isCurrentPlan: boolean;
+    canSubscribe: boolean;
     isSubscribing: boolean;
+    onSubscribe: (id: number, billingCycle: 'MONTHLY' | 'ANNUAL' | '2_YEAR' | '3_YEAR') => void;
 }) {
     const Icon = getPackageIcon(pkg.name);
-    const isPopular = (pkg.name || '').toLowerCase().includes('pro');
+    const isPopular = pkg.name.toLowerCase().includes('pro');
 
     return (
         <div style={{
             backgroundColor: 'var(--notion-bg)',
-            border: isPopular ? '2px solid var(--notion-blue)' : '1px solid var(--notion-border)',
+            border: isCurrentPlan || isPopular ? '2px solid var(--notion-blue)' : '1px solid var(--notion-border)',
             borderRadius: 'var(--radius-lg)',
             padding: 'var(--space-5)',
             position: 'relative',
             display: 'flex',
-            flexDirection: 'column'
+            flexDirection: 'column',
+            gap: 'var(--space-4)',
         }}>
-            {isPopular && (
+            {(isCurrentPlan || isPopular) && (
                 <span style={{
                     position: 'absolute',
                     top: '-10px',
@@ -117,42 +133,44 @@ function PackageCard({ pkg, onSubscribe, isSubscribing }: {
                     fontWeight: '600',
                     backgroundColor: 'var(--notion-blue)',
                     color: 'white',
-                    borderRadius: 'var(--radius-full)'
+                    borderRadius: '999px',
                 }}>
-                    Most Popular
+                    {isCurrentPlan ? 'Current Plan' : 'Popular'}
                 </span>
             )}
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                 <div style={{
                     width: '44px',
                     height: '44px',
                     borderRadius: 'var(--radius-md)',
-                    backgroundColor: isPopular ? 'var(--notion-blue-bg)' : 'var(--notion-bg-secondary)',
+                    backgroundColor: isCurrentPlan || isPopular ? 'var(--notion-blue-bg)' : 'var(--notion-bg-secondary)',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center'
+                    justifyContent: 'center',
                 }}>
-                    <Icon size={22} color={isPopular ? 'var(--notion-blue)' : 'var(--notion-text-secondary)'} />
+                    <Icon size={22} color={isCurrentPlan || isPopular ? 'var(--notion-blue)' : 'var(--notion-text-secondary)'} />
                 </div>
                 <div>
                     <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: 'var(--notion-text)' }}>{pkg.name}</h3>
-                    <p style={{ margin: 0, fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{pkg.description}</p>
+                    <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{pkg.description}</p>
                 </div>
             </div>
 
-            <div style={{ marginBottom: 'var(--space-4)' }}>
+            <div>
                 <span style={{ fontSize: '32px', fontWeight: '700', color: 'var(--notion-text)' }}>{formatCurrency(pkg.price)}</span>
-                <span style={{ fontSize: '14px', color: 'var(--notion-text-secondary)' }}>/{(pkg.billingCycle || '').toLowerCase()}</span>
+                <span style={{ fontSize: '14px', color: 'var(--notion-text-secondary)' }}> /month</span>
             </div>
 
-            <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-3)' }}>
-                {pkg.maxRooms ? `Up to ${pkg.maxRooms} rooms` : 'Unlimited rooms'} • {pkg.maxStaff ? `${pkg.maxStaff} staff` : 'Unlimited staff'}
+            <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
+                {pkg.maxRooms ? `Up to ${pkg.maxRooms} rooms` : 'Unlimited rooms'}
+                {' • '}
+                {pkg.maxUsers ? `${pkg.maxUsers} team members` : 'Unlimited team members'}
             </div>
 
-            <div style={{ flex: 1, marginBottom: 'var(--space-4)' }}>
-                {pkg.features.map((feature, idx) => (
-                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--notion-text)', padding: '4px 0' }}>
+            <div style={{ display: 'grid', gap: '8px', minHeight: '140px' }}>
+                {pkg.features.map((feature, index) => (
+                    <div key={`${pkg.id}-${index}`} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--notion-text)' }}>
                         <Check size={14} color="var(--notion-green)" />
                         {feature}
                     </div>
@@ -160,79 +178,106 @@ function PackageCard({ pkg, onSubscribe, isSubscribing }: {
             </div>
 
             <Button
-                variant={isPopular ? 'primary' : 'secondary'}
-                onClick={() => onSubscribe(pkg.id)}
-                style={{ width: '100%' }}
-                disabled={isSubscribing}
+                variant={isCurrentPlan ? 'secondary' : 'primary'}
+                onClick={() => onSubscribe(pkg.id, 'MONTHLY')}
+                disabled={!canSubscribe || isCurrentPlan || isSubscribing}
                 icon={isSubscribing ? <Loader2 size={16} className="animate-spin" /> : undefined}
+                fullWidth
             >
-                {pkg.isActive ? 'Current Plan' : 'Subscribe'}
+                {isCurrentPlan ? 'Current Plan' : canSubscribe ? 'Request Subscription' : 'View Only'}
             </Button>
         </div>
     );
 }
 
-// Loading skeleton
-function TableSkeleton() {
+function StatusBadge({ value }: { value: string }) {
+    const normalized = value.toUpperCase();
+    const isHealthy = normalized === 'ACTIVE' || normalized === 'TRIAL';
+
     return (
-        <div style={{ padding: '16px' }}>
-            {[1, 2, 3].map(i => (
-                <div key={i} style={{
-                    height: '48px',
-                    backgroundColor: 'var(--notion-bg-secondary)',
-                    marginBottom: '8px',
-                    borderRadius: 'var(--radius-sm)',
-                    animation: 'pulse 2s infinite'
-                }} />
-            ))}
-        </div>
+        <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 10px',
+            borderRadius: '999px',
+            backgroundColor: isHealthy ? 'var(--notion-green-bg)' : 'var(--notion-yellow-bg)',
+            color: isHealthy ? 'var(--notion-green)' : 'var(--notion-yellow)',
+            fontSize: '12px',
+            fontWeight: 600,
+            textTransform: 'capitalize',
+        }}>
+            <ShieldCheck size={14} />
+            {value.toLowerCase().replaceAll('_', ' ')}
+        </span>
     );
 }
 
 export default function SaaSBillingPage() {
-    const { packages, payments, stats, isLoading, error, refresh, subscribeToPlan } = useSaaSBilling();
-
+    const { packages, payments, subscription, hotel, stats, isLoading, error, refresh, subscribeToPlan } = useSaaSBilling();
+    const { can } = usePermissions();
     const [activeTab, setActiveTab] = useState('packages');
     const [subscribingId, setSubscribingId] = useState<number | null>(null);
 
-    // Stats Computation
+    const canSubscribe = can(PERMISSIONS.SAAS_ADMIN.MANAGE_SUBSCRIPTIONS);
+    const apiBaseUrl = api.getBaseUrl();
 
-    const computedStats = useMemo(() => ({
-        totalRevenue: payments.filter(p => p.status === 'PAID').reduce((sum, p) => sum + p.amount, 0),
-        pendingPayments: payments.filter(p => p.status === 'PENDING').length,
-        activePackages: packages.filter(p => p.isActive).length,
-        totalTransactions: payments.length
-    }), [packages, payments]);
+    const summaryCards = useMemo(() => ([
+        {
+            label: 'Current Plan',
+            value: stats.currentPlan || 'Not assigned',
+            tone: 'var(--notion-blue-bg)',
+            text: 'var(--notion-blue)',
+        },
+        {
+            label: 'License Status',
+            value: stats.licenseStatus.replaceAll('_', ' '),
+            tone: 'var(--notion-green-bg)',
+            text: 'var(--notion-green)',
+        },
+        {
+            label: 'Next Renewal',
+            value: formatDate(stats.nextBillingDate),
+            tone: 'var(--notion-bg)',
+            text: 'var(--notion-text)',
+        },
+        {
+            label: 'Paid To Date',
+            value: formatCurrency(stats.totalPaid),
+            tone: 'var(--notion-yellow-bg)',
+            text: 'var(--notion-yellow)',
+        },
+    ]), [stats.currentPlan, stats.licenseStatus, stats.nextBillingDate, stats.totalPaid]);
 
-    const handleSubscribe = async (packageId: number) => {
+    const handleSubscribe = async (packageId: number, billingCycle: 'MONTHLY' | 'ANNUAL' | '2_YEAR' | '3_YEAR') => {
         setSubscribingId(packageId);
-        await subscribeToPlan(packageId);
+        await subscribeToPlan(packageId, billingCycle);
         setSubscribingId(null);
     };
 
     return (
         <DashboardLayout>
-            <PageContainer>
-                <div style={{ padding: 'var(--space-6)', maxWidth: '1400px', margin: '0 auto' }}>
-                    {/* Header */}
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'flex-start',
-                        marginBottom: 'var(--space-6)',
-                        flexWrap: 'wrap',
-                        gap: 'var(--space-3)'
-                    }}>
-                        <div>
-                            <h1 style={{ fontSize: '24px', fontWeight: '600', color: 'var(--notion-text)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                                <CreditCard size={24} />
-                                SaaS Billing
-                            </h1>
-                            <p style={{ color: 'var(--notion-text-secondary)', fontSize: '14px' }}>
-                                Manage subscription packages and payments
-                            </p>
-                        </div>
-                        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <PageContainer title="Billing" icon={<CreditCard size={40} />}>
+                <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+                    <Card variant="outline" hoverEffect={false} style={{ padding: 'var(--space-5)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'grid', gap: '10px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                    <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 600, color: 'var(--notion-text)' }}>Subscription & Billing</h1>
+                                    <StatusBadge value={stats.licenseStatus || 'TRIAL'} />
+                                </div>
+                                <p style={{ margin: 0, fontSize: '14px', color: 'var(--notion-text-secondary)', maxWidth: '720px' }}>
+                                    Review your hotel's current plan, renewal timeline, and recent invoices. This page is now scoped to your hotel's actual subscription data.
+                                </p>
+                                {(hotel || subscription) && (
+                                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
+                                        <span>{hotel?.name || 'Current hotel'}</span>
+                                        <span>Billing cycle: {formatBillingCycle(stats.billingCycle || subscription?.billingCycle)}</span>
+                                        <span>Pending amount: {formatCurrency(stats.pendingAmount)}</span>
+                                    </div>
+                                )}
+                            </div>
+
                             <Button
                                 variant="secondary"
                                 onClick={refresh}
@@ -241,134 +286,120 @@ export default function SaaSBillingPage() {
                             >
                                 Refresh
                             </Button>
-                            {activeTab === 'payments' && (
-                                <Button variant="secondary" icon={<Download size={16} />}>Export</Button>
-                            )}
                         </div>
-                    </div>
+                    </Card>
 
-                    {/* Error State */}
                     {error && (
                         <div style={{
                             padding: 'var(--space-4)',
                             backgroundColor: 'var(--notion-red-bg)',
                             borderRadius: 'var(--radius-md)',
                             color: 'var(--notion-red)',
-                            marginBottom: 'var(--space-4)',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 'var(--space-2)'
+                            gap: 'var(--space-2)',
                         }}>
                             <AlertCircle size={16} />
                             {error}
                         </div>
                     )}
 
-                    {/* Tabs */}
-                    <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
-
-                    {/* Stats */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
-                        <div style={{ padding: 'var(--space-4)', backgroundColor: 'var(--notion-green-bg)', borderRadius: 'var(--radius-md)' }}>
-                            <div style={{ fontSize: '24px', fontWeight: '700', color: 'var(--notion-green)' }}>{formatCurrency(computedStats.totalRevenue)}</div>
-                            <div style={{ fontSize: '13px', color: 'var(--notion-green)' }}>Total Revenue</div>
-                        </div>
-                        <div style={{ padding: 'var(--space-4)', backgroundColor: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)' }}>
-                            <div style={{ fontSize: '24px', fontWeight: '700' }}>{computedStats.totalTransactions}</div>
-                            <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Transactions</div>
-                        </div>
-                        <div style={{ padding: 'var(--space-4)', backgroundColor: 'var(--notion-yellow-bg)', borderRadius: 'var(--radius-md)' }}>
-                            <div style={{ fontSize: '24px', fontWeight: '700', color: 'var(--notion-yellow)' }}>{computedStats.pendingPayments}</div>
-                            <div style={{ fontSize: '13px', color: 'var(--notion-yellow)' }}>Pending</div>
-                        </div>
-                        <div style={{ padding: 'var(--space-4)', backgroundColor: 'var(--notion-blue-bg)', borderRadius: 'var(--radius-md)' }}>
-                            <div style={{ fontSize: '24px', fontWeight: '700', color: 'var(--notion-blue)' }}>{computedStats.activePackages}</div>
-                            <div style={{ fontSize: '13px', color: 'var(--notion-blue)' }}>Active Packages</div>
-                        </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-4)' }}>
+                        {summaryCards.map((card) => (
+                            <div key={card.label} style={{ padding: 'var(--space-4)', backgroundColor: card.tone, border: card.label === 'Next Renewal' ? '1px solid var(--notion-border)' : 'none', borderRadius: 'var(--radius-md)' }}>
+                                <div style={{ fontSize: '20px', fontWeight: '700', color: card.text }}>{card.value}</div>
+                                <div style={{ fontSize: '13px', color: card.text === 'var(--notion-text)' ? 'var(--notion-text-secondary)' : card.text }}>{card.label}</div>
+                            </div>
+                        ))}
                     </div>
 
-                    {/* Content */}
+                    {!canSubscribe && (
+                        <Card variant="outline" hoverEffect={false} style={{ padding: 'var(--space-4)', color: 'var(--notion-text-secondary)' }}>
+                            Plan changes are restricted to users with the `saas:manage_subscriptions` permission. You can still review your current billing state and invoices here.
+                        </Card>
+                    )}
+
+                    <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
+
                     {isLoading ? (
-                        <TableSkeleton />
+                        <Card variant="outline" hoverEffect={false} style={{ padding: 'var(--space-5)', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--notion-text-secondary)' }}>
+                            <Loader2 size={16} className="animate-spin" />
+                            Loading billing data...
+                        </Card>
                     ) : activeTab === 'packages' ? (
                         packages.length === 0 ? (
-                            <div style={{ textAlign: 'center', padding: '48px', color: 'var(--notion-text-secondary)' }}>
+                            <Card variant="outline" hoverEffect={false} style={{ padding: '48px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
                                 <Package size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
-                                <div>No packages found</div>
-                            </div>
+                                <div>No packages are available right now.</div>
+                            </Card>
                         ) : (
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
-                                {packages.map(pkg => (
+                                {packages.map((pkg) => (
                                     <PackageCard
                                         key={pkg.id}
                                         pkg={pkg}
-                                        onSubscribe={handleSubscribe}
+                                        isCurrentPlan={subscription?.package?.id === pkg.id}
+                                        canSubscribe={canSubscribe}
                                         isSubscribing={subscribingId === pkg.id}
+                                        onSubscribe={handleSubscribe}
                                     />
                                 ))}
                             </div>
                         )
+                    ) : payments.length === 0 ? (
+                        <Card variant="outline" hoverEffect={false} style={{ padding: '48px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
+                            <Receipt size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
+                            <div>No recent subscription payments were found.</div>
+                        </Card>
                     ) : (
-                        payments.length === 0 ? (
-                            <div style={{ textAlign: 'center', padding: '48px', color: 'var(--notion-text-secondary)' }}>
-                                <Receipt size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
-                                <div>No payments found</div>
-                            </div>
-                        ) : (
-                            <div style={{ backgroundColor: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                    <thead>
-                                        <tr style={{ borderBottom: '1px solid var(--notion-border)' }}>
-                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Invoice</th>
-                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Description</th>
-                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Amount</th>
-                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Status</th>
-                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Due Date</th>
-                                            <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {payments.map(payment => (
+                        <div style={{ backgroundColor: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead>
+                                    <tr style={{ borderBottom: '1px solid var(--notion-border)' }}>
+                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Invoice</th>
+                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Description</th>
+                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Amount</th>
+                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Status</th>
+                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Billing Date</th>
+                                        <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {payments.map((payment: Payment) => {
+                                        const isPaid = payment.status === 'PAID' || payment.status === 'COMPLETED';
+                                        return (
                                             <tr key={payment.id} style={{ borderTop: '1px solid var(--notion-border)' }}>
-                                                <td style={{ padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: 'var(--notion-text)' }}>
-                                                    {payment.invoiceNumber}
-                                                </td>
-                                                <td style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--notion-text)' }}>
-                                                    {payment.description}
-                                                </td>
-                                                <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>
-                                                    {formatCurrency(payment.amount)}
-                                                </td>
+                                                <td style={{ padding: '12px 16px', fontSize: '13px', fontWeight: '500', color: 'var(--notion-text)' }}>{payment.invoiceNumber}</td>
+                                                <td style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--notion-text)' }}>{payment.description}</td>
+                                                <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>{formatCurrency(payment.amount, payment.currency)}</td>
                                                 <td style={{ padding: '12px 16px' }}>
                                                     <span style={{
                                                         padding: '4px 10px',
                                                         fontSize: '11px',
                                                         fontWeight: '600',
-                                                        borderRadius: 'var(--radius-full)',
-                                                        backgroundColor: payment.status === 'PAID' ? 'var(--notion-green-bg)' : payment.status === 'PENDING' ? 'var(--notion-yellow-bg)' : 'var(--notion-red-bg)',
-                                                        color: payment.status === 'PAID' ? 'var(--notion-green)' : payment.status === 'PENDING' ? 'var(--notion-yellow)' : 'var(--notion-red)'
+                                                        borderRadius: '999px',
+                                                        backgroundColor: isPaid ? 'var(--notion-green-bg)' : payment.status === 'PENDING' ? 'var(--notion-yellow-bg)' : 'var(--notion-red-bg)',
+                                                        color: isPaid ? 'var(--notion-green)' : payment.status === 'PENDING' ? 'var(--notion-yellow)' : 'var(--notion-red)',
                                                     }}>
-                                                        {payment.status}
+                                                        {payment.status === 'COMPLETED' ? 'PAID' : payment.status}
                                                     </span>
                                                 </td>
-                                                <td style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
-                                                    {formatDate(payment.dueDate)}
-                                                </td>
+                                                <td style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{formatDate(payment.dueDate)}</td>
                                                 <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
                                                         icon={<Download size={14} />}
-                                                        onClick={() => window.open(`/api/v1/saas-billing/payments/${payment.id}/pdf`, '_blank')}
-                                                        title="Download Invoice"
+                                                        onClick={() => window.open(`${apiBaseUrl}/saas-billing/payments/${payment.id}/pdf`, '_blank', 'noopener,noreferrer')}
+                                                        title="Download invoice"
                                                     />
                                                 </td>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
                     )}
                 </div>
             </PageContainer>

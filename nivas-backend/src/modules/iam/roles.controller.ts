@@ -8,16 +8,9 @@ import { ValidationError } from '../../utils/errors';
 export const rolesController = new Elysia({ prefix: '/roles' })
     .use(authMiddleware)
     .get('/', async ({ user }) => {
-        try {
-            if (!user || !user.hotelId) throw new ValidationError('Hotel ID required');
-            console.log('[RolesController] Fetching roles for hotel:', user.hotelId);
-            const rolesList = await RolesService.getRoles(user.hotelId);
-            console.log('[RolesController] Found roles:', rolesList.length);
-            return createResponse(rolesList, 'Roles fetched successfully');
-        } catch (err) {
-            console.error('[RolesController] Error fetching roles:', err);
-            throw err;
-        }
+        if (!user || !user.hotelId) throw new ValidationError('Hotel ID required');
+        const rolesList = await RolesService.getRoles(user.hotelId);
+        return createResponse(rolesList, 'Roles fetched successfully');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.ROLES.READ,
@@ -44,7 +37,7 @@ export const rolesController = new Elysia({ prefix: '/roles' })
     })
     .patch('/:id', async ({ params, body, user }) => {
         if (!user || !user.hotelId) throw new ValidationError('Hotel ID required');
-        const updatedRole = await RolesService.updateRole(user.hotelId, parseInt(params.id), body);
+        const updatedRole = await RolesService.updateRole(user.hotelId, parseInt(params.id, 10), body);
         return createResponse(updatedRole, 'Role updated successfully');
     }, {
         isSignedIn: true,
@@ -60,7 +53,7 @@ export const rolesController = new Elysia({ prefix: '/roles' })
     })
     .delete('/:id', async ({ params, user }) => {
         if (!user || !user.hotelId) throw new ValidationError('Hotel ID required');
-        await RolesService.deleteRole(user.hotelId, parseInt(params.id));
+        await RolesService.deleteRole(user.hotelId, parseInt(params.id, 10));
         return createResponse(null, 'Role deleted successfully');
     }, {
         isSignedIn: true,
@@ -72,7 +65,6 @@ export const rolesController = new Elysia({ prefix: '/roles' })
     })
     .get('/permissions', () => {
         const permissions = RolesService.getPermissions();
-        // Filter out SAAS and SYSTEM permissions
         const filteredPermissions = Object.fromEntries(
             Object.entries(permissions).filter(([key]) =>
                 !key.startsWith('SAAS') &&

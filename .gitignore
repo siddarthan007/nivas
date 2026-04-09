@@ -42,6 +42,6 @@ coverage/
 .nx/
 *.tsbuildinfo
 
-.agent
+
 .cursor
 .github

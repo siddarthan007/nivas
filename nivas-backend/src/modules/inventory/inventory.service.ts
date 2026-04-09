@@ -175,7 +175,7 @@ export class InventoryService {
         return po;
     }
 
-    static async updatePurchaseOrder(hotelId: number, userId: string, poId: number, data: { supplierName?: string; items?: { itemId: number; quantity: number; unitCost: number }[] }, ipAddress?: string) {
+    static async updatePurchaseOrder(hotelId: number, userId: string, poId: number, data: { supplierName?: string; notes?: string; items?: { itemId: number; quantity: number; unitCost: number }[] }, ipAddress?: string) {
         return await db.transaction(async (tx) => {
             const existing = await tx.query.purchaseOrders.findFirst({
                 where: and(eq(purchaseOrders.id, poId), eq(purchaseOrders.hotelId, hotelId))
@@ -185,6 +185,7 @@ export class InventoryService {
 
             const updateData: Record<string, any> = { updatedAt: new Date() };
             if (data.supplierName) updateData.supplierName = data.supplierName;
+            if (data.notes !== undefined) updateData.notes = data.notes;
 
             if (data.items && data.items.length > 0) {
                 await tx.delete(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, poId));
@@ -270,7 +271,7 @@ export class InventoryService {
         return rejected;
     }
 
-    static async createPurchaseOrder(hotelId: number, userId: string, data: { supplierName: string, items: { itemId: number; quantity: number; unitCost: number }[] }, ipAddress?: string) {
+    static async createPurchaseOrder(hotelId: number, userId: string, data: { supplierName: string; notes?: string; items: { itemId: number; quantity: number; unitCost: number }[] }, ipAddress?: string) {
         const poNumber = `PO-${Date.now()}`;
 
         const newPO = await db.transaction(async (tx) => {
@@ -355,3 +356,4 @@ export class InventoryService {
         return { message: 'Stock received and inventory updated.' };
     }
 }
+

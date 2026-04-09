@@ -30,7 +30,7 @@ export interface Conversation {
 
 export interface SendMessagePayload {
     content: string;
-    recipientId?: string;
+    receiverId?: string;
     roomId?: number;
 }
 
@@ -119,8 +119,8 @@ export function useMessages(): UseMessagesReturn {
     const sendMessage = useCallback(async (payload: SendMessagePayload): Promise<boolean> => {
         try {
             const sendPayload: any = { content: payload.content };
-            if (payload.recipientId) sendPayload.receiverId = payload.recipientId;
-            if (activeConversation?.participantId && !payload.recipientId) {
+            if (payload.receiverId) sendPayload.receiverId = payload.receiverId;
+            if (activeConversation?.participantId && !payload.receiverId) {
                 sendPayload.receiverId = activeConversation.participantId;
             }
             if (payload.roomId) sendPayload.roomId = payload.roomId;

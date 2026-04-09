@@ -6,6 +6,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
 import {
     UtensilsCrossed,
     Plus,
@@ -14,19 +15,25 @@ import {
     Clock,
     Eye,
     EyeOff,
-    Edit
+    Edit,
+    Settings,
+    Trash2
 } from 'lucide-react';
 import type { MenuItem, CreateMenuItemPayload } from '@/lib/types/api.types';
+import CategoryManagerModal from '@/components/features/menu/CategoryManagerModal';
+import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal';
 
 // Menu Item Card
 function MenuItemCard({
     item,
     onToggleAvailability,
-    onEdit
+    onEdit,
+    onDelete
 }: {
     item: MenuItem;
     onToggleAvailability: () => void;
     onEdit: () => void;
+    onDelete: () => void;
 }) {
     return (
         <div style={{
@@ -138,6 +145,10 @@ function MenuItemCard({
                     <Button size="sm" variant="secondary" onClick={onEdit}>
                         <Edit size={14} />
                     </Button>
+                    <Button size="sm" variant="secondary" onClick={onDelete}
+                        style={{ color: 'var(--notion-red)' }}>
+                        <Trash2 size={14} />
+                    </Button>
                 </div>
             </div>
         </div>
@@ -216,22 +227,17 @@ function MenuFormModal({
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                     <div>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Category *
-                        </label>
-                        <Input
-                            type="text"
+                        <Select
+                            label="Category *"
                             value={formData.category}
                             onChange={e => setFormData({ ...formData, category: e.target.value })}
-                            placeholder="Main Course"
-                            list="categories"
                             required
+                            fullWidth
+                            options={[
+                                { value: '', label: 'Select category...' },
+                                ...categories.map(cat => ({ value: cat, label: cat })),
+                            ]}
                         />
-                        <datalist id="categories">
-                            {categories.map(cat => (
-                                <option key={cat} value={cat} />
-                            ))}
-                        </datalist>
                     </div>
                     <div>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
@@ -286,15 +292,21 @@ function MenuFormModal({
 }
 
 export default function MenuPage() {
-    const { menuItems, isLoading, fetchMenu, createItem, updateItem } = useMenu();
+    const { menuItems, categories: fetchedCategories, isLoading, fetchMenu, createItem, updateItem, deleteItem, refreshCategories } = useMenu();
     const [searchQuery, setSearchQuery] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
     const [isFormOpen, setIsFormOpen] = useState(false);
+    const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<MenuItem | undefined>();
+    const [deleteTarget, setDeleteTarget] = useState<MenuItem | null>(null);
 
-    // Derive values from menuItems
+    // Derive values
     const items = menuItems || [];
-    const categories = [...new Set(items.map(i => i.category).filter(Boolean))];
+    // Use fetched categories if available, otherwise fallback (though fetched is better for empty ones)
+    const categoryNames = fetchedCategories.length > 0
+        ? fetchedCategories.map(c => c.name)
+        : [...new Set(items.map(i => i.category).filter(Boolean))];
+
     const availableItems = items.filter(i => i.isAvailable);
 
     // Filter items
@@ -322,161 +334,142 @@ export default function MenuPage() {
     return (
         <DashboardLayout>
             <div style={{ padding: 'var(--space-8)' }}>
-                    {/* Header */}
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: 'var(--space-6)',
-                    }}>
-                        <div>
-                            <h1 style={{
-                                fontSize: '28px',
-                                fontWeight: '600',
-                                color: 'var(--notion-text)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 'var(--space-3)',
-                            }}>
-                                <UtensilsCrossed size={28} />
-                                Menu
-                            </h1>
-                            <p style={{
-                                fontSize: '14px',
-                                color: 'var(--notion-text-secondary)',
-                                marginTop: 'var(--space-1)',
-                            }}>
-                                Manage food and beverage items
-                            </p>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                            <Button variant="secondary" onClick={() => fetchMenu()} disabled={isLoading}>
-                                <RefreshCw size={14} style={{ marginRight: '6px' }} />
-                                Refresh
-                            </Button>
-                            <Button onClick={() => { setEditingItem(undefined); setIsFormOpen(true); }}>
-                                <Plus size={14} style={{ marginRight: '6px' }} />
-                                Add Item
-                            </Button>
-                        </div>
+                {/* Header */}
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 'var(--space-6)',
+                }}>
+                    <div>
+                        <h1 style={{
+                            fontSize: '28px',
+                            fontWeight: '600',
+                            color: 'var(--notion-text)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 'var(--space-3)',
+                        }}>
+                            <UtensilsCrossed size={28} />
+                            Menu
+                        </h1>
+                        <p style={{
+                            fontSize: '14px',
+                            color: 'var(--notion-text-secondary)',
+                            marginTop: 'var(--space-1)',
+                        }}>
+                            Manage food and beverage items
+                        </p>
                     </div>
 
-                    {/* Stats */}
+                    <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                        <Button variant="secondary" onClick={() => setIsCategoryModalOpen(true)}>
+                            <Settings size={14} style={{ marginRight: '6px' }} />
+                            Categories
+                        </Button>
+                        <Button variant="secondary" onClick={() => fetchMenu()} disabled={isLoading}>
+                            <RefreshCw size={14} style={{ marginRight: '6px' }} />
+                            Refresh
+                        </Button>
+                        <Button onClick={() => { setEditingItem(undefined); setIsFormOpen(true); }}>
+                            <Plus size={14} style={{ marginRight: '6px' }} />
+                            Add Item
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Stats */}
+                <div style={{
+                    display: 'flex',
+                    gap: 'var(--space-6)',
+                    marginBottom: 'var(--space-6)',
+                }}>
+                    {[
+                        { label: 'Total Items', value: items.length, color: 'var(--notion-text)' },
+                        { label: 'Available', value: availableItems.length, color: 'var(--notion-green)' },
+                        { label: 'Hidden', value: items.length - availableItems.length, color: 'var(--notion-red)' },
+                        { label: 'Categories', value: categoryNames.length, color: 'var(--notion-blue)' },
+                    ].map(stat => (
+                        <div key={stat.label} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                            <span style={{ fontSize: '20px', fontWeight: '600', color: stat.color }}>{stat.value}</span>
+                            <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{stat.label}</span>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Filters */}
+                <div style={{
+                    display: 'flex',
+                    gap: 'var(--space-3)',
+                    marginBottom: 'var(--space-6)',
+                }}>
+                    <div style={{ flex: 1, maxWidth: '300px' }}>
+                        <Input
+                            type="text"
+                            placeholder="Search menu items..."
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            icon={<Search size={16} />}
+                        />
+                    </div>
+
+                    <Select
+                        value={categoryFilter}
+                        onChange={e => setCategoryFilter(e.target.value)}
+                        options={[
+                            { value: 'ALL', label: 'All Categories' },
+                            ...categoryNames.map(cat => ({ value: cat, label: cat })),
+                        ]}
+                    />
+                </div>
+
+                {/* Menu Items Grid */}
+                {isLoading ? (
                     <div style={{
-                        display: 'flex',
-                        gap: 'var(--space-6)',
-                        marginBottom: 'var(--space-6)',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                        gap: 'var(--space-4)',
                     }}>
-                        {[
-                            { label: 'Total Items', value: items.length, color: 'var(--notion-text)' },
-                            { label: 'Available', value: availableItems.length, color: 'var(--notion-green)' },
-                            { label: 'Hidden', value: items.length - availableItems.length, color: 'var(--notion-red)' },
-                            { label: 'Categories', value: categories.length, color: 'var(--notion-blue)' },
-                        ].map(stat => (
-                            <div key={stat.label} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                                <span style={{ fontSize: '20px', fontWeight: '600', color: stat.color }}>{stat.value}</span>
-                                <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{stat.label}</span>
-                            </div>
+                        {Array.from({ length: 8 }).map((_, i) => (
+                            <div key={i} style={{
+                                height: '280px',
+                                backgroundColor: 'var(--notion-bg-secondary)',
+                                borderRadius: 'var(--radius-lg)',
+                                border: '1px solid var(--notion-border)',
+                                animation: 'pulse 1.5s ease-in-out infinite',
+                            }} />
                         ))}
                     </div>
-
-                    {/* Filters */}
+                ) : filteredItems.length === 0 ? (
                     <div style={{
-                        display: 'flex',
-                        gap: 'var(--space-3)',
-                        marginBottom: 'var(--space-6)',
+                        textAlign: 'center',
+                        padding: 'var(--space-12)',
+                        color: 'var(--notion-text-secondary)',
                     }}>
-                        <div style={{ position: 'relative', flex: 1, maxWidth: '300px' }}>
-                            <Search size={16} style={{
-                                position: 'absolute',
-                                left: '12px',
-                                top: '50%',
-                                transform: 'translateY(-50%)',
-                                color: 'var(--notion-text-secondary)',
-                            }} />
-                            <input
-                                type="text"
-                                placeholder="Search menu items..."
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                                style={{
-                                    width: '100%',
-                                    padding: '10px 12px 10px 36px',
-                                    fontSize: '14px',
-                                    border: '1px solid var(--notion-border)',
-                                    borderRadius: 'var(--radius-md)',
-                                    backgroundColor: 'var(--notion-bg-secondary)',
-                                    color: 'var(--notion-text)',
-                                }}
-                            />
-                        </div>
-
-                        <select
-                            value={categoryFilter}
-                            onChange={e => setCategoryFilter(e.target.value)}
-                            style={{
-                                padding: '10px 12px',
-                                fontSize: '14px',
-                                border: '1px solid var(--notion-border)',
-                                borderRadius: 'var(--radius-md)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                            }}
-                        >
-                            <option value="ALL">All Categories</option>
-                            {categories.map(cat => (
-                                <option key={cat} value={cat}>{cat}</option>
-                            ))}
-                        </select>
+                        <UtensilsCrossed size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
+                        <p style={{ fontSize: '16px' }}>
+                            {searchQuery || categoryFilter !== 'ALL'
+                                ? 'No items match your filters'
+                                : 'No menu items yet. Add your first dish to get started.'}
+                        </p>
                     </div>
-
-                    {/* Menu Items Grid */}
-                    {isLoading ? (
-                        <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                            gap: 'var(--space-4)',
-                        }}>
-                            {Array.from({ length: 8 }).map((_, i) => (
-                                <div key={i} style={{
-                                    height: '280px',
-                                    backgroundColor: 'var(--notion-bg-secondary)',
-                                    borderRadius: 'var(--radius-lg)',
-                                    border: '1px solid var(--notion-border)',
-                                    animation: 'pulse 1.5s ease-in-out infinite',
-                                }} />
-                            ))}
-                        </div>
-                    ) : filteredItems.length === 0 ? (
-                        <div style={{
-                            textAlign: 'center',
-                            padding: 'var(--space-12)',
-                            color: 'var(--notion-text-secondary)',
-                        }}>
-                            <UtensilsCrossed size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
-                            <p style={{ fontSize: '16px' }}>
-                                {searchQuery || categoryFilter !== 'ALL'
-                                    ? 'No items match your filters'
-                                    : 'No menu items yet. Add your first dish to get started.'}
-                            </p>
-                        </div>
-                    ) : (
-                        <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                            gap: 'var(--space-4)',
-                        }}>
-                            {filteredItems.map(item => (
-                                <MenuItemCard
-                                    key={item.id}
-                                    item={item}
-                                    onToggleAvailability={() => toggleAvailability(item.id)}
-                                    onEdit={() => { setEditingItem(item); setIsFormOpen(true); }}
-                                />
-                            ))}
-                        </div>
-                    )}
+                ) : (
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                        gap: 'var(--space-4)',
+                    }}>
+                        {filteredItems.map(item => (
+                            <MenuItemCard
+                                key={item.id}
+                                item={item}
+                                onToggleAvailability={() => toggleAvailability(item.id)}
+                                onEdit={() => { setEditingItem(item); setIsFormOpen(true); }}
+                                onDelete={() => setDeleteTarget(item)}
+                            />
+                        ))}
+                    </div>
+                )}
             </div>
 
             {/* Menu Form Modal */}
@@ -485,7 +478,28 @@ export default function MenuPage() {
                 onClose={() => { setIsFormOpen(false); setEditingItem(undefined); }}
                 onSubmit={handleCreateItem}
                 editingItem={editingItem}
-                categories={categories}
+                categories={categoryNames}
+            />
+
+            {/* Category Manager Modal */}
+            <CategoryManagerModal
+                isOpen={isCategoryModalOpen}
+                onClose={() => setIsCategoryModalOpen(false)}
+                onChange={() => refreshCategories && refreshCategories()}
+            />
+
+            {/* Delete Confirmation */}
+            <SecurityConfirmModal
+                isOpen={!!deleteTarget}
+                onClose={() => setDeleteTarget(null)}
+                onConfirm={async () => {
+                    if (!deleteTarget) return;
+                    await deleteItem(deleteTarget.id);
+                }}
+                title="Delete Menu Item"
+                message={`Are you sure you want to delete "${deleteTarget?.name}"? This action cannot be undone.`}
+                confirmText="Delete Item"
+                isDestructive
             />
         </DashboardLayout>
     );

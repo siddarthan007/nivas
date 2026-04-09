@@ -1,8 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { useReports } from '@/lib/hooks/useReports';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Button from '@/components/ui/Button';
+import CustomDatePicker from '@/components/ui/DatePicker';
 import {
     BarChart3,
     RefreshCw,
@@ -130,7 +132,7 @@ function RevenueBreakdown({
                     <div
                         key={item.label}
                         style={{
-                            width: `${(item.value / total) * 100}%`,
+                            width: `${total > 0 ? (item.value / total) * 100 : 0}%`,
                             backgroundColor: item.color,
                             borderRadius: i === 0 ? '6px 0 0 6px' : i === data.length - 1 ? '0 6px 6px 0' : 0,
                         }}
@@ -234,7 +236,18 @@ function OccupancyByType({
 }
 
 export default function ReportsPage() {
-    const { revenue, occupancy, metrics, period, isLoading, fetchReports, setPeriodPreset } = useReports();
+    const { revenue, occupancy, metrics, period, isLoading, fetchReports, setPeriodPreset, setCustomPeriod } = useReports();
+    const [customStart, setCustomStart] = useState<Date | null>(null);
+    const [customEnd, setCustomEnd] = useState<Date | null>(null);
+
+    const handleCustomRange = (start: Date | null, end: Date | null) => {
+        if (start && end) {
+            setCustomPeriod(
+                start.toISOString().split('T')[0]!,
+                end.toISOString().split('T')[0]!
+            );
+        }
+    };
 
     return (
         <DashboardLayout>
@@ -292,12 +305,50 @@ export default function ReportsPage() {
                             <Button
                                 key={preset}
                                 size="sm"
-                                variant={period.label.toLowerCase().includes(preset) || (preset === 'month' && period.label === 'Last 30 Days') ? 'primary' : 'secondary'}
-                                onClick={() => setPeriodPreset(preset as 'today' | 'week' | 'month' | 'quarter' | 'year')}
+                                variant={period.label !== 'Custom' && (period.label.toLowerCase().includes(preset) || (preset === 'month' && period.label === 'Last 30 Days')) ? 'primary' : 'secondary'}
+                                onClick={() => {
+                                    setCustomStart(null);
+                                    setCustomEnd(null);
+                                    setPeriodPreset(preset as 'today' | 'week' | 'month' | 'quarter' | 'year');
+                                }}
                             >
                                 {preset === 'today' ? 'Today' : preset === 'week' ? '7 Days' : preset === 'month' ? '30 Days' : preset === 'quarter' ? '90 Days' : '1 Year'}
                             </Button>
                         ))}
+
+                        {/* Divider */}
+                        <div style={{
+                            width: '1px',
+                            height: '28px',
+                            backgroundColor: 'var(--notion-border)',
+                            margin: '0 var(--space-1)',
+                        }} />
+
+                        {/* Custom Date Range */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                            <CustomDatePicker
+                                selected={customStart}
+                                onChange={(date) => {
+                                    setCustomStart(date);
+                                    handleCustomRange(date, customEnd);
+                                }}
+                                placeholder="From"
+                                maxDate={customEnd || new Date()}
+                                fullWidth={false}
+                            />
+                            <span style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>–</span>
+                            <CustomDatePicker
+                                selected={customEnd}
+                                onChange={(date) => {
+                                    setCustomEnd(date);
+                                    handleCustomRange(customStart, date);
+                                }}
+                                placeholder="To"
+                                minDate={customStart || undefined}
+                                maxDate={new Date()}
+                                fullWidth={false}
+                            />
+                        </div>
                     </div>
 
                     {/* Key Metrics Grid */}

@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import api from '../api';
 import { toast } from 'sonner';
 
-// Types
 export interface Venue {
     id: number;
     hotelId: number;
@@ -14,24 +13,27 @@ export interface Venue {
     createdAt: string;
 }
 
+export type BanquetBookingStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
+
 export interface BanquetBooking {
-    id: number;
+    id: string;
     banquetId: number;
     eventName: string;
     eventType?: 'WEDDING' | 'CONFERENCE' | 'BIRTHDAY' | 'CORPORATE' | 'OTHER';
     eventDate: string;
     startTime: string;
     endTime: string;
-    expectedGuests?: number;
-    contactName?: string;
-    contactPhone?: string;
+    expectedGuests: number;
+    contactName: string;
+    contactPhone: string;
     organizerName?: string;
     organizerPhone?: string;
     contactEmail?: string;
-    status: 'INQUIRY' | 'TENTATIVE' | 'CONFIRMED' | 'CANCELLED';
+    status: BanquetBookingStatus;
     cateringRequired: boolean;
-    cateringDetails?: any;
-    decorRequired: boolean;
+    cateringPackage?: string;
+    cateringPax?: number;
+    decorationRequired: boolean;
     avEquipment?: string[];
     specialRequirements?: string;
     totalAmount?: number;
@@ -55,8 +57,8 @@ export interface CreateBookingPayload {
     startTime: string;
     endTime: string;
     expectedGuests: number;
-    contactName?: string;
-    contactPhone?: string;
+    contactName: string;
+    contactPhone: string;
     contactEmail?: string;
     cateringRequired?: boolean;
     cateringPackage?: string;
@@ -68,17 +70,58 @@ export interface CreateBookingPayload {
     advanceAmount?: number;
 }
 
+function normalizeVenue(raw: any): Venue {
+    return {
+        id: Number(raw.id),
+        hotelId: Number(raw.hotelId),
+        name: raw.name ?? '',
+        capacity: Number(raw.capacity ?? 0),
+        description: raw.description ?? raw.area ?? undefined,
+        amenities: Array.isArray(raw.amenities) ? raw.amenities : [],
+        isActive: raw.isActive ?? true,
+        createdAt: raw.createdAt ?? new Date().toISOString(),
+    };
+}
+
+function normalizeBooking(raw: any): BanquetBooking {
+    return {
+        id: String(raw.id),
+        banquetId: Number(raw.banquetId ?? 0),
+        eventName: raw.eventName ?? '',
+        eventType: raw.eventType ?? undefined,
+        eventDate: raw.eventDate ?? '',
+        startTime: raw.startTime ?? '',
+        endTime: raw.endTime ?? '',
+        expectedGuests: Number(raw.expectedGuests ?? 0),
+        contactName: raw.contactName ?? raw.organizerName ?? '',
+        contactPhone: raw.contactPhone ?? raw.organizerPhone ?? '',
+        organizerName: raw.organizerName ?? undefined,
+        organizerPhone: raw.organizerPhone ?? undefined,
+        contactEmail: raw.contactEmail ?? raw.organizerEmail ?? undefined,
+        status: (raw.status ?? 'PENDING') as BanquetBookingStatus,
+        cateringRequired: Boolean(raw.cateringRequired),
+        cateringPackage: raw.cateringPackage ?? undefined,
+        cateringPax: raw.cateringPax !== null && raw.cateringPax !== undefined ? Number(raw.cateringPax) : undefined,
+        decorationRequired: Boolean(raw.decorationRequired),
+        avEquipment: Array.isArray(raw.avEquipment) ? raw.avEquipment : [],
+        specialRequirements: raw.specialRequirements ?? undefined,
+        totalAmount: raw.totalAmount !== null && raw.totalAmount !== undefined ? Number(raw.totalAmount) : undefined,
+        advanceAmount: raw.advanceAmount !== null && raw.advanceAmount !== undefined ? Number(raw.advanceAmount) : undefined,
+        createdAt: raw.createdAt ?? new Date().toISOString(),
+        venue: raw.banquet ? normalizeVenue(raw.banquet) : undefined,
+    };
+}
+
 export function useEvents() {
     const [venues, setVenues] = useState<Venue[]>([]);
     const [bookings, setBookings] = useState<BanquetBooking[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 
-    // Venues
     const fetchVenues = useCallback(async () => {
         setIsLoading(true);
         try {
-            const res = await api.get<Venue[]>('/banquets/venues');
-            setVenues(res.data || []);
+            const res = await api.get<any[]>('/banquets/venues');
+            setVenues((res.data || []).map(normalizeVenue));
         } catch (err: any) {
             toast.error(err?.message || 'Failed to fetch venues');
         } finally {
@@ -131,13 +174,12 @@ export function useEvents() {
         }
     };
 
-    // Bookings
     const fetchBookings = useCallback(async (status?: string) => {
         setIsLoading(true);
         try {
             const url = status ? `/banquets/bookings?status=${encodeURIComponent(status)}` : '/banquets/bookings';
-            const res = await api.get<BanquetBooking[]>(url);
-            setBookings(res.data || []);
+            const res = await api.get<any[]>(url);
+            setBookings((res.data || []).map(normalizeBooking));
         } catch (err: any) {
             toast.error(err?.message || 'Failed to fetch bookings');
         } finally {
@@ -147,8 +189,8 @@ export function useEvents() {
 
     const getBooking = async (id: string) => {
         try {
-            const res = await api.get<BanquetBooking>(`/banquets/bookings/${id}`);
-            return res.data;
+            const res = await api.get<any>(`/banquets/bookings/${id}`);
+            return res.data ? normalizeBooking(res.data) : null;
         } catch (err: any) {
             toast.error(err?.message || 'Failed to fetch booking');
             return null;
@@ -170,7 +212,7 @@ export function useEvents() {
         }
     };
 
-    const updateBookingStatus = async (id: string, status: 'INQUIRY' | 'TENTATIVE' | 'CONFIRMED' | 'CANCELLED') => {
+    const updateBookingStatus = async (id: string, status: BanquetBookingStatus) => {
         setIsLoading(true);
         try {
             await api.patch(`/banquets/bookings/${id}/status`, { status });
@@ -185,7 +227,7 @@ export function useEvents() {
         }
     };
 
-    const updateBooking = async (id: string, data: Partial<CreateBookingPayload & { status?: string }>) => {
+    const updateBooking = async (id: string, data: Partial<CreateBookingPayload & { status?: BanquetBookingStatus }>) => {
         setIsLoading(true);
         try {
             await api.patch(`/banquets/bookings/${id}`, data);
@@ -218,8 +260,8 @@ export function useEvents() {
     const checkAvailability = async (venueId: number, date: string, startTime: string, endTime: string) => {
         try {
             const params = `date=${encodeURIComponent(date)}&startTime=${encodeURIComponent(startTime)}&endTime=${encodeURIComponent(endTime)}`;
-            const res = await api.get<{ available: boolean }>(`/banquets/venues/${venueId}/availability?${params}`);
-            return res.data?.available ?? false;
+            const res = await api.get<{ isAvailable: boolean }>(`/banquets/venues/${venueId}/availability?${params}`);
+            return res.data?.isAvailable ?? false;
         } catch (err: any) {
             toast.error(err?.message || 'Failed to check availability');
             return false;
@@ -227,22 +269,19 @@ export function useEvents() {
     };
 
     return {
-        // State
         venues,
         bookings,
         isLoading,
-        // Venues
         fetchVenues,
         createVenue,
         updateVenue,
         deleteVenue,
-        // Bookings
         fetchBookings,
         getBooking,
         createBooking,
         updateBookingStatus,
         updateBooking,
         deleteBooking,
-        checkAvailability
+        checkAvailability,
     };
 }

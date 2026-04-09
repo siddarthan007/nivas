@@ -1,7 +1,7 @@
 import { db } from '../../db';
 import { bookings, rooms, folioCharges, nightAudits, orders, hotels } from '../../db/schema';
 import { eq, and, lte, gte, sql, sum, count } from 'drizzle-orm';
-import { WSService as NotificationService } from '../notifications/ws.service';
+import { EventBus } from '../../shared/event-bus';
 
 export const NightAuditService = {
     async runAuditForHotel(hotelId: number) {
@@ -87,18 +87,19 @@ export const NightAuditService = {
             };
         });
 
-        NotificationService.broadcastToRole(
+        EventBus.emit({
+            type: 'NightAuditCompleted',
             hotelId,
-            ['Manager', 'Owner'],
-            'NIGHT_AUDIT_COMPLETED',
-            {
-                date: auditDateStr,
+            source: 'night-audit',
+            timestamp: new Date(),
+            payload: {
+                auditDate: auditDateStr,
                 roomRevenue: result.roomRevenue,
                 fnbRevenue: result.fnbRevenue,
                 occupancy: result.occupancy,
-                bookingsProcessed: result.bookingsProcessed
-            }
-        );
+                bookingsProcessed: result.bookingsProcessed,
+            },
+        }).catch(() => {});
 
         return { status: 'success', data: result };
     },

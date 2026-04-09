@@ -40,6 +40,7 @@ import { folioController } from "./modules/finance/folio.controller";
 import { nightAuditController } from "./modules/system/night-audit.controller";
 import { attendanceController } from "./modules/iam/attendance.controller";
 import { guestActionsController } from "./modules/iam/guest-actions.controller";
+import { guestController } from "./modules/guests/guest.controller";
 import { outletsController } from "./modules/settings/outlets.controller";
 import { pricingController } from "./modules/revenue/pricing.controller";
 import { reportsController } from "./modules/reports/reports.controller";
@@ -59,8 +60,12 @@ import { HttpError } from "./utils/errors";
 import { rateLimitMiddleware } from "./middlewares/rate-limit.middleware";
 import { securityMiddleware } from "./middlewares/security.middleware";
 import { logger, logRequest } from "./shared/logger";
+import { registerNotificationHandlers } from "./modules/notifications/event-handlers";
+import { registerAuditEventHandlers } from "./modules/system/audit-event-handlers";
 
 initScheduler();
+registerNotificationHandlers();
+registerAuditEventHandlers();
 
 // BigInt serialization fix for Drizzle/Postgres
 (BigInt.prototype as any).toJSON = function () {
@@ -148,6 +153,7 @@ const app = new Elysia()
         .use(nightAuditController)
         .use(attendanceController)
         .use(guestActionsController)
+        .use(guestController)
         .use(outletsController)
         .use(pricingController)
         .use(reportsController)

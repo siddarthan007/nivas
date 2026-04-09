@@ -1,7 +1,13 @@
 import { useState, useCallback } from 'react';
-import api from '../api';
+import api, { ApiError } from '../api';
 import { toast } from 'sonner';
 import type { Order, CreateOrderPayload, OrderStatus } from '../types/api.types';
+
+function getErrorMessage(err: unknown, fallback: string): string {
+    if (err instanceof ApiError) return err.message;
+    if (err instanceof Error) return err.message;
+    return fallback;
+}
 
 export function useOrders() {
     const [orders, setOrders] = useState<Order[]>([]);
@@ -14,8 +20,8 @@ export function useOrders() {
         try {
             const res = await api.get<Order[]>('/orders');
             setOrders(res.data || []);
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to fetch orders';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to fetch orders');
             setError(msg);
             toast.error(msg);
         } finally {
@@ -30,8 +36,8 @@ export function useOrders() {
             await fetchOrders();
             toast.success('Order created successfully');
             return true;
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to create order';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to create order');
             toast.error(msg);
             return false;
         } finally {
@@ -46,8 +52,8 @@ export function useOrders() {
             await fetchOrders();
             toast.success(`Order marked as ${(status || '').toLowerCase()}`);
             return true;
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to update order status';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to update order status');
             toast.error(msg);
             return false;
         } finally {
@@ -62,8 +68,8 @@ export function useOrders() {
             await fetchOrders();
             toast.success('Order cancelled');
             return true;
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to cancel order';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to cancel order');
             toast.error(msg);
             return false;
         } finally {
@@ -78,8 +84,8 @@ export function useOrders() {
             await fetchOrders();
             toast.success('Order updated');
             return true;
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to update order';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to update order');
             toast.error(msg);
             return false;
         } finally {

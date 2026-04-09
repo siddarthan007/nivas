@@ -58,4 +58,27 @@ export const tablesController = new Elysia({ prefix: '/operations/tables' })
         isSignedIn: true,
         hasPermission: PERMISSIONS.OPERATIONS.SETUP_FACILITIES,
         detail: { summary: 'Delete table', tags: ['Operations'] }
+    })
+    .patch('/:id/attach', async ({ params, body, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const updated = await TablesService.attachGuest(user.hotelId, parseInt(params.id), body);
+        return createResponse(updated, 'Guest attached to table successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.OPERATIONS.SETUP_FACILITIES,
+        body: t.Object({
+            guestName: t.String(),
+            guestId: t.Optional(t.String()),
+            phone: t.Optional(t.String())
+        }),
+        detail: { summary: 'Attach guest to table', tags: ['Operations'] }
+    })
+    .patch('/:id/detach', async ({ params, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const updated = await TablesService.detachGuest(user.hotelId, parseInt(params.id));
+        return createResponse(updated, 'Guest detached from table successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.OPERATIONS.SETUP_FACILITIES,
+        detail: { summary: 'Detach guest from table', tags: ['Operations'] }
     });

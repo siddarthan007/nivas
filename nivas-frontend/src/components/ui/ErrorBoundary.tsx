@@ -21,7 +21,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
         return { hasError: true, error };
     }
 
-    componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    override componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
         console.error('[ErrorBoundary] Caught error:', error, errorInfo);
     }
 
@@ -29,7 +29,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
         this.setState({ hasError: false, error: null });
     };
 
-    render(): ReactNode {
+    override render(): ReactNode {
         if (this.state.hasError) {
             if (this.props.fallback) {
                 return this.props.fallback;
@@ -99,3 +99,4 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
         return this.props.children;
     }
 }
+

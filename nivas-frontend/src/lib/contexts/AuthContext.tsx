@@ -1,7 +1,8 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { api, tokenStorage, ApiError } from '@/lib/api';
+import { clearPlanCache } from '@/lib/hooks/useHotelPlan';
 
 export type UserType = 'SUPER_ADMIN' | 'HOTEL_STAFF' | 'GUEST';
 
@@ -26,9 +27,7 @@ interface LoginResponse {
 
 interface TwoFAResponse {
     require2FA: true;
-    userId?: string;
-    debugOtp?: string;
-    message: string;
+    userId: string;
 }
 
 interface ProfileResponse {
@@ -61,10 +60,23 @@ interface AuthContextValue {
     verifyOTP: (userId: string, otp: string) => Promise<{ success: boolean; error?: string }>;
     logout: () => void;
     hasPermission: (permission: string) => boolean;
+    refreshProfile: () => Promise<User | null>;
     endImpersonation: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+function buildUserFromProfile(data: ProfileResponse): User {
+    return {
+        id: data.id,
+        name: data.fullName,
+        email: data.email,
+        role: data.role?.name,
+        hotelId: data.hotelId,
+        userType: data.userType,
+        permissions: data.role?.permissions || [],
+    };
+}
 
 function getCookie(name: string): string | null {
     if (typeof document === 'undefined') return null;
@@ -86,30 +98,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         hotelId: null,
     });
 
-    const buildUserFromProfile = (data: ProfileResponse): User => ({
-        id: data.id,
-        name: data.fullName,
-        email: data.email,
-        role: data.role?.name,
-        hotelId: data.hotelId,
-        userType: data.userType,
-        permissions: data.role?.permissions || [],
-    });
+    const refreshProfile = useCallback(async (): Promise<User | null> => {
+        const response = await api.get<ProfileResponse>('/iam/profile');
+        if (!response.data) {
+            return null;
+        }
 
-    // Initialize auth state from storage
+        const freshUser = buildUserFromProfile(response.data);
+        setUser(freshUser);
+        tokenStorage.setUser(freshUser);
+        return freshUser;
+    }, []);
+
     useEffect(() => {
         const initAuth = async () => {
             let isImpersonating = false;
             let impersonationHotelName = '';
 
-            // ── Step 1: Check for restored_token cookie (Return to Admin) ──
-            // Backend sets this non-HttpOnly cookie when ending impersonation.
             const restoredToken = getCookie('restored_token');
             if (restoredToken) {
                 tokenStorage.setToken(restoredToken);
                 deleteCookie('restored_token');
 
-                // Clear all impersonation state
                 localStorage.removeItem('impersonation_mode');
                 localStorage.removeItem('impersonation_hotel');
                 localStorage.removeItem('impersonation_hotel_id');
@@ -120,26 +130,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 isImpersonating = false;
             }
 
-            // ── Step 2: Check for impersonation_token cookie (Start Impersonation) ──
-            // Backend sets this non-HttpOnly cookie during impersonation.
             const impersonationToken = getCookie('impersonation_token');
             if (impersonationToken) {
                 tokenStorage.setToken(impersonationToken);
                 deleteCookie('impersonation_token');
                 isImpersonating = true;
 
-                // Read hotel name from cookie (backend always sets this)
                 const hotelNameCookie = getCookie('impersonation_hotel');
                 impersonationHotelName = hotelNameCookie
                     ? decodeURIComponent(hotelNameCookie)
                     : 'Hotel';
 
-                // Sync to localStorage for persistence across SPA navigations
                 localStorage.setItem('impersonation_mode', 'true');
                 localStorage.setItem('impersonation_hotel', impersonationHotelName);
             }
 
-            // ── Step 3: Check existing impersonation state ──
             if (!isImpersonating && !restoredToken) {
                 const modeFromStorage = localStorage.getItem('impersonation_mode');
                 const modeFromCookie = getCookie('impersonation_active');
@@ -154,28 +159,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
             }
 
-            // ── Step 4: Apply impersonation state ──
             if (isImpersonating) {
                 const hotelIdStr = localStorage.getItem('impersonation_hotel_id');
                 setImpersonation({
                     isImpersonating: true,
                     hotelName: impersonationHotelName,
-                    hotelId: hotelIdStr ? parseInt(hotelIdStr) : null,
+                    hotelId: hotelIdStr ? parseInt(hotelIdStr, 10) : null,
                 });
             } else {
                 setImpersonation({ isImpersonating: false, hotelName: '', hotelId: null });
             }
 
-            // ── Step 5: Fetch user profile ──
             const token = tokenStorage.getToken();
             if (token) {
                 try {
-                    const response = await api.get<ProfileResponse>('/iam/profile');
-                    if (response.data) {
-                        const freshUser = buildUserFromProfile(response.data);
-                        setUser(freshUser);
-                        tokenStorage.setUser(freshUser);
-                    }
+                    await refreshProfile();
                 } catch {
                     tokenStorage.removeToken();
                 }
@@ -184,21 +182,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setIsLoading(false);
         };
 
-        initAuth();
-    }, []);
+        void initAuth();
+    }, [refreshProfile]);
 
-    // Periodic token validation (every 10 minutes)
     useEffect(() => {
         if (!user) return;
 
         const interval = setInterval(async () => {
             try {
-                const response = await api.get<ProfileResponse>('/iam/profile');
-                if (response.data) {
-                    const freshUser = buildUserFromProfile(response.data);
-                    setUser(freshUser);
-                    tokenStorage.setUser(freshUser);
-                }
+                await refreshProfile();
             } catch {
                 tokenStorage.removeToken();
                 setUser(null);
@@ -207,7 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }, 10 * 60 * 1000);
 
         return () => clearInterval(interval);
-    }, [user]);
+    }, [refreshProfile, user]);
 
     const login = useCallback(async (email: string, password: string) => {
         try {
@@ -215,16 +207,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 email,
                 password,
             });
-
-            const responseAny = response as unknown as { require2FA?: boolean; userId?: string; data?: LoginResponse | TwoFAResponse };
-
-            if (responseAny.require2FA === true) {
-                return {
-                    success: true,
-                    require2FA: true,
-                    userId: responseAny.userId,
-                };
-            }
 
             if (response.data && 'require2FA' in response.data && response.data.require2FA) {
                 return {
@@ -234,17 +216,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 };
             }
 
-            const token = (responseAny as { token?: string }).token || (response.data as LoginResponse)?.token;
-            if (token) {
-                tokenStorage.setToken(token);
-
-                const profileRes = await api.get<ProfileResponse>('/iam/profile');
-                if (profileRes.data) {
-                    const newUser = buildUserFromProfile(profileRes.data);
-                    setUser(newUser);
-                    tokenStorage.setUser(newUser);
-                }
-
+            const loginData = response.data as LoginResponse;
+            if (loginData?.token) {
+                tokenStorage.setToken(loginData.token);
+                await refreshProfile();
                 return { success: true };
             }
 
@@ -255,7 +230,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             return { success: false, error: 'Network error. Please try again.' };
         }
-    }, []);
+    }, [refreshProfile]);
 
     const verifyOTP = useCallback(async (userId: string, otp: string) => {
         try {
@@ -266,14 +241,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             if (response.data?.token) {
                 tokenStorage.setToken(response.data.token);
-
-                const profileRes = await api.get<ProfileResponse>('/iam/profile');
-                if (profileRes.data) {
-                    const newUser = buildUserFromProfile(profileRes.data);
-                    setUser(newUser);
-                    tokenStorage.setUser(newUser);
-                }
-
+                await refreshProfile();
                 return { success: true };
             }
 
@@ -284,31 +252,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             return { success: false, error: 'Verification failed. Please try again.' };
         }
-    }, []);
+    }, [refreshProfile]);
 
     const endImpersonation = useCallback(async () => {
         try {
-            // Call backend -- it sets restored_token cookie + clears impersonation cookies
             await api.post('/super-admin/end-impersonate');
 
-            // Clear localStorage impersonation flags
             localStorage.removeItem('impersonation_mode');
             localStorage.removeItem('impersonation_hotel');
             localStorage.removeItem('impersonation_hotel_id');
 
-            // Clear non-HttpOnly cookies we can reach from JS
             deleteCookie('impersonation_active');
             deleteCookie('impersonation_hotel');
             deleteCookie('impersonation_token');
 
-            // Full page reload. On reload, initAuth will:
-            // 1. Find the restored_token cookie (set by backend)
-            // 2. Store it in localStorage as the auth token
-            // 3. Clear impersonation state
-            // 4. Fetch the admin profile
             window.location.href = '/dashboard/tenants';
         } catch {
-            // Fallback: clear everything and redirect to login
             tokenStorage.removeToken();
             localStorage.removeItem('impersonation_mode');
             localStorage.removeItem('impersonation_hotel');
@@ -323,6 +282,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const logout = useCallback(() => {
         tokenStorage.removeToken();
+        clearPlanCache();
         localStorage.removeItem('impersonation_mode');
         localStorage.removeItem('impersonation_hotel');
         localStorage.removeItem('impersonation_hotel_id');
@@ -342,20 +302,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return user.permissions.includes(permission);
     }, [user]);
 
+    const contextValue = useMemo<AuthContextValue>(() => ({
+        user,
+        isAuthenticated: !!user,
+        isLoading,
+        impersonation,
+        login,
+        verifyOTP,
+        logout,
+        hasPermission,
+        refreshProfile,
+        endImpersonation,
+    }), [user, isLoading, impersonation, login, verifyOTP, logout, hasPermission, refreshProfile, endImpersonation]);
+
     return (
-        <AuthContext.Provider
-            value={{
-                user,
-                isAuthenticated: !!user,
-                isLoading,
-                impersonation,
-                login,
-                verifyOTP,
-                logout,
-                hasPermission,
-                endImpersonation,
-            }}
-        >
+        <AuthContext.Provider value={contextValue}>
             {children}
         </AuthContext.Provider>
     );

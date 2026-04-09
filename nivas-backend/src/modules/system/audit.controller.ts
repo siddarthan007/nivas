@@ -5,6 +5,8 @@ import { eq, desc, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { PERMISSIONS } from '../../config/permissions';
 import { AuditService } from './audit.service';
+import { createResponse } from '../../utils/response.helper';
+import { ForbiddenError, ValidationError } from '../../utils/errors';
 
 export const auditController = new Elysia({ prefix: '/audit' })
     .use(authMiddleware)
@@ -14,7 +16,7 @@ export const auditController = new Elysia({ prefix: '/audit' })
         const hotelId = user!.type === 'SUPER_ADMIN' ? undefined : (user!.hotelId ?? undefined);
         const logs = await AuditService.getLogs(hotelId, limit);
 
-        return { status: 'success', data: logs };
+        return createResponse(logs, 'Audit logs fetched');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.SYSTEM.VIEW_SAAS_ANALYTICS,
@@ -24,19 +26,18 @@ export const auditController = new Elysia({ prefix: '/audit' })
         detail: { summary: 'View audit logs', tags: ['Analytics'] }
     })
     .delete('/', async ({ body, user }) => {
-        // Only Super Admins can permanently delete audit logs
         if (user!.type !== 'SUPER_ADMIN') {
-            return { status: 'error', message: 'Only Super Admins can delete audit logs' };
+            throw new ForbiddenError('Only Super Admins can delete audit logs');
         }
 
         const { ids } = body;
         if (!ids || ids.length === 0) {
-            return { status: 'error', message: 'No log IDs provided' };
+            throw new ValidationError('No log IDs provided');
         }
 
         await db.delete(auditLogs).where(inArray(auditLogs.id, ids));
 
-        return { status: 'success', message: `Deleted ${ids.length} audit log(s)` };
+        return createResponse(null, `Deleted ${ids.length} audit log(s)`);
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.SYSTEM.VIEW_SAAS_ANALYTICS,

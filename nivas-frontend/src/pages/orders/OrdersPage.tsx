@@ -18,9 +18,17 @@ import {
     ArrowRight,
     Trash2,
     Minus,
+    Users,
+    UserPlus,
+    UserMinus,
+    CreditCard,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import type { Order, OrderStatus, CreateOrderPayload } from '@/lib/types/api.types';
+import type { Order, OrderStatus, OrderType, CreateOrderPayload } from '@/lib/types/api.types';
+import { toast } from 'sonner';
+import RecordPaymentModal from '@/components/features/payments/RecordPaymentModal';
+import { GuestSearchInput } from '@/components/features/guests/GuestSearchInput';
+import { Skeleton } from '@/components/ui';
 
 // Status configuration
 const STATUS_CONFIG: Record<OrderStatus, {
@@ -81,11 +89,13 @@ const STATUS_CONFIG: Record<OrderStatus, {
 function OrderCard({
     order,
     onStatusChange,
-    onCancel
+    onCancel,
+    onRecordPayment
 }: {
     order: Order;
     onStatusChange: (orderId: string, status: OrderStatus) => void;
     onCancel?: (orderId: string) => void;
+    onRecordPayment?: (order: Order) => void;
 }) {
     const config = STATUS_CONFIG[order.status];
     const StatusIcon = config.icon;
@@ -234,6 +244,16 @@ function OrderCard({
                             <ArrowRight size={14} style={{ marginLeft: '4px' }} />
                         </Button>
                     )}
+                    {order.status === 'SERVED' && onRecordPayment && (
+                        <Button
+                            size="sm"
+                            onClick={() => onRecordPayment(order)}
+                            title="Record Payment"
+                        >
+                            <CreditCard size={14} style={{ marginRight: '4px' }} />
+                            Pay
+                        </Button>
+                    )}
                     {order.status !== 'SERVED' && order.status !== 'CANCELLED' && onCancel && (
                         <Button
                             size="sm"
@@ -257,13 +277,15 @@ function KanbanColumn({
     orders,
     color,
     onStatusChange,
-    onCancel
+    onCancel,
+    onRecordPayment
 }: {
     title: string;
     orders: Order[];
     color: string;
     onStatusChange: (orderId: string, status: OrderStatus) => void;
     onCancel?: (orderId: string) => void;
+    onRecordPayment?: (order: Order) => void;
 }) {
     return (
         <div style={{
@@ -328,6 +350,7 @@ function KanbanColumn({
                             order={order}
                             onStatusChange={onStatusChange}
                             onCancel={onCancel}
+                            onRecordPayment={onRecordPayment}
                         />
                     ))
                 )}
@@ -356,14 +379,39 @@ function NewOrderModal({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
     const [orderType, setOrderType] = useState<string>('DINE_IN');
     const [customerName, setCustomerName] = useState('');
     const [roomId, setRoomId] = useState<string>('');
+    const [selectedTableId, setSelectedTableId] = useState('');
+    const [guestId, setGuestId] = useState<string | null>(null);
     const [items, setItems] = useState<{ menuItemId: number; name: string; quantity: number; price: number; notes: string }[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [rooms, setRooms] = useState<any[]>([]);
+    const [tables, setTables] = useState<any[]>([]);
+    const [addToGuestBill, setAddToGuestBill] = useState(true);
 
     useEffect(() => {
         if (isOpen) {
-            api.get<any[]>('/menu').then(res => setMenuItems(res.data || [])).catch(() => {});
+            // Reset all form state when modal opens
+            setItems([]);
+            setCustomerName('');
+            setRoomId('');
+            setSelectedTableId('');
+            setGuestId(null);
+            setOrderType('DINE_IN');
+            setAddToGuestBill(true);
+            api.get<any[]>('/menu').then(res => setMenuItems(res.data || [])).catch(() => { });
+            api.get<any[]>('/rooms').then(res => setRooms(res.data || [])).catch(() => { });
+            api.get<any[]>('/operations/tables').then(res => setTables(res.data || [])).catch(() => { });
         }
     }, [isOpen]);
+
+    // Auto-fill customer name when room is selected
+    useEffect(() => {
+        if (orderType === 'ROOM_SERVICE' && roomId) {
+            const selectedRoom = rooms.find((r: any) => String(r.id) === roomId);
+            if (selectedRoom?.currentBooking?.guestName && !customerName) {
+                setCustomerName(selectedRoom.currentBooking.guestName);
+            }
+        }
+    }, [roomId, orderType, rooms]);
 
     const addItem = (mi: any) => {
         setItems(prev => {
@@ -385,10 +433,13 @@ function NewOrderModal({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
         if (items.length === 0) return;
         setIsSubmitting(true);
         const payload: CreateOrderPayload = {
-            orderType: orderType as any,
+            orderType: orderType as OrderType,
             customerName: customerName || undefined,
             roomId: roomId ? Number(roomId) : undefined,
+            restaurantTableId: orderType === 'DINE_IN' && selectedTableId ? Number(selectedTableId) : undefined,
+            guestId: guestId || undefined,
             items: items.map(i => ({ menuItemId: i.menuItemId, quantity: i.quantity, price: i.price, notes: i.notes || undefined })),
+            addToGuestBill: orderType === 'ROOM_SERVICE' && addToGuestBill ? true : undefined,
         };
         const ok = await createOrder(payload);
         setIsSubmitting(false);
@@ -396,6 +447,8 @@ function NewOrderModal({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
             setItems([]);
             setCustomerName('');
             setRoomId('');
+            setSelectedTableId('');
+            setGuestId(null);
             setOrderType('DINE_IN');
             onCreated();
             onClose();
@@ -403,6 +456,7 @@ function NewOrderModal({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
     };
 
     const labelStyle = { fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' } as const;
+    const occupiedRooms = rooms.filter((r: any) => r.status === 'OCCUPIED' || r.currentBooking);
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="New Order">
@@ -410,21 +464,134 @@ function NewOrderModal({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                     <div>
                         <label style={labelStyle}>Order Type *</label>
-                        <Select value={orderType} onChange={(e: any) => setOrderType(e.target.value)} options={[
+                        <Select value={orderType} onChange={(e: any) => { setOrderType(e.target.value); setRoomId(''); setSelectedTableId(''); setGuestId(null); }} options={[
                             { value: 'DINE_IN', label: 'Dine In' },
                             { value: 'ROOM_SERVICE', label: 'Room Service' },
                             { value: 'TAKEAWAY', label: 'Takeaway' },
                         ]} />
                     </div>
                     <div>
-                        <label style={labelStyle}>Customer Name</label>
-                        <Input value={customerName} onChange={(e: any) => setCustomerName(e.target.value)} placeholder="Guest name" />
+                        <label style={labelStyle}>Customer / Guest</label>
+                        <GuestSearchInput
+                            value={customerName}
+                            onSelect={(guest) => {
+                                setGuestId(guest.id);
+                                setCustomerName(guest.fullName);
+                            }}
+                            onAddNew={(name) => {
+                                setGuestId(null);
+                                setCustomerName(name);
+                            }}
+                            placeholder="Search or add guest..."
+                        />
                     </div>
                 </div>
                 {orderType === 'ROOM_SERVICE' && (
                     <div>
-                        <label style={labelStyle}>Room Number</label>
-                        <Input type="number" value={roomId} onChange={(e: any) => setRoomId(e.target.value)} placeholder="Room ID" />
+                        <label style={labelStyle}>Room</label>
+                        {occupiedRooms.length > 0 ? (
+                            <Select
+                                value={roomId}
+                                onChange={(e: any) => {
+                                    setRoomId(e.target.value);
+                                    // Auto-fill guest name
+                                    const room = rooms.find((r: any) => String(r.id) === e.target.value);
+                                    if (room?.currentBooking?.guestName) {
+                                        setCustomerName(room.currentBooking.guestName);
+                                    }
+                                }}
+                                options={[
+                                    { value: '', label: 'Select a room...' },
+                                    ...occupiedRooms.map((r: any) => ({
+                                        value: String(r.id),
+                                        label: `Room ${r.roomNumber}${r.currentBooking?.guestName ? ` — ${r.currentBooking.guestName}` : ''}`
+                                    }))
+                                ]}
+                            />
+                        ) : (
+                            <Input type="number" value={roomId} onChange={(e: any) => setRoomId(e.target.value)} placeholder="Room ID" />
+                        )}
+                        {/* Add to guest bill toggle */}
+                        <label style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            marginTop: '8px',
+                            fontSize: '13px',
+                            color: 'var(--notion-text)',
+                            cursor: 'pointer',
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={addToGuestBill}
+                                onChange={e => setAddToGuestBill(e.target.checked)}
+                                style={{
+                                    width: '16px',
+                                    height: '16px',
+                                    accentColor: 'var(--notion-blue)',
+                                    cursor: 'pointer',
+                                }}
+                            />
+                            Include in guest&apos;s bill
+                        </label>
+                    </div>
+                )}
+                {orderType === 'DINE_IN' && (
+                    <div>
+                        <label style={labelStyle}>Table *</label>
+                        {tables.length > 0 ? (
+                            <Select
+                                value={selectedTableId}
+                                onChange={(e: any) => {
+                                    const val = e.target.value;
+                                    setSelectedTableId(val);
+                                    const table = tables.find((t: any) => String(t.id) === val);
+                                    if (table?.layoutProps?.guestName && !customerName) {
+                                        setCustomerName(table.layoutProps.guestName);
+                                    }
+                                }}
+                                options={[
+                                    { value: '', label: 'Select a table...' },
+                                    ...tables.map((t: any) => ({
+                                        value: String(t.id),
+                                        label: `Table ${t.tableNumber} (${t.capacity} seats)${t.status === 'OCCUPIED' ? ' — Occupied' : ''}${t.layoutProps?.guestName ? ` — ${t.layoutProps.guestName}` : ''}`
+                                    }))
+                                ]}
+                            />
+                        ) : (
+                            <Input type="number" value={selectedTableId} onChange={(e: any) => setSelectedTableId(e.target.value)} placeholder="Table ID" />
+                        )}
+                        {/* Selected table info card */}
+                        {selectedTableId && (() => {
+                            const selectedTable = tables.find((t: any) => String(t.id) === selectedTableId);
+                            if (!selectedTable) return null;
+                            return (
+                                <div style={{
+                                    marginTop: '8px',
+                                    padding: '10px 12px',
+                                    backgroundColor: selectedTable.status === 'OCCUPIED' ? 'rgba(235,87,87,0.06)' : 'rgba(68,131,97,0.06)',
+                                    border: `1px solid ${selectedTable.status === 'OCCUPIED' ? 'rgba(235,87,87,0.2)' : 'rgba(68,131,97,0.2)'}`,
+                                    borderRadius: 'var(--radius-md)',
+                                    fontSize: '12px',
+                                    color: 'var(--notion-text-secondary)',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                }}>
+                                    <span>{selectedTable.location || 'Main Hall'} • {selectedTable.capacity} seats</span>
+                                    <span style={{
+                                        padding: '2px 8px',
+                                        borderRadius: '99px',
+                                        fontSize: '11px',
+                                        fontWeight: '500',
+                                        backgroundColor: selectedTable.status === 'OCCUPIED' ? 'var(--notion-red-bg)' : 'var(--notion-green-bg)',
+                                        color: selectedTable.status === 'OCCUPIED' ? 'var(--notion-red)' : 'var(--notion-green)',
+                                    }}>
+                                        {selectedTable.status || 'Available'}
+                                    </span>
+                                </div>
+                            );
+                        })()}
                     </div>
                 )}
 
@@ -438,8 +605,8 @@ function NewOrderModal({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
                                 background: 'none', border: 'none', cursor: 'pointer', borderRadius: 'var(--radius-sm)',
                                 color: 'var(--notion-text)', fontSize: '13px', textAlign: 'left',
                             }}
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--notion-bg-tertiary)'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--notion-bg-tertiary)'}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
                                 <span>{mi.name}</span>
                                 <span style={{ color: 'var(--notion-text-secondary)' }}>₹{Number(mi.price || 0).toLocaleString()}</span>
@@ -495,11 +662,46 @@ export default function OrdersPage() {
     } = useOrders();
 
     const [showNewOrder, setShowNewOrder] = useState(false);
+    const [tables, setTables] = useState<any[]>([]);
+    const [showAttachModal, setShowAttachModal] = useState<any>(null);
+    const [attachName, setAttachName] = useState('');
+    const [attachPhone, setAttachPhone] = useState('');
+
+    // Fetch tables
+    const fetchTables = useCallback(() => {
+        api.get<any[]>('/operations/tables').then(res => setTables(res.data || [])).catch(() => { });
+    }, []);
+
+    useEffect(() => { fetchTables(); }, []);
+
+    const handleAttachGuest = async (tableId: number) => {
+        if (!attachName.trim()) return;
+        try {
+            await api.patch(`/operations/tables/${tableId}/attach`, { guestName: attachName, phone: attachPhone || undefined });
+            toast.success('Guest attached to table');
+            setShowAttachModal(null);
+            setAttachName('');
+            setAttachPhone('');
+            fetchTables();
+        } catch { toast.error('Failed to attach guest'); }
+    };
+
+    const handleDetachGuest = async (tableId: number) => {
+        try {
+            await api.patch(`/operations/tables/${tableId}/detach`, {});
+            toast.success('Guest detached from table');
+            fetchTables();
+        } catch { toast.error('Failed to detach guest'); }
+    };
+
+    // Payment modal state
+    const [paymentOrder, setPaymentOrder] = useState<Order | null>(null);
 
     // Derive filtered orders from the main orders array
     const pendingOrders = orders.filter(o => o.status === 'PENDING' || o.status === 'CONFIRMED');
     const preparingOrders = orders.filter(o => o.status === 'PREPARING');
     const readyOrders = orders.filter(o => o.status === 'READY');
+    const servedOrders = orders.filter(o => o.status === 'SERVED');
 
     // Derive stats from orders
     const stats = {
@@ -516,117 +718,237 @@ export default function OrdersPage() {
     return (
         <DashboardLayout>
             <div style={{ padding: 'var(--space-8)' }}>
-                    {/* Header */}
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: 'var(--space-6)',
-                    }}>
-                        <div>
-                            <h1 style={{
-                                fontSize: '28px',
-                                fontWeight: '600',
-                                color: 'var(--notion-text)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 'var(--space-3)',
-                            }}>
-                                <UtensilsCrossed size={28} />
-                                Orders
-                            </h1>
-                            <p style={{
-                                fontSize: '14px',
-                                color: 'var(--notion-text-secondary)',
-                                marginTop: 'var(--space-1)',
-                            }}>
-                                Kitchen order management and tracking
-                            </p>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                            <Button variant="secondary" onClick={() => fetchOrders()} disabled={isLoading}>
-                                <RefreshCw size={14} style={{ marginRight: '6px' }} />
-                                Refresh
-                            </Button>
-                            <Button onClick={() => setShowNewOrder(true)}>
-                                <Plus size={14} style={{ marginRight: '6px' }} />
-                                New Order
-                            </Button>
-                        </div>
+                {/* Header */}
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 'var(--space-6)',
+                }}>
+                    <div>
+                        <h1 style={{
+                            fontSize: '28px',
+                            fontWeight: '600',
+                            color: 'var(--notion-text)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 'var(--space-3)',
+                        }}>
+                            <UtensilsCrossed size={28} />
+                            Orders
+                        </h1>
+                        <p style={{
+                            fontSize: '14px',
+                            color: 'var(--notion-text-secondary)',
+                            marginTop: 'var(--space-1)',
+                        }}>
+                            Kitchen order management and tracking
+                        </p>
                     </div>
 
-                    {/* Stats */}
+                    <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                        <Button variant="secondary" onClick={() => fetchOrders()} disabled={isLoading}>
+                            <RefreshCw size={14} style={{ marginRight: '6px' }} />
+                            Refresh
+                        </Button>
+                        <Button onClick={() => setShowNewOrder(true)}>
+                            <Plus size={14} style={{ marginRight: '6px' }} />
+                            New Order
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Stats */}
+                <div style={{
+                    display: 'flex',
+                    gap: 'var(--space-6)',
+                    marginBottom: 'var(--space-6)',
+                }}>
+                    {[
+                        { label: 'Total', value: stats?.total ?? 0, color: 'var(--notion-text)' },
+                        { label: 'Pending', value: stats?.pending ?? 0, color: 'var(--notion-orange)' },
+                        { label: 'Preparing', value: stats?.preparing ?? 0, color: 'var(--notion-purple)' },
+                        { label: 'Ready', value: stats?.ready ?? 0, color: 'var(--notion-green)' },
+                    ].map(stat => (
+                        <div key={stat.label} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                            <span style={{ fontSize: '20px', fontWeight: '600', color: stat.color }}>{stat.value}</span>
+                            <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{stat.label}</span>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Table Status Bar */}
+                {tables.length > 0 && (
+                    <div style={{
+                        marginBottom: 'var(--space-6)',
+                        padding: 'var(--space-4)',
+                        backgroundColor: 'var(--notion-bg-secondary)',
+                        borderRadius: 'var(--radius-lg)',
+                        border: '1px solid var(--notion-border)',
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                            <Users size={16} style={{ color: 'var(--notion-text-secondary)' }} />
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>Dine-In Tables</span>
+                            <span style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
+                                ({tables.filter(t => t.status === 'OCCUPIED').length}/{tables.length} occupied)
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                            {tables.map((table: any) => {
+                                const isOccupied = table.status === 'OCCUPIED';
+                                const guestName = table.layoutProps?.guestName;
+                                return (
+                                    <div key={table.id} style={{
+                                        padding: '10px 14px',
+                                        backgroundColor: isOccupied ? 'rgba(235,87,87,0.06)' : 'var(--notion-bg)',
+                                        border: `1px solid ${isOccupied ? 'rgba(235,87,87,0.2)' : 'var(--notion-border)'}`,
+                                        borderRadius: 'var(--radius-md)',
+                                        minWidth: '140px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '6px',
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--notion-text)' }}>
+                                                Table {table.tableNumber}
+                                            </span>
+                                            <span style={{
+                                                fontSize: '10px', padding: '2px 6px', borderRadius: '99px', fontWeight: '500',
+                                                backgroundColor: isOccupied ? 'var(--notion-red-bg)' : 'var(--notion-green-bg)',
+                                                color: isOccupied ? 'var(--notion-red)' : 'var(--notion-green)',
+                                            }}>
+                                                {isOccupied ? 'Occupied' : 'Free'}
+                                            </span>
+                                        </div>
+                                        {guestName && (
+                                            <span style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
+                                                {guestName}
+                                            </span>
+                                        )}
+                                        <div style={{ display: 'flex', gap: '4px', marginTop: '2px' }}>
+                                            {isOccupied ? (
+                                                <button
+                                                    onClick={() => handleDetachGuest(table.id)}
+                                                    style={{
+                                                        display: 'flex', alignItems: 'center', gap: '4px',
+                                                        fontSize: '11px', padding: '3px 8px',
+                                                        background: 'none', border: '1px solid var(--notion-border)',
+                                                        borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                                                        color: 'var(--notion-red)',
+                                                    }}
+                                                >
+                                                    <UserMinus size={10} /> Detach
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => { setShowAttachModal(table); setAttachName(''); setAttachPhone(''); }}
+                                                    style={{
+                                                        display: 'flex', alignItems: 'center', gap: '4px',
+                                                        fontSize: '11px', padding: '3px 8px',
+                                                        background: 'none', border: '1px solid var(--notion-border)',
+                                                        borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                                                        color: 'var(--notion-blue)',
+                                                    }}
+                                                >
+                                                    <UserPlus size={10} /> Attach Guest
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Attach Guest Modal */}
+                <Modal isOpen={!!showAttachModal} onClose={() => setShowAttachModal(null)} title={`Attach Guest to Table ${showAttachModal?.tableNumber || ''}`}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                        <div>
+                            <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Guest Name *</label>
+                            <Input value={attachName} onChange={(e: any) => setAttachName(e.target.value)} placeholder="Enter guest name" />
+                        </div>
+                        <div>
+                            <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Phone (optional)</label>
+                            <Input value={attachPhone} onChange={(e: any) => setAttachPhone(e.target.value)} placeholder="Phone number" />
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                            <Button variant="secondary" onClick={() => setShowAttachModal(null)} style={{ flex: 1 }}>Cancel</Button>
+                            <Button onClick={() => handleAttachGuest(showAttachModal?.id)} disabled={!attachName.trim()} style={{ flex: 1 }}>Attach Guest</Button>
+                        </div>
+                    </div>
+                </Modal>
+
+                {/* Kanban Board */}
+                {isLoading ? (
                     <div style={{
                         display: 'flex',
-                        gap: 'var(--space-6)',
-                        marginBottom: 'var(--space-6)',
+                        gap: 'var(--space-4)',
                     }}>
-                        {[
-                            { label: 'Total', value: stats?.total ?? 0, color: 'var(--notion-text)' },
-                            { label: 'Pending', value: stats?.pending ?? 0, color: 'var(--notion-orange)' },
-                            { label: 'Preparing', value: stats?.preparing ?? 0, color: 'var(--notion-purple)' },
-                            { label: 'Ready', value: stats?.ready ?? 0, color: 'var(--notion-green)' },
-                        ].map(stat => (
-                            <div key={stat.label} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                                <span style={{ fontSize: '20px', fontWeight: '600', color: stat.color }}>{stat.value}</span>
-                                <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{stat.label}</span>
-                            </div>
+                        {Array.from({ length: 4 }).map((_, i) => (
+                            <Skeleton
+                                key={i}
+                                variant="card"
+                                height={400}
+                                style={{ flex: 1 }}
+                            />
                         ))}
                     </div>
-
-                    {/* Kanban Board */}
-                    {isLoading ? (
-                        <div style={{
-                            display: 'flex',
-                            gap: 'var(--space-4)',
-                        }}>
-                            {Array.from({ length: 3 }).map((_, i) => (
-                                <div key={i} style={{
-                                    flex: 1,
-                                    height: '400px',
-                                    backgroundColor: 'var(--notion-bg-tertiary)',
-                                    borderRadius: 'var(--radius-lg)',
-                                    animation: 'pulse 1.5s ease-in-out infinite',
-                                }} />
-                            ))}
-                        </div>
-                    ) : (
-                        <div style={{
-                            display: 'flex',
-                            gap: 'var(--space-4)',
-                            overflowX: 'auto',
-                            paddingBottom: 'var(--space-4)',
-                        }}>
-                            <KanbanColumn
-                                title="Pending"
-                                orders={pendingOrders}
-                                color="var(--notion-orange)"
-                                onStatusChange={handleStatusChange}
-                                onCancel={(id) => cancelOrder(id)}
-                            />
-                            <KanbanColumn
-                                title="Preparing"
-                                orders={preparingOrders}
-                                color="var(--notion-purple)"
-                                onStatusChange={handleStatusChange}
-                                onCancel={(id) => cancelOrder(id)}
-                            />
-                            <KanbanColumn
-                                title="Ready"
-                                orders={readyOrders}
-                                color="var(--notion-green)"
-                                onStatusChange={handleStatusChange}
-                                onCancel={(id) => cancelOrder(id)}
-                            />
-                        </div>
-                    )}
+                ) : (
+                    <div style={{
+                        display: 'flex',
+                        gap: 'var(--space-4)',
+                        overflowX: 'auto',
+                        paddingBottom: 'var(--space-4)',
+                    }}>
+                        <KanbanColumn
+                            title="Pending"
+                            orders={pendingOrders}
+                            color="var(--notion-orange)"
+                            onStatusChange={handleStatusChange}
+                            onCancel={(id) => cancelOrder(id)}
+                        />
+                        <KanbanColumn
+                            title="Preparing"
+                            orders={preparingOrders}
+                            color="var(--notion-purple)"
+                            onStatusChange={handleStatusChange}
+                            onCancel={(id) => cancelOrder(id)}
+                        />
+                        <KanbanColumn
+                            title="Ready"
+                            orders={readyOrders}
+                            color="var(--notion-green)"
+                            onStatusChange={handleStatusChange}
+                            onCancel={(id) => cancelOrder(id)}
+                        />
+                        <KanbanColumn
+                            title="Served"
+                            orders={servedOrders.slice(0, 10)}
+                            color="var(--notion-text-secondary)"
+                            onStatusChange={handleStatusChange}
+                            onRecordPayment={(order) => setPaymentOrder(order)}
+                        />
+                    </div>
+                )}
             </div>
 
             <NewOrderModal
                 isOpen={showNewOrder}
                 onClose={() => setShowNewOrder(false)}
                 onCreated={() => fetchOrders()}
+            />
+
+            <RecordPaymentModal
+                isOpen={!!paymentOrder}
+                onClose={() => setPaymentOrder(null)}
+                onSuccess={() => { fetchOrders(); fetchTables(); }}
+                context={paymentOrder ? {
+                    orderId: paymentOrder.id,
+                    guestName: paymentOrder.customerName,
+                    totalDue: paymentOrder.total || 0,
+                    label: `Order #${paymentOrder.orderNumber}`,
+                } : undefined}
             />
         </DashboardLayout>
     );

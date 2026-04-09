@@ -2,15 +2,70 @@ import { Elysia, t } from 'elysia';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { PERMISSIONS } from '../../config/permissions';
 import { MenuService } from './menu.service';
+import { MenuCategoryService } from './menu-category.service';
 import { createResponse } from '../../utils/response.helper';
 import { ValidationError } from '../../utils/errors';
 
 /**
- * Menu Controller - Manage menu items
+ * Menu Controller - Manage menu items and categories
  * All operations are scoped to the user's hotel
  */
 export const menuController = new Elysia({ prefix: '/menu' })
     .use(authMiddleware)
+
+    // ============================================
+    // CATEGORIES (Must be before /:id)
+    // ============================================
+
+    .get('/categories', async ({ user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const categories = await MenuCategoryService.getAllCategories(user.hotelId);
+        return createResponse(categories, 'Categories fetched successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.MENU.VIEW
+    })
+
+    .post('/categories', async ({ body, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const category = await MenuCategoryService.createCategory(user.hotelId, body);
+        return createResponse(category, 'Category created successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.MENU.CREATE,
+        body: t.Object({
+            name: t.String(),
+            description: t.Optional(t.String())
+        })
+    })
+
+    .patch('/categories/:id', async ({ params, body, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const category = await MenuCategoryService.updateCategory(user.hotelId, parseInt(params.id), body);
+        return createResponse(category, 'Category updated successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.MENU.UPDATE,
+        body: t.Partial(t.Object({
+            name: t.String(),
+            description: t.String(),
+            sortOrder: t.Number()
+        }))
+    })
+
+    .delete('/categories/:id', async ({ params, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        await MenuCategoryService.deleteCategory(user.hotelId, parseInt(params.id));
+        return createResponse(null, 'Category deleted successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.MENU.DELETE
+    })
+
+    // ============================================
+    // MENU ITEMS
+    // ============================================
+
     /**
      * Create a new menu item
      */

@@ -127,6 +127,12 @@ const jwtConfig = jwt({
     secret: process.env.JWT_SECRET || 'nivas-secret-key'
 });
 
+const jwtVerifierApp = new Elysia().use(jwtConfig);
+
+const verifySocketToken = async (token: string) => {
+    const jwtDecorator = (jwtVerifierApp as any).decorator?.jwt;
+    return jwtDecorator ? await jwtDecorator.verify(token) : null;
+};
 
 export const wsController = new Elysia({ prefix: '/ws' })
     .use(jwtConfig)
@@ -144,8 +150,7 @@ export const wsController = new Elysia({ prefix: '/ws' })
             }
 
             try {
-                const jwtInstance = (ws.data as any).jwt;
-                const profile = jwtInstance ? await jwtInstance.verify(token) : null;
+                const profile = await verifySocketToken(token);
 
                 if (!profile) {
                     ws.send(JSON.stringify({ type: 'ERROR', message: 'Invalid or expired token' }));

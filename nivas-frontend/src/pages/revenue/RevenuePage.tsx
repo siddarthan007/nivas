@@ -8,6 +8,8 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
+import CustomDatePicker from '@/components/ui/DatePicker';
 import {
     TrendingUp,
     TrendingDown,
@@ -33,6 +35,7 @@ import type {
     LosDiscount,
     CreateLosDiscountPayload,
 } from '@/lib/hooks/useRevenue';
+import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal';
 
 // Tab Navigation
 function TabNav({ activeTab, onTabChange }: { activeTab: string; onTabChange: (tab: string) => void }) {
@@ -639,52 +642,32 @@ function CreatePricingRuleModal({ isOpen, onClose, onSubmit }: {
                     />
                 </div>
 
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Type
-                    </label>
-                    <select
-                        value={formData.type}
-                        onChange={e => setFormData({ ...formData, type: e.target.value })}
-                        style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            fontSize: '14px',
-                            border: '1px solid var(--notion-border)',
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: 'var(--notion-bg-secondary)',
-                            color: 'var(--notion-text)',
-                        }}
-                    >
-                        <option value="WEEKEND">Weekend</option>
-                        <option value="HOLIDAY">Holiday</option>
-                        <option value="SEASON">Seasonal</option>
-                        <option value="OCCUPANCY">Occupancy Based</option>
-                        <option value="ADVANCE">Advance Booking</option>
-                    </select>
-                </div>
+                <Select
+                    label="Type"
+                    value={formData.type}
+                    onChange={e => setFormData({ ...formData, type: e.target.value })}
+                    fullWidth
+                    options={[
+                        { value: 'WEEKEND', label: 'Weekend' },
+                        { value: 'HOLIDAY', label: 'Holiday' },
+                        { value: 'SEASON', label: 'Seasonal' },
+                        { value: 'OCCUPANCY', label: 'Occupancy Based' },
+                        { value: 'ADVANCE', label: 'Advance Booking' },
+                    ]}
+                />
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Adjustment Type
-                        </label>
-                        <select
+                        <Select
+                            label="Adjustment Type"
                             value={formData.adjustmentType}
                             onChange={e => setFormData({ ...formData, adjustmentType: e.target.value as 'FLAT' | 'PERCENTAGE' })}
-                            style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                fontSize: '14px',
-                                border: '1px solid var(--notion-border)',
-                                borderRadius: 'var(--radius-md)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                            }}
-                        >
-                            <option value="PERCENTAGE">Percentage</option>
-                            <option value="FLAT">Flat Amount</option>
-                        </select>
+                            fullWidth
+                            options={[
+                                { value: 'PERCENTAGE', label: 'Percentage' },
+                                { value: 'FLAT', label: 'Flat Amount' },
+                            ]}
+                        />
                     </div>
                     <div style={{ flex: 1 }}>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
@@ -763,26 +746,17 @@ function CreateDiscountRuleModal({ isOpen, onClose, onSubmit }: {
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Type
-                        </label>
-                        <select
+                        <Select
+                            label="Type"
                             value={formData.discountType}
                             onChange={e => setFormData({ ...formData, discountType: e.target.value as 'PERCENTAGE' | 'FLAT' | 'BOGO' })}
-                            style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                fontSize: '14px',
-                                border: '1px solid var(--notion-border)',
-                                borderRadius: 'var(--radius-md)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                            }}
-                        >
-                            <option value="PERCENTAGE">Percentage</option>
-                            <option value="FLAT">Flat Amount</option>
-                            <option value="BOGO">Buy One Get One</option>
-                        </select>
+                            fullWidth
+                            options={[
+                                { value: 'PERCENTAGE', label: 'Percentage' },
+                                { value: 'FLAT', label: 'Flat Amount' },
+                                { value: 'BOGO', label: 'Buy One Get One' },
+                            ]}
+                        />
                     </div>
                     <div style={{ flex: 1 }}>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
@@ -890,52 +864,32 @@ function EditPricingRuleModal({ isOpen, onClose, rule, onSubmit }: {
                     />
                 </div>
 
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Type
-                    </label>
-                    <select
-                        value={formData.type}
-                        onChange={e => setFormData({ ...formData, type: e.target.value })}
-                        style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            fontSize: '14px',
-                            border: '1px solid var(--notion-border)',
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: 'var(--notion-bg-secondary)',
-                            color: 'var(--notion-text)',
-                        }}
-                    >
-                        <option value="WEEKEND">Weekend</option>
-                        <option value="HOLIDAY">Holiday</option>
-                        <option value="SEASON">Seasonal</option>
-                        <option value="OCCUPANCY">Occupancy Based</option>
-                        <option value="ADVANCE">Advance Booking</option>
-                    </select>
-                </div>
+                <Select
+                    label="Type"
+                    value={formData.type}
+                    onChange={e => setFormData({ ...formData, type: e.target.value })}
+                    fullWidth
+                    options={[
+                        { value: 'WEEKEND', label: 'Weekend' },
+                        { value: 'HOLIDAY', label: 'Holiday' },
+                        { value: 'SEASON', label: 'Seasonal' },
+                        { value: 'OCCUPANCY', label: 'Occupancy Based' },
+                        { value: 'ADVANCE', label: 'Advance Booking' },
+                    ]}
+                />
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Adjustment Type
-                        </label>
-                        <select
+                        <Select
+                            label="Adjustment Type"
                             value={formData.adjustmentType}
                             onChange={e => setFormData({ ...formData, adjustmentType: e.target.value as 'FLAT' | 'PERCENTAGE' })}
-                            style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                fontSize: '14px',
-                                border: '1px solid var(--notion-border)',
-                                borderRadius: 'var(--radius-md)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                            }}
-                        >
-                            <option value="PERCENTAGE">Percentage</option>
-                            <option value="FLAT">Flat Amount</option>
-                        </select>
+                            fullWidth
+                            options={[
+                                { value: 'PERCENTAGE', label: 'Percentage' },
+                                { value: 'FLAT', label: 'Flat Amount' },
+                            ]}
+                        />
                     </div>
                     <div style={{ flex: 1 }}>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
@@ -1034,26 +988,17 @@ function EditDiscountRuleModal({ isOpen, onClose, rule, onSubmit }: {
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Type
-                        </label>
-                        <select
+                        <Select
+                            label="Type"
                             value={formData.discountType}
                             onChange={e => setFormData({ ...formData, discountType: e.target.value as 'PERCENTAGE' | 'FLAT' | 'BOGO' })}
-                            style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                fontSize: '14px',
-                                border: '1px solid var(--notion-border)',
-                                borderRadius: 'var(--radius-md)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                            }}
-                        >
-                            <option value="PERCENTAGE">Percentage</option>
-                            <option value="FLAT">Flat Amount</option>
-                            <option value="BOGO">Buy One Get One</option>
-                        </select>
+                            fullWidth
+                            options={[
+                                { value: 'PERCENTAGE', label: 'Percentage' },
+                                { value: 'FLAT', label: 'Flat Amount' },
+                                { value: 'BOGO', label: 'Buy One Get One' },
+                            ]}
+                        />
                     </div>
                     <div style={{ flex: 1 }}>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
@@ -1176,25 +1121,16 @@ function CreateLosDiscountModal({ isOpen, onClose, onSubmit }: {
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Discount Type
-                        </label>
-                        <select
+                        <Select
+                            label="Discount Type"
                             value={formData.discountType}
                             onChange={e => setFormData({ ...formData, discountType: e.target.value as 'PERCENTAGE' | 'FLAT' })}
-                            style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                fontSize: '14px',
-                                border: '1px solid var(--notion-border)',
-                                borderRadius: 'var(--radius-md)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                            }}
-                        >
-                            <option value="PERCENTAGE">Percentage</option>
-                            <option value="FLAT">Flat Amount</option>
-                        </select>
+                            fullWidth
+                            options={[
+                                { value: 'PERCENTAGE', label: 'Percentage' },
+                                { value: 'FLAT', label: 'Flat Amount' },
+                            ]}
+                        />
                     </div>
                     <div style={{ flex: 1 }}>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
@@ -1210,23 +1146,18 @@ function CreateLosDiscountModal({ isOpen, onClose, onSubmit }: {
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Start Date
-                        </label>
-                        <Input
-                            type="date"
-                            value={formData.startDate || ''}
-                            onChange={e => setFormData({ ...formData, startDate: e.target.value })}
+                        <CustomDatePicker
+                            label="Start Date"
+                            selected={formData.startDate ? new Date(formData.startDate) : null}
+                            onChange={date => setFormData({ ...formData, startDate: date ? date.toISOString().split('T')[0] : '' })}
                         />
                     </div>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            End Date
-                        </label>
-                        <Input
-                            type="date"
-                            value={formData.endDate || ''}
-                            onChange={e => setFormData({ ...formData, endDate: e.target.value })}
+                        <CustomDatePicker
+                            label="End Date"
+                            selected={formData.endDate ? new Date(formData.endDate) : null}
+                            onChange={date => setFormData({ ...formData, endDate: date ? date.toISOString().split('T')[0] : '' })}
+                            minDate={formData.startDate ? new Date(formData.startDate) : undefined}
                         />
                     </div>
                 </div>
@@ -1329,25 +1260,16 @@ function EditLosDiscountModal({ isOpen, onClose, rule, onSubmit }: {
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Discount Type
-                        </label>
-                        <select
+                        <Select
+                            label="Discount Type"
                             value={formData.discountType}
                             onChange={e => setFormData({ ...formData, discountType: e.target.value as 'PERCENTAGE' | 'FLAT' })}
-                            style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                fontSize: '14px',
-                                border: '1px solid var(--notion-border)',
-                                borderRadius: 'var(--radius-md)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                            }}
-                        >
-                            <option value="PERCENTAGE">Percentage</option>
-                            <option value="FLAT">Flat Amount</option>
-                        </select>
+                            fullWidth
+                            options={[
+                                { value: 'PERCENTAGE', label: 'Percentage' },
+                                { value: 'FLAT', label: 'Flat Amount' },
+                            ]}
+                        />
                     </div>
                     <div style={{ flex: 1 }}>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
@@ -1363,23 +1285,18 @@ function EditLosDiscountModal({ isOpen, onClose, rule, onSubmit }: {
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Start Date
-                        </label>
-                        <Input
-                            type="date"
-                            value={formData.startDate || ''}
-                            onChange={e => setFormData({ ...formData, startDate: e.target.value })}
+                        <CustomDatePicker
+                            label="Start Date"
+                            selected={formData.startDate ? new Date(formData.startDate) : null}
+                            onChange={date => setFormData({ ...formData, startDate: date ? date.toISOString().split('T')[0] : '' })}
                         />
                     </div>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            End Date
-                        </label>
-                        <Input
-                            type="date"
-                            value={formData.endDate || ''}
-                            onChange={e => setFormData({ ...formData, endDate: e.target.value })}
+                        <CustomDatePicker
+                            label="End Date"
+                            selected={formData.endDate ? new Date(formData.endDate) : null}
+                            onChange={date => setFormData({ ...formData, endDate: date ? date.toISOString().split('T')[0] : '' })}
+                            minDate={formData.startDate ? new Date(formData.startDate) : undefined}
                         />
                     </div>
                 </div>
@@ -1426,6 +1343,7 @@ export default function RevenuePage() {
     const [editingPricingRule, setEditingPricingRule] = useState<PricingRule | null>(null);
     const [editingDiscountRule, setEditingDiscountRule] = useState<DiscountRule | null>(null);
     const [editingLosDiscount, setEditingLosDiscount] = useState<LosDiscount | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<{ type: 'pricing' | 'discount' | 'los'; id: number; name: string } | null>(null);
 
     useEffect(() => {
         fetchPricingRules();
@@ -1543,7 +1461,7 @@ export default function RevenuePage() {
                                         key={rule.id}
                                         rule={rule}
                                         onToggle={() => handleTogglePricingRule(rule)}
-                                        onDelete={() => deletePricingRule(rule.id)}
+                                        onDelete={() => setDeleteTarget({ type: 'pricing', id: rule.id, name: rule.name })}
                                         onEdit={() => setEditingPricingRule(rule)}
                                     />
                                 ))
@@ -1577,7 +1495,7 @@ export default function RevenuePage() {
                                         key={rule.id}
                                         rule={rule}
                                         onToggle={() => handleToggleDiscountRule(rule)}
-                                        onDelete={() => deleteDiscountRule(rule.id)}
+                                        onDelete={() => setDeleteTarget({ type: 'discount', id: rule.id, name: rule.name })}
                                         onEdit={() => setEditingDiscountRule(rule)}
                                     />
                                 ))
@@ -1611,7 +1529,7 @@ export default function RevenuePage() {
                                         key={rule.id}
                                         rule={rule}
                                         onToggle={() => handleToggleLosDiscount(rule)}
-                                        onDelete={() => deleteLosDiscount(rule.id)}
+                                        onDelete={() => setDeleteTarget({ type: 'los', id: rule.id, name: rule.name })}
                                         onEdit={() => setEditingLosDiscount(rule)}
                                     />
                                 ))
@@ -1655,6 +1573,22 @@ export default function RevenuePage() {
                 onClose={() => setEditingLosDiscount(null)}
                 rule={editingLosDiscount}
                 onSubmit={updateLosDiscount}
+            />
+
+            {/* Delete Confirmation */}
+            <SecurityConfirmModal
+                isOpen={!!deleteTarget}
+                onClose={() => setDeleteTarget(null)}
+                onConfirm={async () => {
+                    if (!deleteTarget) return;
+                    if (deleteTarget.type === 'pricing') await deletePricingRule(deleteTarget.id);
+                    else if (deleteTarget.type === 'discount') await deleteDiscountRule(deleteTarget.id);
+                    else await deleteLosDiscount(deleteTarget.id);
+                }}
+                title={`Delete ${deleteTarget?.type === 'pricing' ? 'Pricing Rule' : deleteTarget?.type === 'discount' ? 'Discount Rule' : 'LOS Discount'}`}
+                message={`Are you sure you want to delete "${deleteTarget?.name}"? This action cannot be undone.`}
+                confirmText="Delete Rule"
+                isDestructive
             />
         </DashboardLayout>
     );

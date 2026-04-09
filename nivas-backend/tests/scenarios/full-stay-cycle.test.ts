@@ -36,6 +36,7 @@ const store: any = {
     shifts: [],
     notifications: [],
     guest_profiles: [],
+    guests: [],
     inventory_items: [],
     inventory_requests: [],
     housekeeping_tasks: [],
@@ -193,6 +194,7 @@ const mockDbImplementation: any = {
         floors: mockQuery('floors'),
         invoices: mockQuery('invoices'),
         guestProfiles: mockQuery('guest_profiles'),
+        guests: mockQuery('guests'),
         housekeepingTasks: mockQuery('housekeeping_tasks'),
         shifts: mockQuery('shifts'),
         payments: mockQuery('payments'),
@@ -554,3 +556,4 @@ describe("Running Real-World Hotel Scenario: 'The Grand Nivas'", () => {
         expect(room.status).toBe("CLEANING");
     });
 });
+

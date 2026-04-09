@@ -72,5 +72,71 @@ export const TablesService = {
 
         if (!deleted) throw new NotFoundError('Table');
         return deleted;
+    },
+
+    async attachGuest(hotelId: number, tableId: number, data: {
+        guestName: string;
+        guestId?: string;
+        phone?: string;
+    }) {
+        const table = await db.query.restaurantTables.findFirst({
+            where: and(
+                eq(restaurantTables.id, tableId),
+                eq(restaurantTables.hotelId, hotelId)
+            )
+        });
+
+        if (!table) throw new NotFoundError('Table');
+
+        const existingProps = (table.layoutProps as any) || {};
+
+        const [updated] = await db.update(restaurantTables)
+            .set({
+                status: 'OCCUPIED',
+                layoutProps: {
+                    ...existingProps,
+                    guestName: data.guestName,
+                    guestId: data.guestId || null,
+                    guestPhone: data.phone || null,
+                    attachedAt: new Date().toISOString(),
+                },
+                updatedAt: new Date(),
+            })
+            .where(and(
+                eq(restaurantTables.id, tableId),
+                eq(restaurantTables.hotelId, hotelId)
+            ))
+            .returning();
+
+        return updated;
+    },
+
+    async detachGuest(hotelId: number, tableId: number) {
+        const table = await db.query.restaurantTables.findFirst({
+            where: and(
+                eq(restaurantTables.id, tableId),
+                eq(restaurantTables.hotelId, hotelId)
+            )
+        });
+
+        if (!table) throw new NotFoundError('Table');
+
+        const existingProps = (table.layoutProps as any) || {};
+        // Remove guest info but keep layout positioning
+        const { guestName, guestId, guestPhone, attachedAt, ...layoutOnly } = existingProps;
+
+        const [updated] = await db.update(restaurantTables)
+            .set({
+                status: 'AVAILABLE',
+                layoutProps: layoutOnly,
+                updatedAt: new Date(),
+            })
+            .where(and(
+                eq(restaurantTables.id, tableId),
+                eq(restaurantTables.hotelId, hotelId)
+            ))
+            .returning();
+
+        return updated;
     }
 };

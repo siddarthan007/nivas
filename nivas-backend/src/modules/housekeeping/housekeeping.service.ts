@@ -2,7 +2,7 @@ import { db } from '../../db';
 import { housekeepingTasks, rooms } from '../../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { NotFoundError, BusinessLogicError } from '../../utils/errors';
-import { NotificationsService } from '../notifications/notifications.service';
+import { EventBus } from '../../shared/event-bus';
 import { AuditService } from '../system/audit.service';
 
 export class HousekeepingService {
@@ -27,7 +27,7 @@ export class HousekeepingService {
         });
     }
 
-    static async createTask(hotelId: number, userId: string, data: { roomId: number; assignedToId?: string; taskType: string; priority: string; notes?: string }) {
+    static async createTask(hotelId: number, userId: string, data: { roomId: number; assignedToId?: string; taskType: string; priority: string; notes?: string; bookingId?: string }) {
         const newTask = await db.transaction(async (tx) => {
             const [task] = await tx.insert(housekeepingTasks).values({
                 hotelId,
@@ -36,6 +36,7 @@ export class HousekeepingService {
                 taskType: data.taskType,
                 priority: data.priority,
                 notes: data.notes,
+                bookingId: data.bookingId,
                 status: 'PENDING',
                 createdById: userId
             }).returning();
@@ -55,21 +56,18 @@ export class HousekeepingService {
             throw new BusinessLogicError('Failed to create housekeeping task');
         }
 
-        // Notifications
-        NotificationsService.send(
+        EventBus.emit({
+            type: 'HousekeepingTaskCreated',
             hotelId,
-            'HOUSEKEEPING_ALERT',
-            {
-                taskId: newTask.id,
-                roomNumber: data.roomId,
-                type: data.taskType,
+            source: 'housekeeping',
+            timestamp: new Date(),
+            payload: {
+                taskId: newTask.id.toString(),
+                roomId: data.roomId,
+                taskType: data.taskType,
                 priority: data.priority,
-                message: `Room ${data.roomId} requests ${data.taskType}`
             },
-            { roles: ['House Keeping', 'Manager'] }
-        ).catch(console.error);
-
-        // Audit Log
+        }).catch(() => {});
         await AuditService.log(
             hotelId,
             userId,

@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import PageContainer from '@/components/layout/PageContainer';
 import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
 import { useMessages, type Message, type Conversation, type StaffMember } from '@/lib/hooks/useMessages';
 import {
     MessageSquare,
@@ -260,32 +261,14 @@ function NewConversationPanel({
             </div>
 
             <div style={{ padding: '12px 16px' }}>
-                <div style={{ position: 'relative' }}>
-                    <Search size={14} style={{
-                        position: 'absolute',
-                        left: '10px',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        color: 'var(--notion-text-secondary)'
-                    }} />
-                    <input
-                        type="text"
-                        placeholder="Search staff..."
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        autoFocus
-                        style={{
-                            width: '100%',
-                            padding: '8px 8px 8px 32px',
-                            fontSize: '13px',
-                            border: '1px solid var(--notion-border)',
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: 'var(--notion-bg-secondary)',
-                            color: 'var(--notion-text)',
-                            outline: 'none'
-                        }}
-                    />
-                </div>
+                <Input
+                    type="text"
+                    placeholder="Search staff..."
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    autoFocus
+                    icon={<Search size={14} />}
+                />
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -384,7 +367,7 @@ export default function MessagesPage() {
         setIsSending(true);
         const success = await sendMessage({
             content: newMessage,
-            recipientId: activeConversation.participantId || undefined,
+            receiverId: activeConversation.participantId || undefined,
             roomId: activeConversation.roomId ?? undefined
         });
 
@@ -463,31 +446,13 @@ export default function MessagesPage() {
                                 </div>
                             </div>
 
-                            <div style={{ position: 'relative' }}>
-                                <Search size={14} style={{
-                                    position: 'absolute',
-                                    left: '10px',
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    color: 'var(--notion-text-secondary)'
-                                }} />
-                                <input
-                                    type="text"
-                                    placeholder="Search messages..."
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                    style={{
-                                        width: '100%',
-                                        padding: '8px 8px 8px 32px',
-                                        fontSize: '13px',
-                                        border: '1px solid var(--notion-border)',
-                                        borderRadius: 'var(--radius-md)',
-                                        backgroundColor: 'var(--notion-bg-secondary)',
-                                        color: 'var(--notion-text)',
-                                        outline: 'none'
-                                    }}
-                                />
-                            </div>
+                            <Input
+                                type="text"
+                                placeholder="Search messages..."
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                icon={<Search size={14} />}
+                            />
                         </div>
 
                         {/* Error State */}
@@ -663,7 +628,7 @@ export default function MessagesPage() {
                                 <Inbox size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
                                 <h3 style={{ margin: '0 0 8px 0', fontWeight: '500' }}>Select a conversation</h3>
                                 <p style={{ fontSize: '14px', marginBottom: '16px' }}>Choose from your existing conversations or start a new one</p>
-                                <Button variant="outline" onClick={handleNewConversation} icon={<Plus size={16} />}>
+                                <Button variant="secondary" onClick={handleNewConversation} icon={<Plus size={16} />}>
                                     New Conversation
                                 </Button>
                             </div>
@@ -674,3 +639,4 @@ export default function MessagesPage() {
         </DashboardLayout>
     );
 }
+

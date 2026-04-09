@@ -22,7 +22,11 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
             type = 'text',
             className = '',
             style,
-            ...props
+            onFocus: parentOnFocus,
+            onBlur: parentOnBlur,
+            onKeyDown: parentOnKeyDown,
+            value,
+            ...restProps
         },
         ref
     ) => {
@@ -80,14 +84,13 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
                         }}
                         onFocus={(e) => {
                             setIsFocused(true);
-                            props.onFocus?.(e);
+                            parentOnFocus?.(e);
                         }}
                         onBlur={(e) => {
                             setIsFocused(false);
-                            props.onBlur?.(e);
+                            parentOnBlur?.(e);
                         }}
                         onKeyDown={(e) => {
-                            // Handle Enter - move to next focusable element
                             if (e.key === 'Enter' && type !== 'textarea') {
                                 e.preventDefault();
                                 const form = e.currentTarget.form;
@@ -99,20 +102,18 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
                                     if (currentIndex < focusable.length - 1) {
                                         focusable[currentIndex + 1]?.focus();
                                     } else {
-                                        // Submit form if on last field
                                         const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
                                         submitBtn?.click();
                                     }
                                 }
                             }
-                            // Handle Escape - blur current field
                             if (e.key === 'Escape') {
                                 e.currentTarget.blur();
                             }
-                            props.onKeyDown?.(e);
+                            parentOnKeyDown?.(e);
                         }}
-                        {...props}
-                        value={props.value ?? ''}
+                        {...restProps}
+                        value={value ?? ''}
                     />
 
                     {isPassword && (

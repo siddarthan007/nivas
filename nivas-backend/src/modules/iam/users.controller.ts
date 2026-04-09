@@ -3,23 +3,17 @@ import { authMiddleware } from '../../middlewares/auth.middleware';
 import { PERMISSIONS } from '../../config/permissions';
 import { UsersService } from './users.service';
 import { createResponse } from '../../utils/response.helper';
-import { NotFoundError, ValidationError } from '../../utils/errors';
+import { ValidationError } from '../../utils/errors';
 
 export const usersController = new Elysia({ prefix: '/users' })
     .use(authMiddleware)
     .get('/', async ({ user }) => {
-        try {
-            if (!user?.hotelId) {
-                throw new ValidationError('Hotel ID is required');
-            }
-            console.log('[UsersController] Fetching staff for hotel:', user.hotelId);
-            const staffList = await UsersService.getStaff(user.hotelId);
-            console.log('[UsersController] Found staff:', staffList.length);
-            return createResponse(staffList, 'Staff list fetched successfully');
-        } catch (err) {
-            console.error('[UsersController] Error fetching staff:', err);
-            throw err;
+        if (!user?.hotelId) {
+            throw new ValidationError('Hotel ID is required');
         }
+
+        const staffList = await UsersService.getStaff(user.hotelId);
+        return createResponse(staffList, 'Staff list fetched successfully');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.USERS.READ,
@@ -34,7 +28,6 @@ export const usersController = new Elysia({ prefix: '/users' })
         }
 
         const safeUser = await UsersService.updateRole(user.hotelId, params.id, body.roleId);
-
         return createResponse(safeUser, 'Role assigned successfully');
     }, {
         isSignedIn: true,
@@ -53,7 +46,6 @@ export const usersController = new Elysia({ prefix: '/users' })
         }
 
         await UsersService.updateStatus(user.hotelId, params.id, body.isActive);
-
         return createResponse(null, `User ${body.isActive ? 'activated' : 'deactivated'}`);
     }, {
         isSignedIn: true,
@@ -72,7 +64,6 @@ export const usersController = new Elysia({ prefix: '/users' })
         }
 
         await UsersService.resetPassword(user.hotelId, params.id, body.password);
-
         return createResponse(null, 'User password reset successfully');
     }, {
         isSignedIn: true,
@@ -91,7 +82,6 @@ export const usersController = new Elysia({ prefix: '/users' })
         }
 
         const safeUser = await UsersService.updateDetails(user.hotelId, params.id, body);
-
         return createResponse(safeUser, 'User details updated successfully');
     }, {
         isSignedIn: true,

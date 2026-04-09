@@ -76,7 +76,14 @@ export interface ApiResponse<T = unknown> {
     status: 'success' | 'error';
     message?: string;
     data?: T;
+    meta?: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+    };
     code?: string;
+    timestamp?: string;
 }
 
 /**
@@ -309,3 +316,4 @@ export const api = {
 };
 
 export default api;
+

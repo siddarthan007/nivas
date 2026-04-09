@@ -94,6 +94,20 @@ export function useHousekeeping() {
         return updateStatus(taskId, 'COMPLETED');
     };
 
+    // Delete a task
+    const deleteTask = async (taskId: number) => {
+        try {
+            await api.delete(`/housekeeping/${taskId}`);
+            setTasks(prev => prev.filter(t => t.id !== taskId));
+            toast.success('Housekeeping task deleted');
+            return { success: true };
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Failed to delete task';
+            toast.error(msg);
+            return { success: false, error: msg };
+        }
+    };
+
     // Filtered tasks by status
     const pendingTasks = tasks.filter(t => t.status === 'PENDING');
     const inProgressTasks = tasks.filter(t => t.status === 'IN_PROGRESS');
@@ -120,6 +134,7 @@ export function useHousekeeping() {
         updateStatus,
         startTask,
         completeTask,
+        deleteTask,
     };
 }
 

@@ -1,21 +1,20 @@
-import { HttpError, ValidationError, BusinessLogicError, UnauthorizedError, ForbiddenError, NotFoundError } from '../utils/errors';
+import { HttpError } from '../utils/errors';
+import { logger } from '../shared/logger';
 
 export const errorMiddleware = (app: any) => {
     return app.onError(({ error, set, request }: any) => {
-        // Detailed logging for ALL errors in production/dev
-        // console.error(`[Error] ${request.method} ${request.url}:`, error);
-
-        // Log to file for debugging
-        try {
-            const fs = require('fs');
-            const logMessage = `[${new Date().toISOString()}] ${request.method} ${request.url}: ${error.message}\n${error.stack}\n\n`;
-            fs.appendFileSync('error.log', logMessage);
-        } catch (e) {
-            console.error('Failed to write to error log', e);
-        }
+        const logPayload = {
+            method: request.method,
+            url: request.url,
+            message: error.message,
+            stack: error.stack,
+        };
 
         if (error instanceof HttpError) {
             set.status = error.statusCode;
+            if (error.statusCode >= 500) {
+                logger.error(logPayload, `[${error.statusCode}] ${error.message}`);
+            }
             return {
                 status: 'error',
                 message: error.message,
@@ -23,59 +22,13 @@ export const errorMiddleware = (app: any) => {
             };
         }
 
-        if (error instanceof ValidationError) {
-            set.status = 400;
-            return {
-                status: 'error',
-                message: error.message,
-                code: 'VALIDATION_ERROR'
-            };
-        }
+        logger.error(logPayload, `[500] Unhandled: ${error.message}`);
 
-        if (error instanceof BusinessLogicError) {
-            set.status = 400;
-            return {
-                status: 'error',
-                message: error.message,
-                code: 'BUSINESS_LOGIC_ERROR'
-            };
-        }
-
-        if (error instanceof UnauthorizedError) {
-            set.status = 401;
-            return {
-                status: 'error',
-                message: error.message,
-                code: 'UNAUTHORIZED'
-            };
-        }
-
-        if (error instanceof ForbiddenError) {
-            set.status = 403;
-            return {
-                status: 'error',
-                message: error.message,
-                code: 'FORBIDDEN'
-            };
-        }
-
-        if (error instanceof NotFoundError) {
-            set.status = 404;
-            return {
-                status: 'error',
-                message: error.message,
-                code: 'NOT_FOUND'
-            };
-        }
-
-        // Default to 500
         set.status = 500;
         return {
             status: 'error',
             message: 'Internal Server Error',
             code: 'INTERNAL_SERVER_ERROR',
-            // Only expose stack in dev if needed, or never for security
-            // stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         };
     });
 };

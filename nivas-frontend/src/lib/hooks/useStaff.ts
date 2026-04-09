@@ -1,95 +1,63 @@
-import { useState, useCallback } from 'react';
-import api from '../api';
+/**
+ * Staff management hook - delegates to useUsers for unified user/role management.
+ * Provides a toast-based API wrapper for backward compatibility with StaffPage.
+ */
+import { useCallback } from 'react';
 import { toast } from 'sonner';
-import type { User, CreateUserPayload, UpdateUserPayload, Role } from '../types/api.types';
+import { useUsers } from './useUsers';
+import type { CreateUserPayload, UpdateUserPayload } from '../types/api.types';
+
+type StaffMutationPayload = UpdateUserPayload & {
+    password?: string;
+};
 
 export function useStaff() {
-    const [users, setUsers] = useState<User[]>([]);
-    const [roles, setRoles] = useState<Role[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const base = useUsers();
 
-    const fetchUsers = useCallback(async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            const res = await api.get<User[]>('/users');
-            setUsers(res.data || []);
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to fetch staff';
-            setError(msg);
-            toast.error(msg);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-
-    const fetchRoles = useCallback(async () => {
-        try {
-            const res = await api.get<Role[]>('/roles');
-            setRoles(res.data || []);
-        } catch (err: any) {
-            console.error('Failed to fetch roles', err);
-        }
-    }, []);
-
-    const createUser = async (data: CreateUserPayload) => {
-        setIsLoading(true);
-        try {
-            await api.post('/users', data);
-            await fetchUsers();
+    const createUser = useCallback(async (data: CreateUserPayload) => {
+        const result = await base.createUser(data);
+        if (result.success) {
             toast.success('Staff member added successfully');
-            return true;
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to add staff';
-            toast.error(msg);
-            return false;
-        } finally {
-            setIsLoading(false);
+        } else {
+            toast.error(result.error || 'Failed to add staff');
         }
-    };
+        return result.success;
+    }, [base]);
 
-    const updateUser = async (id: string, data: UpdateUserPayload) => {
-        setIsLoading(true);
-        try {
-            await api.patch(`/users/${id}`, data);
-            await fetchUsers();
+    const updateUser = useCallback(async (id: string, data: StaffMutationPayload) => {
+        const result = await base.updateUser(id, data);
+        if (result.success) {
             toast.success('Staff member updated successfully');
-            return true;
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to update user';
-            toast.error(msg);
-            return false;
-        } finally {
-            setIsLoading(false);
+        } else {
+            toast.error(result.error || 'Failed to update user');
         }
-    };
+        return result.success;
+    }, [base]);
 
-    const toggleUserStatus = async (id: string, isActive: boolean) => {
-        setIsLoading(true);
-        try {
-            await api.patch(`/users/${id}/status`, { isActive });
-            await fetchUsers();
-            toast.success(`User ${isActive ? 'activated' : 'deactivated'} successfully`);
-            return true;
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to update user status';
-            toast.error(msg);
+    const toggleUserStatus = useCallback(async (id: string, isActive: boolean) => {
+        const user = base.users.find(u => u.id === id);
+        if (!user) {
+            toast.error('User not found');
             return false;
-        } finally {
-            setIsLoading(false);
         }
-    };
+        const result = await base.toggleActive(id);
+        if (result.success) {
+            toast.success(`User ${isActive ? 'activated' : 'deactivated'} successfully`);
+        } else {
+            toast.error(result.error || 'Failed to update user status');
+        }
+        return result.success;
+    }, [base]);
 
     return {
-        users,
-        roles,
-        isLoading,
-        error,
-        fetchUsers,
-        fetchRoles,
+        users: base.users,
+        roles: base.roles,
+        isLoading: base.isLoading,
+        error: base.error,
+        fetchUsers: base.fetchUsers,
+        fetchRoles: base.fetchRoles,
         createUser,
         updateUser,
-        toggleUserStatus
+        toggleUserStatus,
     };
 }

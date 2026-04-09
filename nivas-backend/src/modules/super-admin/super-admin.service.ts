@@ -1,6 +1,6 @@
 import { db } from '../../db';
-import { hotels, users, roles, bookings, tenantFeatures, subscriptions, subscriptionPackages } from '../../db/schema';
-import { eq, and, gte } from 'drizzle-orm';
+import { hotels, users, roles, bookings, tenantFeatures, subscriptions, subscriptionPackages, subscriptionPayments } from '../../db/schema';
+import { eq, and, gte, sum, count, desc } from 'drizzle-orm';
 import { BusinessLogicError, ForbiddenError, UnauthorizedError } from '../../utils/errors';
 import { logAction } from '../system/audit.service';
 import { NightAuditService } from '../scheduler/night-audit.service';
@@ -237,14 +237,19 @@ export const SuperAdminService = {
         start.setDate(1);
         start.setHours(0, 0, 0, 0);
 
-        // Fetch bookings for revenue
-        const analyticsBookings = await db.query.bookings.findMany({
-            where: (b, { gte }) => gte(b.createdAt, start)
+        // Fetch subscription payments for SaaS license revenue (NOT hotel booking revenue)
+        const saasPayments = await db.query.subscriptionPayments.findMany({
+            where: (sp, { gte }) => gte(sp.createdAt, start)
         });
 
         // Fetch tenants for growth
         const tenantList = await db.query.hotels.findMany({
             where: (h, { gte }) => gte(h.createdAt, start)
+        });
+
+        // Active subscriptions count
+        const activeSubscriptions = await db.query.subscriptions.findMany({
+            where: (s, { eq }) => eq(s.status, 'ACTIVE')
         });
 
         // Group by Month
@@ -254,16 +259,16 @@ export const SuperAdminService = {
             months[monthKey] = { revenue: 0, tenants: 0 };
         }
 
-        analyticsBookings.forEach(b => {
-            const date = b.createdAt ? new Date(b.createdAt) : new Date();
+        // Sum subscription payment amounts per month
+        saasPayments.forEach(p => {
+            const date = p.createdAt ? new Date(p.createdAt) : new Date();
             const month = date.toLocaleString('default', { month: 'short' });
             if (months[month]) {
-                months[month].revenue += parseFloat(b.totalAmount || '0');
+                months[month].revenue += parseFloat(p.amount || '0');
             }
         });
 
-        // For tenants, we want cumulative growth? Or new signups? "Tenant Growth" usually means new signups per month or total active.
-        // Let's do New Signups per month for the bar chart.
+        // New signups per month
         tenantList.forEach(t => {
             const date = t.createdAt ? new Date(t.createdAt) : new Date();
             const month = date.toLocaleString('default', { month: 'short' });
@@ -275,13 +280,14 @@ export const SuperAdminService = {
         const revenueHistory = Object.keys(months).map(m => ({ month: m, amount: Math.round(months[m]?.revenue || 0) }));
         const tenantGrowth = Object.keys(months).map(m => ({ month: m, count: months[m]?.tenants || 0 }));
 
-        const totalRevenue = analyticsBookings.reduce((sum, b) => sum + parseFloat(b.totalAmount || '0'), 0);
+        const totalRevenue = saasPayments.reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0);
 
         return {
             totalRevenue: Math.round(totalRevenue * 100) / 100,
-            bookingsCount: analyticsBookings.length,
-            avgBookingValue: analyticsBookings.length > 0
-                ? Math.round((totalRevenue / analyticsBookings.length) * 100) / 100
+            paymentsCount: saasPayments.length,
+            activeSubscriptions: activeSubscriptions.length,
+            avgPaymentValue: saasPayments.length > 0
+                ? Math.round((totalRevenue / saasPayments.length) * 100) / 100
                 : 0,
             period: '6_months',
             revenueHistory,
@@ -306,11 +312,12 @@ export const SuperAdminService = {
             }
         }
 
-        // RBAC check
-        const userRole = user.role?.name || '';
-        const allowedRoles = ['Manager', 'Owner'];
-        if (user.type !== 'SUPER_ADMIN' && !allowedRoles.includes(userRole)) {
-            throw new ForbiddenError('Unauthorized - Insufficient permissions');
+        const canRunAudit = user.type === 'SUPER_ADMIN'
+            || user.permissions?.includes('*')
+            || user.permissions?.includes('operations:run_night_audit');
+
+        if (!canRunAudit) {
+            throw new ForbiddenError('Missing operations:run_night_audit permission');
         }
 
         const result = await NightAuditService.runAuditForHotel(targetHotelId!);

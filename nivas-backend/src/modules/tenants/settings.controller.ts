@@ -51,7 +51,7 @@ export const settingsController = new Elysia({ prefix: '/settings' })
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
         const ip = request.headers.get('x-forwarded-for') || undefined;
         const userRole = user!.role?.name ?? '';
-        await SettingsService.updateTax(user.hotelId, user.id, userRole, user.type ?? '', body, ip);
+        await SettingsService.updateTax(user.hotelId, user.id, userRole, user.type ?? '', body, ip, user.permissions);
         return createResponse(null, 'Tax settings updated successfully');
     }, {
         isSignedIn: true,

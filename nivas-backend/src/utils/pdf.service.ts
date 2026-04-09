@@ -1,4 +1,4 @@
-import PdfPrinter from 'pdfmake';
+import PdfPrinter from 'pdfmake/src/printer';
 import type { TDocumentDefinitions } from 'pdfmake/interfaces';
 
 const fonts = {

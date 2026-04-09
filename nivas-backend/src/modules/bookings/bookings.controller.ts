@@ -24,9 +24,10 @@ export const bookingsController = new Elysia({ prefix: '/bookings' })
         return createResponse(booking, 'Booking created successfully');
     }, {
         isSignedIn: true,
-        hasPermission: PERMISSIONS.GUESTS.CHECK_IN,
+        hasPermission: PERMISSIONS.BOOKINGS.CREATE,
         body: t.Object({
             roomId: t.Number(),
+            guestId: t.Optional(t.String()),
             guestName: t.String(),
             guestPhone: t.String(),
             guestEmail: t.Optional(t.String()),
@@ -42,7 +43,12 @@ export const bookingsController = new Elysia({ prefix: '/bookings' })
                 t.Literal('OTA'),
                 t.Literal('TRAVEL_AGENT'),
                 t.Literal('CORPORATE')
-            ]))
+            ])),
+            nationality: t.Optional(t.String()),
+            idNumber: t.Optional(t.String()),
+            idType: t.Optional(t.String()),
+            corporateAccountId: t.Optional(t.Number()),
+            travelAgentId: t.Optional(t.Number())
         }),
         detail: {
             summary: 'Create a new booking',
@@ -62,6 +68,7 @@ export const bookingsController = new Elysia({ prefix: '/bookings' })
         return createResponse(result.data, 'Bookings fetched successfully', result.meta);
     }, {
         isSignedIn: true,
+        hasPermission: PERMISSIONS.BOOKINGS.READ,
         query: t.Object({
             page: t.Optional(t.String()),
             limit: t.Optional(t.String())
@@ -80,6 +87,7 @@ export const bookingsController = new Elysia({ prefix: '/bookings' })
         return createResponse(booking, 'Booking fetched successfully');
     }, {
         isSignedIn: true,
+        hasPermission: PERMISSIONS.BOOKINGS.READ,
         detail: {
             summary: 'Get a single booking by ID',
             tags: ['Bookings']
@@ -207,7 +215,7 @@ export const bookingsController = new Elysia({ prefix: '/bookings' })
         }, 'Guest checked in successfully');
     }, {
         isSignedIn: true,
-        hasPermission: PERMISSIONS.GUESTS.CHECK_IN,
+        hasPermission: PERMISSIONS.BOOKINGS.CREATE,
         detail: {
             summary: 'Check-in a guest',
             tags: ['Bookings']

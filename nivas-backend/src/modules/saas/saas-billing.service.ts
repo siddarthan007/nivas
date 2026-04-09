@@ -4,19 +4,38 @@ import { eq, desc } from 'drizzle-orm';
 import { BusinessLogicError, NotFoundError } from '../../utils/errors';
 import { LicenseService } from './license.service';
 import { PdfService } from '../../utils/pdf.service';
+import { SaasAdminService } from './saas-admin.service';
 
 export const SaasBillingService = {
-    // VIEW ONLY: Tenants need to see packages to subscribe
     async getPackages() {
-        return await db.query.subscriptionPackages.findMany({
+        const packages = await db.query.subscriptionPackages.findMany({
             where: eq(subscriptionPackages.isActive, true),
             orderBy: (pkg, { asc }) => [asc(pkg.monthlyPrice)]
         });
+
+        const featureMap = new Map(SaasAdminService.getAvailableFeatures().map((feature) => [feature.id, feature.label]));
+
+        return packages.map((pkg) => ({
+            ...pkg,
+            price: Number(pkg.monthlyPrice),
+            billingCycle: 'MONTHLY',
+            features: ((pkg.features as string[]) || []).map((feature) => featureMap.get(feature) || feature)
+        }));
     },
 
     async getMySubscription(hotelId: number) {
         const hotel = await LicenseService.getHotel(hotelId);
         const subscription = await LicenseService.getSubscription(hotelId);
+        const featureMap = new Map(SaasAdminService.getAvailableFeatures().map((feature) => [feature.id, feature.label]));
+
+        const mappedSubscription = subscription ? {
+            ...subscription,
+            package: subscription.package ? {
+                ...subscription.package,
+                price: Number(subscription.package.monthlyPrice),
+                features: ((subscription.package.features as string[]) || []).map((feature) => featureMap.get(feature) || feature)
+            } : null
+        } : null;
 
         const recentPayments = await db.query.subscriptionPayments.findMany({
             where: eq(subscriptionPayments.hotelId, hotelId),
@@ -26,14 +45,14 @@ export const SaasBillingService = {
 
         return {
             hotel: { ...hotel, licenseStatus: hotel.licenseStatus ?? 'TRIAL' },
-            subscription,
+            subscription: mappedSubscription,
             recentPayments
         };
     },
 
     async recordPayment(hotelId: number, userId: string, data: any, ipAddress?: string) {
-        return await LicenseService.recordPayment(
-            data.hotelId,
+        return LicenseService.recordPayment(
+            hotelId,
             userId,
             data.amount,
             data.currency ?? 'USD',
@@ -46,7 +65,7 @@ export const SaasBillingService = {
     },
 
     async getTenantPayments(hotelId: number, limit: number, offset: number) {
-        return await db.query.subscriptionPayments.findMany({
+        return db.query.subscriptionPayments.findMany({
             where: eq(subscriptionPayments.hotelId, hotelId),
             orderBy: [desc(subscriptionPayments.createdAt)],
             limit,
@@ -65,7 +84,7 @@ export const SaasBillingService = {
     },
 
     async getAllPayments(limit: number, offset: number) {
-        return await db.query.subscriptionPayments.findMany({
+        return db.query.subscriptionPayments.findMany({
             orderBy: [desc(subscriptionPayments.createdAt)],
             limit,
             offset,
@@ -74,69 +93,71 @@ export const SaasBillingService = {
     },
 
     async getBillingStats() {
-        try {
-            const payments = await db.query.subscriptionPayments.findMany().catch(() => []);
-            // ... (rest of stats logic)
-            // Simplified for brevity in replacement context
-            const activeSubscription = await db.query.subscriptions.findFirst({
-                where: eq(subscriptions.status, 'ACTIVE'),
-                with: { package: true }
-            });
+        const payments = await db.query.subscriptionPayments.findMany();
+        const activeSubscription = await db.query.subscriptions.findFirst({
+            where: eq(subscriptions.status, 'ACTIVE'),
+            with: { package: true }
+        });
 
-            const totalPaid = payments.reduce((sum, p) => p.status === 'PAID' || p.status === 'COMPLETED' ? sum + Number(p.amount ?? 0) : sum, 0);
-            const pendingAmount = payments.reduce((sum, p) => p.status === 'PENDING' ? sum + Number(p.amount ?? 0) : sum, 0);
+        const totalPaid = payments.reduce((sum, payment) => {
+            return payment.status === 'PAID' || payment.status === 'COMPLETED'
+                ? sum + Number(payment.amount ?? 0)
+                : sum;
+        }, 0);
 
-            return {
-                currentPlan: activeSubscription?.package?.name || 'Free Trial',
-                nextBillingDate: activeSubscription?.currentPeriodEnd?.toISOString() || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-                totalPaid,
-                pendingAmount
-            };
-        } catch (error) {
-            console.error('Failed to fetch billing stats:', error);
-            return {
-                currentPlan: 'Free Trial',
-                nextBillingDate: new Date().toISOString(),
-                totalPaid: 0,
-                pendingAmount: 0
-            };
-        }
+        const pendingAmount = payments.reduce((sum, payment) => {
+            return payment.status === 'PENDING' || payment.status === 'OVERDUE'
+                ? sum + Number(payment.amount ?? 0)
+                : sum;
+        }, 0);
+
+        return {
+            currentPlan: activeSubscription?.package?.name || 'No active plan',
+            nextBillingDate: activeSubscription?.currentPeriodEnd?.toISOString() || '',
+            totalPaid,
+            pendingAmount
+        };
     },
 
-    async subscribe(hotelId: number, userId: string, packageId: number, billingCycle: any, ip?: string) {
-        // 1. Verify Package
+    async subscribe(hotelId: number, userId: string, packageId: number, billingCycle: 'MONTHLY' | 'ANNUAL' | '2_YEAR' | '3_YEAR', ip?: string) {
         const pkg = await db.query.subscriptionPackages.findFirst({
             where: eq(subscriptionPackages.id, packageId)
         });
         if (!pkg) throw new NotFoundError('Subscription Package');
 
-        // 2. Calculate Amount
         let amount = Number(pkg.monthlyPrice);
         if (billingCycle === 'ANNUAL') {
-            amount = pkg.annualPrice ? Number(pkg.annualPrice) : (Number(pkg.monthlyPrice) * 12 * 0.9); // 10% discount fallback
+            amount = pkg.annualPrice ? Number(pkg.annualPrice) : Number(pkg.monthlyPrice) * 12 * 0.9;
         } else if (billingCycle === '2_YEAR') {
-            amount = (pkg.annualPrice ? Number(pkg.annualPrice) : (Number(pkg.monthlyPrice) * 12)) * 2 * 0.85; // 15% discount
+            amount = (pkg.annualPrice ? Number(pkg.annualPrice) : Number(pkg.monthlyPrice) * 12) * 2 * 0.85;
         } else if (billingCycle === '3_YEAR') {
-            amount = (pkg.annualPrice ? Number(pkg.annualPrice) : (Number(pkg.monthlyPrice) * 12)) * 3 * 0.80; // 20% discount
+            amount = (pkg.annualPrice ? Number(pkg.annualPrice) : Number(pkg.monthlyPrice) * 12) * 3 * 0.8;
         }
 
-        // 3. Create Pending Payment
-        // We'll create a pending payment record so they can pay it
+        let subscription = await LicenseService.getSubscription(hotelId);
+        if (!subscription) {
+            const trialEndsAt = new Date();
+            trialEndsAt.setDate(trialEndsAt.getDate() + (pkg.trialDays ?? 14));
+            await LicenseService.ensureSubscription(hotelId, packageId, 'TRIAL', trialEndsAt);
+            subscription = await LicenseService.getSubscription(hotelId);
+        }
+
+        if (!subscription) {
+            throw new BusinessLogicError('Subscription record not found. Please contact support.');
+        }
+
         const [payment] = await db.insert(subscriptionPayments).values({
             hotelId,
-            subscriptionId: (await LicenseService.getSubscription(hotelId))?.id!, // Assumes trial/sub exists
+            subscriptionId: subscription.id,
             amount: amount.toString(),
-            currency: 'NPR', // Default
+            currency: 'NPR',
             status: 'PENDING',
             notes: `Subscription to ${pkg.name} (${billingCycle})`,
             recordedById: userId
         }).returning();
 
-        // If subscription didn't exist, we might fail above. 
-        // Safer: Ensure subscription exists (even if expired/trial)
         if (!payment) {
-            // Retry with ensure logic if needed, but for now assuming onboarded hotels have a sub row.
-            throw new BusinessLogicError('Subscription record not found. Please contact support.');
+            throw new BusinessLogicError('Failed to create subscription payment request.');
         }
 
         return {
@@ -152,7 +173,6 @@ export const SaasBillingService = {
         const payment = await this.getPayment(paymentId);
         const hotel = await LicenseService.getHotel(payment.hotelId);
 
-        // Prepare data for PDF
         const data = {
             hotelName: hotel.name,
             address: hotel.address || 'N/A',
@@ -160,11 +180,11 @@ export const SaasBillingService = {
             invoiceNumber: payment.invoiceNumber || `INV-${payment.id.slice(0, 8).toUpperCase()}`,
             date: payment.createdAt ? payment.createdAt.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
             paymentMethod: payment.paymentMethod || 'PENDING',
-            description: `Subscription Payment`,
+            description: 'Subscription Payment',
             amount: Number(payment.amount)
         };
 
         const docDefinition = PdfService.generateSaasInvoiceDefinition(data);
-        return await PdfService.generatePdf(docDefinition);
+        return PdfService.generatePdf(docDefinition);
     }
 };

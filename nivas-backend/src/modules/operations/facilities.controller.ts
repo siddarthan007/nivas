@@ -71,7 +71,7 @@ export const facilitiesController = new Elysia({ prefix: '/operations/facilities
             }
         });
 
-        return { status: 'success', data: spots };
+        return createResponse(spots, 'Parking spots fetched');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.PARKING.VIEW,
@@ -84,7 +84,7 @@ export const facilitiesController = new Elysia({ prefix: '/operations/facilities
             vehicleType: body.vehicleType
         }).returning();
 
-        return { status: 'success', data: spot };
+        return createResponse(spot, 'Parking spot created');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.PARKING.MANAGE,
@@ -119,7 +119,7 @@ export const facilitiesController = new Elysia({ prefix: '/operations/facilities
             ))
             .returning();
 
-        return { status: 'success', data: updated };
+        return createResponse(updated, 'Parking assignment updated');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.PARKING.MANAGE,

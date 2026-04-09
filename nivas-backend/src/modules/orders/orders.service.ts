@@ -1,15 +1,26 @@
 import { db } from '../../db';
-import { orders, orderItems, menuItems } from '../../db/schema';
+import { orders, orderItems, menuItems, bookings, guests } from '../../db/schema';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import { BusinessLogicError, NotFoundError } from '../../utils/errors';
-import { NotificationsService } from '../notifications/notifications.service';
+import { EventBus } from '../../shared/event-bus';
 import { logAction } from '../system/audit.service';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isStaffUserId(userId: string): boolean {
+    return UUID_RE.test(userId);
+}
 
 export class OrdersService {
     static async createOrder(hotelId: number, userId: string, data: {
         roomId?: number;
         customerName?: string;
         orderType: string;
+        bookingId?: string;
+        guestId?: string;
+        restaurantTableId?: number;
+        tableId?: number;
+        outletId?: number;
         items: {
             menuItemId: number;
             quantity: number;
@@ -41,15 +52,30 @@ export class OrdersService {
             const totalAmount = data.items.reduce((sum, item) =>
                 sum + (priceMap.get(item.menuItemId) ?? 0) * item.quantity, 0);
 
+            let resolvedGuestId = data.guestId;
+            if (!resolvedGuestId && data.bookingId) {
+                const booking = await tx.query.bookings.findFirst({
+                    where: and(eq(bookings.id, data.bookingId), eq(bookings.hotelId, hotelId)),
+                    columns: { guestId: true }
+                });
+                if (booking?.guestId) {
+                    resolvedGuestId = booking.guestId;
+                }
+            }
+
             const [createdOrder] = await tx.insert(orders).values({
                 hotelId,
                 roomId: data.roomId,
+                bookingId: data.bookingId,
                 orderNumber,
                 customerName: data.customerName,
                 totalAmount: totalAmount.toString(),
                 orderType: data.orderType,
                 status: 'PENDING',
-                createdById: userId
+                ...(isStaffUserId(userId) ? { createdById: userId } : {}),
+                guestId: resolvedGuestId,
+                restaurantTableId: data.restaurantTableId ?? data.tableId,
+                outletId: data.outletId,
             }).returning();
 
             if (!createdOrder) {
@@ -69,33 +95,28 @@ export class OrdersService {
             return createdOrder;
         });
 
-        // Notifications & Logging
-        NotificationsService.send(
+        EventBus.emit({
+            type: 'OrderPlaced',
             hotelId,
-            'NEW_ORDER',
-            {
+            source: 'orders',
+            timestamp: new Date(),
+            payload: {
                 orderId: newOrder.id,
-                orderNumber: orderNumber,
-                items: data.items,
-                roomId: data.roomId
+                orderNumber,
+                orderType: data.orderType,
+                totalAmount: newOrder.totalAmount,
+                itemCount: data.items.length,
+                roomId: data.roomId,
             },
-            { roles: ['Kitchen', 'Chef'] }
-        ).catch(console.error);
-
-        NotificationsService.send(
-            hotelId,
-            'ORDER_CREATED',
-            { orderNumber: orderNumber, total: parseFloat(newOrder.totalAmount) },
-            { roles: ['Receptionist'] }
-        ).catch(console.error);
+        }).catch(() => {});
 
         await logAction(
             hotelId,
-            userId,
+            isStaffUserId(userId) ? userId : null,
             'CREATE_ORDER',
             'ORDER',
             newOrder.id.toString(),
-            { orderNumber, totalAmount: newOrder.totalAmount, itemCount: data.items.length }
+            { orderNumber, totalAmount: newOrder.totalAmount, itemCount: data.items.length, portalActor: userId }
         );
 
         return newOrder;
@@ -259,20 +280,17 @@ export class OrdersService {
 
         if (!updatedOrder) throw new NotFoundError('Order');
 
-        if (status === 'READY') {
-            if (status === 'READY') {
-                NotificationsService.send(
-                    hotelId,
-                    'ORDER_READY',
-                    {
-                        orderId: updatedOrder.id,
-                        orderNumber: updatedOrder.orderNumber,
-                        message: `Order ${updatedOrder.orderNumber} is ready to serve!`
-                    },
-                    { roles: ['Waiter', 'Receptionist'] }
-                ).catch(console.error);
-            }
-        }
+        EventBus.emit({
+            type: 'OrderStatusChanged',
+            hotelId,
+            source: 'orders',
+            timestamp: new Date(),
+            payload: {
+                orderId: updatedOrder.id,
+                orderNumber: updatedOrder.orderNumber,
+                status,
+            },
+        }).catch(() => {});
 
         await logAction(
             hotelId,

@@ -6,9 +6,10 @@ import { NotFoundError, ForbiddenError } from '../../utils/errors';
 
 export const SettingsService = {
     async getSettings(hotelId: number) {
-        const hotel = await db.query.hotels.findFirst({
-            where: eq(hotels.id, hotelId)
-        });
+        const [hotel, features] = await Promise.all([
+            db.query.hotels.findFirst({ where: eq(hotels.id, hotelId) }),
+            db.query.tenantFeatures.findFirst({ where: eq(tenantFeatures.hotelId, hotelId) }),
+        ]);
 
         if (!hotel) throw new NotFoundError('Hotel');
 
@@ -17,19 +18,19 @@ export const SettingsService = {
                 name: hotel.name,
                 logoUrl: hotel.logoUrl,
                 primaryColor: hotel.primaryColor,
-                secondaryColor: hotel.secondaryColor
+                secondaryColor: hotel.secondaryColor,
             },
             contact: {
                 address: hotel.address,
                 phone: hotel.phone,
                 email: hotel.email,
-                website: hotel.website
+                website: hotel.website,
             },
             tax: {
                 panNumber: hotel.panNumber,
                 vatNumber: hotel.vatNumber,
                 serviceChargeRate: parseFloat(hotel.serviceChargeRate ?? '0.10') * 100,
-                taxRate: parseFloat(hotel.taxRate ?? '0.13') * 100
+                taxRate: parseFloat(hotel.taxRate ?? '0.13') * 100,
             },
             regional: {
                 currency: hotel.currency,
@@ -42,8 +43,15 @@ export const SettingsService = {
             invoice: {
                 prefix: hotel.invoicePrefix,
                 footerText: hotel.invoiceFooterText,
-                terms: hotel.invoiceTerms
-            }
+                terms: hotel.invoiceTerms,
+            },
+            features: {
+                enableGuestPortal: features?.enableGuestPortal ?? false,
+                enableHousekeeping: features?.enableHousekeeping ?? true,
+                enableInventory: features?.enableInventory ?? true,
+                emailNotifications: features?.enableEmailNotifications ?? true,
+                smsNotifications: features?.enableSmsNotifications ?? false,
+            },
         };
     },
 
@@ -68,29 +76,29 @@ export const SettingsService = {
                 phone: data.phone,
                 email: data.email,
                 website: data.website,
-                updatedAt: new Date()
+                updatedAt: new Date(),
             })
             .where(eq(hotels.id, hotelId));
 
         await logAction(hotelId, userId, 'UPDATE_CONTACT', 'HOTEL', hotelId.toString(), data, ip);
     },
 
-    async updateTax(hotelId: number, userId: string, userRole: string, userType: string, data: any, ip?: string) {
-        if (!['Owner', 'Manager'].includes(userRole) && userType !== 'SUPER_ADMIN') {
-            throw new ForbiddenError('Only Owners or Managers can modify tax settings');
+    async updateTax(hotelId: number, userId: string, _userRole: string, userType: string, data: any, ip?: string, userPermissions?: string[]) {
+        const canManageBilling = userType === 'SUPER_ADMIN'
+            || userPermissions?.includes('*')
+            || userPermissions?.includes('settings:manage_billing');
+
+        if (!canManageBilling) {
+            throw new ForbiddenError('Missing settings:manage_billing permission to modify tax settings');
         }
 
         await db.update(hotels)
             .set({
                 panNumber: data.panNumber,
                 vatNumber: data.vatNumber,
-                serviceChargeRate: data.serviceChargeRate !== undefined
-                    ? (data.serviceChargeRate / 100).toFixed(4)
-                    : undefined,
-                taxRate: data.taxRate !== undefined
-                    ? (data.taxRate / 100).toFixed(4)
-                    : undefined,
-                updatedAt: new Date()
+                serviceChargeRate: data.serviceChargeRate !== undefined ? (data.serviceChargeRate / 100).toFixed(4) : undefined,
+                taxRate: data.taxRate !== undefined ? (data.taxRate / 100).toFixed(4) : undefined,
+                updatedAt: new Date(),
             })
             .where(eq(hotels.id, hotelId));
 
@@ -103,7 +111,7 @@ export const SettingsService = {
                 invoicePrefix: data.prefix,
                 invoiceFooterText: data.footerText,
                 invoiceTerms: data.terms,
-                updatedAt: new Date()
+                updatedAt: new Date(),
             })
             .where(eq(hotels.id, hotelId));
 
@@ -127,9 +135,8 @@ export const SettingsService = {
     },
 
     async updateFeatures(hotelId: number, userId: string, data: any, ip?: string) {
-        // Upsert tenant features
         const existing = await db.query.tenantFeatures.findFirst({
-            where: eq(tenantFeatures.hotelId, hotelId)
+            where: eq(tenantFeatures.hotelId, hotelId),
         });
 
         const updatePayload: Record<string, any> = { updatedAt: new Date() };
@@ -151,5 +158,5 @@ export const SettingsService = {
         }
 
         await logAction(hotelId, userId, 'UPDATE_FEATURES', 'HOTEL', hotelId.toString(), data, ip);
-    }
+    },
 };

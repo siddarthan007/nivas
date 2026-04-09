@@ -3,9 +3,9 @@ import { users } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 import { UnauthorizedError } from '../../utils/errors';
 import { logAction } from '../system/audit.service';
+import { assertRoleBelongsToHotel } from '../../utils/tenant.guard';
 
 export class IamService {
-    // In-memory OTP store (In production, use Redis)
     private static otpStore = new Map<string, { code: string, expires: number }>();
 
     static async login(email: string, password: string, ipAddress?: string) {
@@ -18,32 +18,35 @@ export class IamService {
             throw new UnauthorizedError('Invalid credentials');
         }
 
-        const isMatch = await Bun.password.verify(password, user.passwordHash);
+        let isMatch = false;
+        try {
+            isMatch = await Bun.password.verify(password, user.passwordHash);
+        } catch {
+            throw new UnauthorizedError('Invalid credentials');
+        }
         if (!isMatch) {
             throw new UnauthorizedError('Invalid credentials');
         }
 
-        // 2FA Challenge for Super Admin
         if (user.userType === 'SUPER_ADMIN') {
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
-            const expires = Date.now() + 5 * 60 * 1000; // 5 mins
+            const expires = Date.now() + 5 * 60 * 1000;
 
             IamService.otpStore.set(user.id, { code: otp, expires });
 
-            // In a real app, send via Email/SMS. Logging for dev.
-            console.log(`[SECURITY] Super Admin OTP for ${email}: ${otp}`);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log(`[SECURITY] Super Admin OTP for ${email}: ${otp}`);
+            }
 
             return {
                 require2FA: true,
-                userId: user.id, // minimal info
-                message: '2FA verification required. Check your email/logs for OTP.',
-                debugOtp: otp
+                userId: user.id,
+                message: '2FA verification required. Check your email/logs for OTP.'
             };
         }
 
         const permissions = user.role?.permissions || [];
 
-        // Log successful login for non-2FA users
         if (user.hotelId) {
             await logAction(
                 user.hotelId,
@@ -69,10 +72,8 @@ export class IamService {
         }
         if (record.code !== otp) throw new UnauthorizedError('Invalid OTP');
 
-        // Consume OTP
         IamService.otpStore.delete(userId);
 
-        // Fetch user to return full login session
         const user = await db.query.users.findFirst({
             where: eq(users.id, userId),
             with: { role: true }
@@ -82,7 +83,6 @@ export class IamService {
 
         const permissions = user.role?.permissions || [];
 
-        // Log successful login for 2FA users
         if (user.hotelId) {
             await logAction(
                 user.hotelId,
@@ -105,6 +105,8 @@ export class IamService {
         password: string;
         roleId: number;
     }, requesterId: string, ipAddress?: string) {
+        await assertRoleBelongsToHotel(data.roleId, hotelId);
+
         const hashedPassword = await Bun.password.hash(data.password);
 
         const [newUser] = await db.insert(users).values({
@@ -171,7 +173,41 @@ export class IamService {
         return true;
     }
 
+    /** Portal guest JWT uses synthetic ids (guest-{roomId}); no users row exists */
+    static buildGuestProfile(input: {
+        id: string;
+        hotelId: number | null;
+        roomId?: number;
+        permissions: string[];
+    }) {
+        const roomLabel = input.roomId != null ? `Room ${input.roomId}` : 'Guest';
+        return {
+            id: input.id,
+            hotelId: input.hotelId,
+            fullName: `Guest (${roomLabel})`,
+            email: '',
+            phone: '',
+            pin: null as string | null,
+            userType: 'GUEST' as const,
+            roleId: null as number | null,
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            role: {
+                id: 0,
+                hotelId: input.hotelId,
+                name: 'Guest',
+                permissions: input.permissions,
+                createdAt: null as Date | null,
+                updatedAt: null as Date | null,
+            },
+        };
+    }
+
     static async getProfile(userId: string) {
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+            throw new UnauthorizedError();
+        }
         const user = await db.query.users.findFirst({
             where: eq(users.id, userId),
             with: { role: true }

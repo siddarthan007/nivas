@@ -1,20 +1,37 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { createTestApp } from "../../test-utils";
 
-// Mock DB
 const mockTransaction = mock();
-const mockFindMany = mock();
 const mockInsert = mock();
 const mockValues = mock();
 const mockReturning = mock();
+const mockHotelFindMany = mock();
+const mockSubscriptionPaymentsFindMany = mock();
+const mockSubscriptionsFindMany = mock();
 
 mock.module("../../../src/db", () => ({
     db: {
         transaction: mockTransaction,
         query: {
-            bookings: { findMany: mockFindMany },
-            users: { findFirst: mock(() => Promise.resolve({ id: "admin-1", isActive: true, hotelId: 1 })) },
-            hotels: { findFirst: mock(() => Promise.resolve(null)) }
+            users: {
+                findFirst: mock(() => Promise.resolve({
+                    id: "super-1",
+                    isActive: true,
+                    hotelId: null,
+                    userType: "SUPER_ADMIN",
+                    role: { name: "Super Admin", permissions: ['*'] }
+                }))
+            },
+            hotels: {
+                findFirst: mock(() => Promise.resolve(null)),
+                findMany: mockHotelFindMany
+            },
+            subscriptionPayments: {
+                findMany: mockSubscriptionPaymentsFindMany
+            },
+            subscriptions: {
+                findMany: mockSubscriptionsFindMany
+            }
         },
         insert: mockInsert
     }
@@ -32,12 +49,13 @@ describe("Super Admin Controller", () => {
 
     beforeEach(async () => {
         mockTransaction.mockReset();
-        mockFindMany.mockReset();
         mockInsert.mockReset();
         mockValues.mockReset();
         mockReturning.mockReset();
+        mockHotelFindMany.mockReset();
+        mockSubscriptionPaymentsFindMany.mockReset();
+        mockSubscriptionsFindMany.mockReset();
 
-        // Setup chains
         mockInsert.mockReturnValue({ values: mockValues });
         mockValues.mockReturnValue({ returning: mockReturning });
 
@@ -48,7 +66,6 @@ describe("Super Admin Controller", () => {
         const { config } = await import("../../../src/config/env");
         const jwtApp = new Elysia().use(jwt({ name: 'jwt', secret: config.jwt.secret }));
 
-        // Super Admin Token
         validToken = await (jwtApp as any).decorator.jwt.sign({
             id: "super-1",
             type: "SUPER_ADMIN",
@@ -57,36 +74,10 @@ describe("Super Admin Controller", () => {
     });
 
     it("POST /super-admin/onboard - should create hotel and owner", async () => {
-        // Mock transaction execution
-        mockTransaction.mockImplementation(async (callback: any) => {
-            // Mock the tx object passed to callback
-            const txMock = {
-                insert: mockInsert
-            };
-            // Mock return values for the sequence of inserts:
-            // 1. Hotel
-            // 2. Default Roles (void)
-            // 3. Owner Role
-            // 4. Owner User
-
-            // We can control mockReturning based on call order or just return generic compatible structures
-            mockReturning
-                .mockReturnValueOnce([{ id: 1, name: "New Hotel" }]) // Hotel
-                .mockReturnValueOnce([{ id: 10, name: "Owner" }]) // Roles (actually map inserts? Wait, insert for roles is batch, returning might not be called or ignored)
-            // Actually the code:
-            // 1. insert(hotels).values(...).returning() -> Hotel
-            // 2. insert(roles).values(...) -> Void/Promise
-            // 3. insert(roles).values(...).returning() -> Owner Role
-            // 4. insert(users).values(...).returning() -> Owner User
-
-            // Let's adjust strict mocks if needed.
-            // Simplified: Just ensure callback runs and returns structure
-
-            return {
-                hotel: { id: 1, name: "New Hotel" },
-                owner: { id: 1, fullName: "Owner" }
-            };
-        });
+        mockTransaction.mockImplementation(async () => ({
+            hotel: { id: 1, name: "New Hotel" },
+            owner: { id: 1, fullName: "Owner" }
+        }));
 
         const req = new Request("http://localhost/super-admin/onboard", {
             method: "POST",
@@ -114,9 +105,16 @@ describe("Super Admin Controller", () => {
     });
 
     it("GET /super-admin/analytics/sales - should return stats", async () => {
-        mockFindMany.mockResolvedValue([
-            { totalAmount: "100" },
-            { totalAmount: "200" }
+        mockSubscriptionPaymentsFindMany.mockResolvedValue([
+            { amount: "100", createdAt: new Date("2026-01-10T00:00:00.000Z") },
+            { amount: "200", createdAt: new Date("2026-02-10T00:00:00.000Z") }
+        ]);
+        mockHotelFindMany.mockResolvedValue([
+            { id: 1, isActive: true, createdAt: new Date("2026-01-01T00:00:00.000Z") },
+            { id: 2, isActive: false, createdAt: new Date("2026-02-01T00:00:00.000Z") }
+        ]);
+        mockSubscriptionsFindMany.mockResolvedValue([
+            { id: "sub-1", status: "ACTIVE" }
         ]);
 
         const req = new Request("http://localhost/super-admin/analytics/sales", {
@@ -128,6 +126,7 @@ describe("Super Admin Controller", () => {
 
         expect(res.status).toBe(200);
         expect(body.data.totalRevenue).toBe(300);
-        expect(body.data.bookingsCount).toBe(2);
+        expect(body.data.paymentsCount).toBe(2);
+        expect(body.data.activeSubscriptions).toBe(1);
     });
 });

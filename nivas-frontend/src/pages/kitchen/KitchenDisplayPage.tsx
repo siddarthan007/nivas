@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Button from '@/components/ui/Button';
+import { SkeletonCard, Skeleton } from '@/components/ui/Skeleton';
 import { useKitchen, type KitchenOrder } from '@/lib/hooks/useKitchen';
 import {
     ChefHat,
@@ -217,22 +218,22 @@ function EmptyColumn() {
 }
 
 export default function KitchenDisplayPage() {
-    const { orders, isLoading, error, refresh, updateOrderStatus } = useKitchen();
+    const { orders, isLoading, error, refresh, updateOrderStatus, socketStatus } = useKitchen();
 
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [lastRefresh, setLastRefresh] = useState(new Date());
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [updatingId, setUpdatingId] = useState<number | null>(null);
 
-    // Auto-refresh every 30 seconds
+    // Auto-refresh only when socket is not connected (fallback polling)
     useEffect(() => {
-        if (!autoRefresh) return;
+        if (!autoRefresh || socketStatus === 'connected') return;
         const interval = setInterval(() => {
             refresh();
             setLastRefresh(new Date());
         }, 30000);
         return () => clearInterval(interval);
-    }, [autoRefresh, refresh]);
+    }, [autoRefresh, socketStatus, refresh]);
 
     const handleStatusChange = async (orderId: number, newStatus: KitchenOrder['status']) => {
         setUpdatingId(orderId);
@@ -287,8 +288,13 @@ export default function KitchenDisplayPage() {
                         <h1 style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-text)', margin: 0 }}>
                             Kitchen Display System
                         </h1>
-                        <p style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', margin: 0 }}>
+                        <p style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
                             Last updated: {lastRefresh.toLocaleTimeString()}
+                            <span style={{
+                                width: '8px', height: '8px', borderRadius: '50%',
+                                backgroundColor: socketStatus === 'connected' ? 'var(--notion-green)' : socketStatus === 'connecting' ? 'var(--notion-yellow)' : 'var(--notion-red)',
+                                display: 'inline-block'
+                            }} title={`Socket: ${socketStatus}`} />
                         </p>
                     </div>
                 </div>
@@ -343,103 +349,123 @@ export default function KitchenDisplayPage() {
             </div>
 
             {/* Orders Grid - 3 Columns by Status */}
-            <div style={{
-                flex: 1,
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-                gap: 'var(--space-4)',
-                overflowY: 'auto'
-            }}>
-                {/* Pending Column */}
-                <div>
-                    <div style={{
-                        padding: 'var(--space-3)',
-                        backgroundColor: 'var(--notion-yellow-bg)',
-                        borderRadius: 'var(--radius-md)',
-                        marginBottom: 'var(--space-3)',
-                        textAlign: 'center',
-                        fontWeight: '600',
-                        color: 'var(--notion-yellow)'
-                    }}>
-                        <Timer size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
-                        PENDING ({pendingOrders.length})
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                        {pendingOrders.length === 0 ? (
-                            <EmptyColumn />
-                        ) : (
-                            pendingOrders.map(order => (
-                                <KOTCard
-                                    key={order.id}
-                                    order={order}
-                                    onStatusChange={handleStatusChange}
-                                    isUpdating={updatingId === order.id}
-                                />
-                            ))
-                        )}
-                    </div>
+            {isLoading && orders.length === 0 ? (
+                <div style={{
+                    flex: 1,
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                    gap: 'var(--space-4)',
+                    overflowY: 'auto',
+                }}>
+                    {['PENDING', 'PREPARING', 'READY'].map(label => (
+                        <div key={label}>
+                            <Skeleton variant="line" width="100%" height={40} borderRadius="var(--radius-md)" style={{ marginBottom: 'var(--space-3)' }} />
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                <SkeletonCard />
+                                <SkeletonCard />
+                            </div>
+                        </div>
+                    ))}
                 </div>
+            ) : (
+                <div style={{
+                    flex: 1,
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                    gap: 'var(--space-4)',
+                    overflowY: 'auto'
+                }}>
+                    {/* Pending Column */}
+                    <div>
+                        <div style={{
+                            padding: 'var(--space-3)',
+                            backgroundColor: 'var(--notion-yellow-bg)',
+                            borderRadius: 'var(--radius-md)',
+                            marginBottom: 'var(--space-3)',
+                            textAlign: 'center',
+                            fontWeight: '600',
+                            color: 'var(--notion-yellow)'
+                        }}>
+                            <Timer size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
+                            PENDING ({pendingOrders.length})
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                            {pendingOrders.length === 0 ? (
+                                <EmptyColumn />
+                            ) : (
+                                pendingOrders.map(order => (
+                                    <KOTCard
+                                        key={order.id}
+                                        order={order}
+                                        onStatusChange={handleStatusChange}
+                                        isUpdating={updatingId === order.id}
+                                    />
+                                ))
+                            )}
+                        </div>
+                    </div>
 
-                {/* Preparing Column */}
-                <div>
-                    <div style={{
-                        padding: 'var(--space-3)',
-                        backgroundColor: 'var(--notion-blue-bg)',
-                        borderRadius: 'var(--radius-md)',
-                        marginBottom: 'var(--space-3)',
-                        textAlign: 'center',
-                        fontWeight: '600',
-                        color: 'var(--notion-blue)'
-                    }}>
-                        <Flame size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
-                        PREPARING ({preparingOrders.length})
+                    {/* Preparing Column */}
+                    <div>
+                        <div style={{
+                            padding: 'var(--space-3)',
+                            backgroundColor: 'var(--notion-blue-bg)',
+                            borderRadius: 'var(--radius-md)',
+                            marginBottom: 'var(--space-3)',
+                            textAlign: 'center',
+                            fontWeight: '600',
+                            color: 'var(--notion-blue)'
+                        }}>
+                            <Flame size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
+                            PREPARING ({preparingOrders.length})
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                            {preparingOrders.length === 0 ? (
+                                <EmptyColumn />
+                            ) : (
+                                preparingOrders.map(order => (
+                                    <KOTCard
+                                        key={order.id}
+                                        order={order}
+                                        onStatusChange={handleStatusChange}
+                                        isUpdating={updatingId === order.id}
+                                    />
+                                ))
+                            )}
+                        </div>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                        {preparingOrders.length === 0 ? (
-                            <EmptyColumn />
-                        ) : (
-                            preparingOrders.map(order => (
-                                <KOTCard
-                                    key={order.id}
-                                    order={order}
-                                    onStatusChange={handleStatusChange}
-                                    isUpdating={updatingId === order.id}
-                                />
-                            ))
-                        )}
-                    </div>
-                </div>
 
-                {/* Ready Column */}
-                <div>
-                    <div style={{
-                        padding: 'var(--space-3)',
-                        backgroundColor: 'var(--notion-green-bg)',
-                        borderRadius: 'var(--radius-md)',
-                        marginBottom: 'var(--space-3)',
-                        textAlign: 'center',
-                        fontWeight: '600',
-                        color: 'var(--notion-green)'
-                    }}>
-                        <CheckCircle2 size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
-                        READY ({readyOrders.length})
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                        {readyOrders.length === 0 ? (
-                            <EmptyColumn />
-                        ) : (
-                            readyOrders.map(order => (
-                                <KOTCard
-                                    key={order.id}
-                                    order={order}
-                                    onStatusChange={handleStatusChange}
-                                    isUpdating={updatingId === order.id}
-                                />
-                            ))
-                        )}
+                    {/* Ready Column */}
+                    <div>
+                        <div style={{
+                            padding: 'var(--space-3)',
+                            backgroundColor: 'var(--notion-green-bg)',
+                            borderRadius: 'var(--radius-md)',
+                            marginBottom: 'var(--space-3)',
+                            textAlign: 'center',
+                            fontWeight: '600',
+                            color: 'var(--notion-green)'
+                        }}>
+                            <CheckCircle2 size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
+                            READY ({readyOrders.length})
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                            {readyOrders.length === 0 ? (
+                                <EmptyColumn />
+                            ) : (
+                                readyOrders.map(order => (
+                                    <KOTCard
+                                        key={order.id}
+                                        order={order}
+                                        onStatusChange={handleStatusChange}
+                                        isUpdating={updatingId === order.id}
+                                    />
+                                ))
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 

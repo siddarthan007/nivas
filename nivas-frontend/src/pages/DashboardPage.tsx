@@ -4,6 +4,7 @@
 import { useMemo } from 'react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { usePermissions } from '@/lib/hooks/usePermissions';
+import { useRouter } from '@/lib/router';
 import { useAnalytics, useSaaSAnalytics } from '@/lib/hooks/useAnalytics';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import {
@@ -425,10 +426,11 @@ function DashboardWidget({ widget, stats, saasStats }: DashboardWidgetProps) {
     const Icon = widget.icon;
     const colors = colorMap[widget.color] ?? colorMap['blue']!;
     const value = widget.getValue(stats, saasStats);
+    const router = useRouter();
 
     const handleClick = () => {
         if (widget.href) {
-            window.location.href = widget.href;
+            router.push(widget.href);
         }
     };
 
@@ -491,10 +493,11 @@ function DashboardWidget({ widget, stats, saasStats }: DashboardWidgetProps) {
 function QuickActionButton({ action }: { action: QuickAction }) {
     const Icon = action.icon;
     const colors = colorMap[action.color] ?? colorMap['blue']!;
+    const router = useRouter();
 
     return (
         <button
-            onClick={() => { window.location.href = action.href; }}
+            onClick={() => { router.push(action.href); }}
             style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -582,7 +585,7 @@ export default function DashboardPage() {
 
     return (
         <DashboardLayout>
-            <div style={{ padding: 'var(--space-8)' }}>
+            <div style={{ padding: 'var(--space-6) var(--space-8)', maxWidth: '1200px', margin: '0 auto' }}>
                     {/* Header */}
                     <div style={{
                         marginBottom: 'var(--space-8)',

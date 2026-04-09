@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -17,6 +18,8 @@ import {
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
 import PageContainer from '@/components/layout/PageContainer';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 
@@ -29,7 +32,6 @@ interface Table {
     status: 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'DIRTY';
 }
 
-const LOCATION_OPTIONS = ['MAIN_HALL', 'TERRACE', 'GARDEN', 'BAR', 'PRIVATE_ROOM'];
 const STATUS_OPTIONS = ['AVAILABLE', 'OCCUPIED', 'RESERVED', 'DIRTY'];
 
 // Table Modal Component
@@ -37,20 +39,42 @@ function TableModal({
     isOpen,
     onClose,
     onSave,
-    initialData
+    initialData,
+    locations
 }: {
     isOpen: boolean;
     onClose: () => void;
     onSave: (data: Partial<Table>) => Promise<void>;
     initialData?: Table;
+    locations: string[];
 }) {
     const [formData, setFormData] = useState<Partial<Table>>({
-        tableNumber: initialData?.tableNumber || '',
-        capacity: initialData?.capacity || 4,
-        location: initialData?.location || 'MAIN_HALL',
-        status: initialData?.status || 'AVAILABLE'
+        tableNumber: '',
+        capacity: 4,
+        location: 'MAIN_HALL',
+        status: 'AVAILABLE'
     });
     const [loading, setLoading] = useState(false);
+    const [customLocation, setCustomLocation] = useState('');
+    const [showCustomInput, setShowCustomInput] = useState(false);
+
+    // Reset form when modal opens
+    useEffect(() => {
+        if (isOpen) {
+            if (initialData) {
+                setFormData({
+                    tableNumber: initialData.tableNumber || '',
+                    capacity: initialData.capacity || 4,
+                    location: initialData.location || 'MAIN_HALL',
+                    status: initialData.status || 'AVAILABLE'
+                });
+            } else {
+                setFormData({ tableNumber: '', capacity: 4, location: locations[0] || 'MAIN_HALL', status: 'AVAILABLE' });
+            }
+            setCustomLocation('');
+            setShowCustomInput(false);
+        }
+    }, [isOpen, initialData, locations]);
 
     if (!isOpen) return null;
 
@@ -58,7 +82,11 @@ function TableModal({
         e.preventDefault();
         setLoading(true);
         try {
-            await onSave(formData);
+            const saveData = { ...formData };
+            if (showCustomInput && customLocation.trim()) {
+                saveData.location = customLocation.trim().toUpperCase().replace(/\s+/g, '_');
+            }
+            await onSave(saveData);
             onClose();
         } catch (error) {
             console.error('Failed to save table:', error);
@@ -97,94 +125,86 @@ function TableModal({
                 </h3>
 
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                    <div>
-                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>
-                            Table Number
-                        </label>
-                        <input
-                            type="text"
-                            required
-                            value={formData.tableNumber}
-                            onChange={e => setFormData({ ...formData, tableNumber: e.target.value })}
-                            style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                borderRadius: 'var(--radius-md)',
-                                border: '1px solid var(--notion-border)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                                fontSize: '14px'
-                            }}
-                        />
-                    </div>
+                    <Input
+                        label="Table Number"
+                        type="text"
+                        required
+                        value={formData.tableNumber}
+                        onChange={e => setFormData({ ...formData, tableNumber: e.target.value })}
+                    />
 
-                    <div>
-                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>
-                            Capacity
-                        </label>
-                        <input
-                            type="number"
-                            min="1"
-                            required
-                            value={formData.capacity}
-                            onChange={e => setFormData({ ...formData, capacity: parseInt(e.target.value) })}
-                            style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                borderRadius: 'var(--radius-md)',
-                                border: '1px solid var(--notion-border)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                                fontSize: '14px'
-                            }}
-                        />
-                    </div>
+                    <Input
+                        label="Capacity"
+                        type="number"
+                        min="1"
+                        required
+                        value={formData.capacity}
+                        onChange={e => setFormData({ ...formData, capacity: parseInt(e.target.value) })}
+                    />
 
                     <div>
                         <label style={{ display: 'block', fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>
                             Location
                         </label>
-                        <select
-                            value={formData.location}
-                            onChange={e => setFormData({ ...formData, location: e.target.value })}
-                            style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                borderRadius: 'var(--radius-md)',
-                                border: '1px solid var(--notion-border)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                                fontSize: '14px'
-                            }}
-                        >
-                            {LOCATION_OPTIONS.map(loc => (
-                                <option key={loc} value={loc}>{loc.replace('_', ' ')}</option>
-                            ))}
-                        </select>
+                        {!showCustomInput ? (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <Select
+                                    value={formData.location}
+                                    onChange={e => setFormData({ ...formData, location: e.target.value })}
+                                    options={locations.map(loc => ({ value: loc, label: loc.replace(/_/g, ' ') }))}
+                                    style={{ flex: 1 }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCustomInput(true)}
+                                    style={{
+                                        padding: '8px 12px',
+                                        borderRadius: 'var(--radius-md)',
+                                        border: '1px solid var(--notion-border)',
+                                        backgroundColor: 'var(--notion-bg-secondary)',
+                                        color: 'var(--notion-blue)',
+                                        fontSize: '13px',
+                                        cursor: 'pointer',
+                                        whiteSpace: 'nowrap'
+                                    }}
+                                >
+                                    + New
+                                </button>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <Input
+                                    type="text"
+                                    placeholder="e.g. Rooftop"
+                                    value={customLocation}
+                                    onChange={e => setCustomLocation(e.target.value)}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowCustomInput(false); setCustomLocation(''); }}
+                                    style={{
+                                        padding: '8px 12px',
+                                        borderRadius: 'var(--radius-md)',
+                                        border: '1px solid var(--notion-border)',
+                                        backgroundColor: 'var(--notion-bg-secondary)',
+                                        color: 'var(--notion-text-secondary)',
+                                        fontSize: '13px',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        )}
                     </div>
 
-                    <div>
-                        <label style={{ display: 'block', fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>
-                            Status
-                        </label>
-                        <select
-                            value={formData.status}
-                            onChange={e => setFormData({ ...formData, status: e.target.value as any })}
-                            style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                borderRadius: 'var(--radius-md)',
-                                border: '1px solid var(--notion-border)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                                fontSize: '14px'
-                            }}
-                        >
-                            {STATUS_OPTIONS.map(status => (
-                                <option key={status} value={status}>{status}</option>
-                            ))}
-                        </select>
-                    </div>
+                    <Select
+                        label="Status"
+                        value={formData.status}
+                        onChange={e => setFormData({ ...formData, status: e.target.value as any })}
+                        options={STATUS_OPTIONS.map(status => ({ value: status, label: status }))}
+                        fullWidth
+                    />
 
                     <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end', marginTop: 'var(--space-2)' }}>
                         <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>
@@ -205,6 +225,7 @@ export default function TablePlanPage() {
     const { can } = usePermissions();
     const [searchQuery, setSearchQuery] = useState('');
     const [locationFilter, setLocationFilter] = useState<string>('ALL');
+    const [statusFilter, setStatusFilter] = useState<string>('');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingTable, setEditingTable] = useState<Table | null>(null);
     const [tables, setTables] = useState<Table[]>([]);
@@ -228,14 +249,22 @@ export default function TablePlanPage() {
         fetchTables();
     }, [user?.hotelId]);
 
+    // Derive dynamic locations from existing tables
+    const dynamicLocations = useMemo(() => {
+        const fromTables = [...new Set(tables.map(t => t.location).filter(Boolean))];
+        const defaults = ['MAIN_HALL', 'TERRACE', 'GARDEN', 'BAR', 'PRIVATE_ROOM'];
+        return [...new Set([...defaults, ...fromTables])];
+    }, [tables]);
+
     // Derived state
     const filteredTables = useMemo(() => {
         return tables.filter(t => {
             const matchesSearch = (t.tableNumber || '').toLowerCase().includes(searchQuery.toLowerCase());
             const matchesLocation = locationFilter === 'ALL' || t.location === locationFilter;
-            return matchesSearch && matchesLocation;
+            const matchesStatus = !statusFilter || t.status === statusFilter;
+            return matchesSearch && matchesLocation && matchesStatus;
         });
-    }, [tables, searchQuery, locationFilter]);
+    }, [tables, searchQuery, locationFilter, statusFilter]);
 
     // Actions
     const handleCreate = async (data: Partial<Table>) => {
@@ -332,56 +361,27 @@ export default function TablePlanPage() {
                         flexWrap: 'wrap'
                     }}>
                         <div style={{
-                            position: 'relative',
                             flex: 1,
                             minWidth: '200px',
                             maxWidth: '400px'
                         }}>
-                            <Search
-                                size={16}
-                                style={{
-                                    position: 'absolute',
-                                    left: '12px',
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    color: 'var(--notion-text-secondary)'
-                                }}
-                            />
-                            <input
+                            <Input
                                 type="text"
                                 placeholder="Search by table number..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                style={{
-                                    width: '100%',
-                                    padding: '8px 12px 8px 36px',
-                                    borderRadius: 'var(--radius-md)',
-                                    border: '1px solid var(--notion-border)',
-                                    backgroundColor: 'var(--notion-bg-secondary)',
-                                    color: 'var(--notion-text)',
-                                    fontSize: '14px'
-                                }}
+                                icon={<Search size={16} />}
                             />
                         </div>
 
-                        <select
+                        <Select
                             value={locationFilter}
                             onChange={(e) => setLocationFilter(e.target.value)}
-                            style={{
-                                padding: '8px 12px',
-                                borderRadius: 'var(--radius-md)',
-                                border: '1px solid var(--notion-border)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                                fontSize: '14px',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            <option value="ALL">All Locations</option>
-                            {LOCATION_OPTIONS.map(loc => (
-                                <option key={loc} value={loc}>{loc.replace('_', ' ')}</option>
-                            ))}
-                        </select>
+                            options={[
+                                { value: 'ALL', label: 'All Locations' },
+                                ...dynamicLocations.map((loc: string) => ({ value: loc, label: loc.replace(/_/g, ' ') })),
+                            ]}
+                        />
 
                         <Button variant="secondary" onClick={() => window.location.href = '/dashboard/operations/floor-plan'}>
                             View Visual Plan
@@ -410,8 +410,8 @@ export default function TablePlanPage() {
                                     fontWeight: 500,
                                     color: statusStyle.text,
                                     cursor: 'pointer',
-                                    border: locationFilter === status ? `2px solid ${statusStyle.text}` : '2px solid transparent',
-                                }} onClick={() => setLocationFilter(locationFilter === status ? 'ALL' : status)}>
+                                    border: statusFilter === status ? `2px solid ${statusStyle.text}` : '2px solid transparent',
+                                }} onClick={() => setStatusFilter(statusFilter === status ? '' : status)}>
                                     <span>{count}</span>
                                     <span>{(status || '').toLowerCase()}</span>
                                 </div>
@@ -554,6 +554,7 @@ export default function TablePlanPage() {
                         isOpen={isAddModalOpen}
                         onClose={() => setIsAddModalOpen(false)}
                         onSave={handleCreate}
+                        locations={dynamicLocations}
                     />
 
                     {editingTable && (
@@ -562,6 +563,7 @@ export default function TablePlanPage() {
                             onClose={() => setEditingTable(null)}
                             onSave={handleUpdate}
                             initialData={editingTable}
+                            locations={dynamicLocations}
                         />
                     )}
                 </div>

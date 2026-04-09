@@ -1,7 +1,13 @@
 import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import type { Booking } from '@/lib/types/api.types';
+
+function getErrorMessage(err: unknown, fallback: string): string {
+    if (err instanceof ApiError) return err.message;
+    if (err instanceof Error) return err.message;
+    return fallback;
+}
 
 export interface BookingFilters {
     page?: number;
@@ -29,13 +35,15 @@ export function useBookings() {
             const queryParams = new URLSearchParams();
             if (filters.page) queryParams.append('page', filters.page.toString());
             queryParams.append('limit', (filters.limit || 20).toString());
+            if (filters.startDate) queryParams.append('startDate', filters.startDate);
+            if (filters.endDate) queryParams.append('endDate', filters.endDate);
 
             const response = await api.get<Booking[]>(`/bookings?${queryParams.toString()}`);
             if (response.data) {
                 setBookings(response.data);
             }
-            if ((response as any).meta) {
-                setPagination((response as any).meta);
+            if (response.meta) {
+                setPagination(response.meta);
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch bookings');
@@ -49,9 +57,10 @@ export function useBookings() {
         try {
             await api.post('/bookings', data);
             await fetchBookings();
-        } catch (err: any) {
-            setError(err?.response?.data?.message || err.message || 'Failed to create booking');
-            toast.error(err?.response?.data?.message || 'Failed to create booking');
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to create booking');
+            setError(msg);
+            toast.error(msg);
             throw err;
         } finally {
             setIsLoading(false);
@@ -65,8 +74,8 @@ export function useBookings() {
             await fetchBookings();
             toast.success(`Check-in successful! Guest PIN: ${res.data?.guestPin}`);
             return { success: true, guestPin: res.data?.guestPin || '' };
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to check in';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to check in');
             setError(msg);
             toast.error(msg);
             return { success: false, guestPin: '' };
@@ -81,8 +90,8 @@ export function useBookings() {
             await api.patch(`/bookings/${bookingId}/check-out`);
             await fetchBookings();
             toast.success('Check-out successful');
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to check out';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to check out');
             setError(msg);
             toast.error(msg);
             throw err;
@@ -97,8 +106,8 @@ export function useBookings() {
             await api.patch(`/bookings/${bookingId}`, data);
             await fetchBookings();
             toast.success('Booking updated successfully');
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to update booking';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to update booking');
             toast.error(msg);
             throw err;
         } finally {
@@ -112,8 +121,8 @@ export function useBookings() {
             await api.post(`/bookings/${bookingId}/cancel`, { reason, cancellationFee });
             await fetchBookings();
             toast.success('Booking cancelled successfully');
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to cancel booking';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to cancel booking');
             toast.error(msg);
             throw err;
         } finally {
@@ -127,8 +136,8 @@ export function useBookings() {
             await api.patch(`/bookings/${bookingId}/extend`, { newCheckOut, newTotalAmount });
             await fetchBookings();
             toast.success('Stay extended successfully');
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to extend stay';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to extend stay');
             toast.error(msg);
             throw err;
         } finally {
@@ -142,8 +151,8 @@ export function useBookings() {
             await api.patch(`/bookings/${bookingId}/change-room`, { newRoomId });
             await fetchBookings();
             toast.success('Room changed successfully');
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to change room';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to change room');
             toast.error(msg);
             throw err;
         } finally {
@@ -171,3 +180,4 @@ export function useBookings() {
         changeRoom
     };
 }
+

@@ -95,6 +95,7 @@ describe("Compliance & Automation Tests", () => {
 
         const results = await JobService.processPendingJobs();
         expect(results.length).toBe(1);
-        expect(results[0].status).toBe("COMPLETED");
+        expect(results[0]?.status).toBe("COMPLETED");
     });
 });
+

@@ -443,11 +443,7 @@ export default function SettingsPage() {
                                             onToggle={() => toggleFeature('enableGuestPortal')}
                                             label="Guest QR Portal"
                                         />
-                                        <ToggleSwitch
-                                            enabled={settings?.enableFoodOrdering ?? false}
-                                            onToggle={() => toggleFeature('enableFoodOrdering')}
-                                            label="Food & Beverage Ordering"
-                                        />
+
                                         <ToggleSwitch
                                             enabled={settings?.enableHousekeeping ?? false}
                                             onToggle={() => toggleFeature('enableHousekeeping')}
@@ -483,3 +479,4 @@ export default function SettingsPage() {
         </DashboardLayout>
     );
 }
+

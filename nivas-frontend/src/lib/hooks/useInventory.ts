@@ -1,7 +1,25 @@
-import { useState, useCallback } from 'react';
-import api from '../api';
+import { useState, useCallback, useEffect } from 'react';
+import api, { ApiError } from '../api';
 import { toast } from 'sonner';
 import type { InventoryItem, CreateInventoryPayload, ItemCategory } from '../types/api.types';
+
+function getErrorMessage(err: unknown, fallback: string): string {
+    if (err instanceof ApiError) return err.message;
+    if (err instanceof Error) return err.message;
+    return fallback;
+}
+
+// Normalize backend fields (quantity→currentStock, lowStockThreshold→minStock)
+function normalizeItem(raw: any): InventoryItem {
+    return {
+        ...raw,
+        currentStock: raw.currentStock ?? raw.quantity ?? 0,
+        minStock: raw.minStock ?? raw.lowStockThreshold ?? 5,
+        reorderLevel: raw.reorderLevel ?? raw.lowStockThreshold ?? 10,
+        costPrice: Number(raw.costPrice ?? raw.unitCost ?? 0),
+        supplier: raw.supplier || '',
+    };
+}
 
 export function useInventory() {
     const [items, setItems] = useState<InventoryItem[]>([]);
@@ -12,10 +30,10 @@ export function useInventory() {
         setIsLoading(true);
         setError(null);
         try {
-            const res = await api.get<InventoryItem[]>('/inventory');
-            setItems(res.data || []);
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to fetch inventory';
+            const res = await api.get<any[]>('/inventory');
+            setItems((res.data || []).map(normalizeItem));
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to fetch inventory');
             setError(msg);
             toast.error(msg);
         } finally {
@@ -30,8 +48,8 @@ export function useInventory() {
             await fetchInventory();
             toast.success('Inventory item added successfully');
             return true;
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to add item';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to add item');
             toast.error(msg);
             return false;
         } finally {
@@ -46,8 +64,8 @@ export function useInventory() {
             await fetchInventory();
             toast.success('Stock updated successfully');
             return true;
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to update stock';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to update stock');
             toast.error(msg);
             return false;
         } finally {
@@ -62,14 +80,19 @@ export function useInventory() {
             await fetchInventory();
             toast.success('Item deleted successfully');
             return true;
-        } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to delete item';
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to delete item');
             toast.error(msg);
             return false;
         } finally {
             setIsLoading(false);
         }
     };
+
+    // Auto-fetch on mount
+    useEffect(() => {
+        fetchInventory();
+    }, [fetchInventory]);
 
     return {
         items,

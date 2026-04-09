@@ -1,171 +1,198 @@
-"use client";
+'use client';
 
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { Command } from "cmdk";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Command } from 'cmdk';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-    Search, LayoutDashboard, Bed, CalendarDays, UtensilsCrossed, Package,
-    Sparkles, Calendar, BarChart3, Users, Shield, CreditCard, TrendingUp,
-    Building2, Ticket, FileText, Settings, LogOut, ChevronRight,
-    ArrowUp, ArrowDown, CornerDownLeft
-} from "lucide-react";
-import KeyboardHint from "./KeyboardHint";
+    Search,
+    LayoutDashboard,
+    Bed,
+    CalendarDays,
+    UtensilsCrossed,
+    Package,
+    Sparkles,
+    Calendar,
+    BarChart3,
+    Users,
+    Shield,
+    CreditCard,
+    TrendingUp,
+    Building2,
+    Ticket,
+    FileText,
+    Settings,
+    LogOut,
+    ChevronRight,
+    ArrowUp,
+    ArrowDown,
+    CornerDownLeft,
+    BookOpen,
+    MessageSquare,
+    UserCircle,
+} from 'lucide-react';
+import KeyboardHint from './KeyboardHint';
+import { useAuth } from '@/lib/contexts/AuthContext';
+import { usePermissions } from '@/lib/hooks/usePermissions';
+import { useCommandPalette } from '@/lib/contexts/CommandPaletteContext';
+import { useRouter } from '@/lib/router';
+import { PERMISSIONS } from '@/lib/constants/permissions';
 
-// Simple navigation wrapper
-const navigateTo = (href: string) => { window.location.href = href; };
-
-// Navigation items - Nivas PMS specific
-import { useAuth } from "@/lib/contexts/AuthContext";
-import { usePermissions } from "@/lib/hooks/usePermissions";
-
-// Navigation items - Nivas PMS specific
 interface NavigationItem {
     id: string;
     label: string;
     path: string;
-    Icon: any;
+    Icon: typeof LayoutDashboard;
     group: string;
     keywords: string;
-    allowedUserTypes?: ('SUPER_ADMIN' | 'HOTEL_STAFF')[];
+    allowedUserTypes?: Array<'SUPER_ADMIN' | 'HOTEL_STAFF'>;
     requiredPermissions?: string[];
 }
 
-export const navigationItems: NavigationItem[] = [
-    // PMS Core (Hotel Staff)
+interface QuickAction {
+    id: string;
+    label: string;
+    keywords: string;
+    shortcut?: string[];
+    Icon?: typeof LogOut;
+    allowedUserTypes?: Array<'SUPER_ADMIN' | 'HOTEL_STAFF'>;
+    requiredPermissions?: string[];
+}
+
+const navigationItems: NavigationItem[] = [
     { id: 'dashboard', label: 'Dashboard', path: '/dashboard', Icon: LayoutDashboard, group: 'PMS', keywords: 'home overview', allowedUserTypes: ['HOTEL_STAFF'] },
     { id: 'rooms', label: 'Rooms', path: '/dashboard/rooms', Icon: Bed, group: 'PMS', keywords: 'bedroom accommodation', allowedUserTypes: ['HOTEL_STAFF'] },
-    { id: 'bookings', label: 'Bookings', path: '/dashboard/bookings', Icon: CalendarDays, group: 'PMS', keywords: 'reservations guests', allowedUserTypes: ['HOTEL_STAFF'] },
-    { id: 'orders', label: 'Orders', path: '/dashboard/orders', Icon: UtensilsCrossed, group: 'PMS', keywords: 'pos food restaurant', allowedUserTypes: ['HOTEL_STAFF'] },
-    { id: 'menu', label: 'Menu', path: '/dashboard/menu', Icon: Package, group: 'PMS', keywords: 'food dishes items', allowedUserTypes: ['HOTEL_STAFF'] },
-    { id: 'housekeeping', label: 'Housekeeping', path: '/dashboard/housekeeping', Icon: Sparkles, group: 'PMS', keywords: 'cleaning maintenance', allowedUserTypes: ['HOTEL_STAFF'] },
-    { id: 'calendar', label: 'Calendar', path: '/dashboard/bookings/calendar', Icon: Calendar, group: 'PMS', keywords: 'gantt schedule', allowedUserTypes: ['HOTEL_STAFF'] },
-    { id: 'inventory', label: 'Inventory', path: '/dashboard/inventory', Icon: Package, group: 'PMS', keywords: 'stock items supplies', allowedUserTypes: ['HOTEL_STAFF'] },
-    { id: 'my-subscription', label: 'My Subscription', path: '/dashboard/saas-billing', Icon: CreditCard, group: 'Management', keywords: 'billing plan payment', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: ['finance:view'] },
-
-    // Management (Hotel Staff - Restricted)
-    { id: 'staff', label: 'Staff', path: '/dashboard/staff', Icon: Users, group: 'Management', keywords: 'employees team members', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: ['users:read'] },
-    { id: 'roles', label: 'Roles', path: '/dashboard/roles', Icon: Shield, group: 'Management', keywords: 'permissions access', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: ['users:manage_roles'] },
-    { id: 'reports', label: 'Reports', path: '/dashboard/reports', Icon: BarChart3, group: 'Management', keywords: 'analytics statistics', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: ['reports:view'] },
-
-    // Finance & Revenue (Hotel Staff - Restricted)
-    { id: 'finance', label: 'Finance', path: '/dashboard/finance', Icon: CreditCard, group: 'Finance', keywords: 'billing invoices payments', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: ['finance:view'] },
-    { id: 'revenue', label: 'Revenue', path: '/dashboard/revenue', Icon: TrendingUp, group: 'Finance', keywords: 'pricing discounts', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: ['revenue:view'] },
-
-    // CRM & Events (Hotel Staff)
-    { id: 'crm', label: 'CRM', path: '/dashboard/crm', Icon: Users, group: 'CRM', keywords: 'guests corporate agents', allowedUserTypes: ['HOTEL_STAFF'] },
-    { id: 'events', label: 'Events', path: '/dashboard/events', Icon: Calendar, group: 'CRM', keywords: 'banquets venues bookings', allowedUserTypes: ['HOTEL_STAFF'] },
-
-    // Super Admin (Super Admin Only)
+    { id: 'bookings', label: 'Bookings', path: '/dashboard/bookings', Icon: CalendarDays, group: 'PMS', keywords: 'reservations guests', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.BOOKINGS.READ] },
+    { id: 'orders', label: 'Orders', path: '/dashboard/orders', Icon: UtensilsCrossed, group: 'PMS', keywords: 'pos food restaurant', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.ORDERS.READ] },
+    { id: 'menu', label: 'Menu', path: '/dashboard/menu', Icon: BookOpen, group: 'PMS', keywords: 'food dishes items', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.MENU.VIEW] },
+    { id: 'housekeeping', label: 'Housekeeping', path: '/dashboard/housekeeping', Icon: Sparkles, group: 'PMS', keywords: 'cleaning maintenance', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.HOUSEKEEPING.VIEW] },
+    { id: 'calendar', label: 'Calendar', path: '/dashboard/bookings/calendar', Icon: Calendar, group: 'PMS', keywords: 'gantt schedule', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.BOOKINGS.READ] },
+    { id: 'inventory', label: 'Inventory', path: '/dashboard/inventory', Icon: Package, group: 'PMS', keywords: 'stock items supplies', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.INVENTORY.READ] },
+    { id: 'messages', label: 'Messages', path: '/dashboard/messages', Icon: MessageSquare, group: 'PMS', keywords: 'chat inbox communication', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.COMMUNICATIONS.READ_MESSAGES] },
+    { id: 'subscription', label: 'My Subscription', path: '/dashboard/saas-billing', Icon: CreditCard, group: 'Management', keywords: 'billing plan payment license', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.FINANCE.VIEW_RECORDS] },
+    { id: 'staff', label: 'Staff', path: '/dashboard/staff', Icon: Users, group: 'Management', keywords: 'employees team members', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.USERS.READ] },
+    { id: 'roles', label: 'Roles', path: '/dashboard/roles', Icon: Shield, group: 'Management', keywords: 'permissions access', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.ROLES.READ] },
+    { id: 'reports', label: 'Reports', path: '/dashboard/reports', Icon: BarChart3, group: 'Management', keywords: 'analytics statistics', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.REPORTS.VIEW_SALES] },
+    { id: 'finance', label: 'Finance', path: '/dashboard/finance', Icon: CreditCard, group: 'Finance', keywords: 'billing invoices payments', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.FINANCE.VIEW_RECORDS] },
+    { id: 'revenue', label: 'Revenue', path: '/dashboard/revenue', Icon: TrendingUp, group: 'Finance', keywords: 'pricing discounts', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.ANALYTICS.VIEW_FINANCIALS] },
+    { id: 'crm', label: 'CRM', path: '/dashboard/crm', Icon: Users, group: 'CRM', keywords: 'guests corporate agents', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.CRM.VIEW_GUESTS] },
+    { id: 'events', label: 'Events', path: '/dashboard/events', Icon: Calendar, group: 'CRM', keywords: 'banquets venues bookings', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.BANQUETS.VIEW] },
+    { id: 'profile', label: 'Profile', path: '/dashboard/profile', Icon: UserCircle, group: 'Personal', keywords: 'account user settings', allowedUserTypes: ['HOTEL_STAFF', 'SUPER_ADMIN'] },
     { id: 'saas-dashboard', label: 'Overview', path: '/dashboard', Icon: LayoutDashboard, group: 'SaaS Admin', keywords: 'home statistics', allowedUserTypes: ['SUPER_ADMIN'] },
     { id: 'tenants', label: 'Tenants', path: '/dashboard/tenants', Icon: Building2, group: 'SaaS Admin', keywords: 'hotels properties', allowedUserTypes: ['SUPER_ADMIN'] },
+    { id: 'licenses', label: 'Licenses', path: '/dashboard/licenses', Icon: Ticket, group: 'SaaS Admin', keywords: 'license access entitlements', allowedUserTypes: ['SUPER_ADMIN'] },
     { id: 'plans', label: 'Plans', path: '/dashboard/plans', Icon: Package, group: 'SaaS Admin', keywords: 'packages pricing', allowedUserTypes: ['SUPER_ADMIN'] },
     { id: 'analytics', label: 'SaaS Analytics', path: '/dashboard/analytics', Icon: TrendingUp, group: 'SaaS Admin', keywords: 'revenue stats', allowedUserTypes: ['SUPER_ADMIN'] },
     { id: 'audit', label: 'Audit Logs', path: '/dashboard/audit', Icon: FileText, group: 'SaaS Admin', keywords: 'history activity', allowedUserTypes: ['SUPER_ADMIN'] },
     { id: 'settings', label: 'Settings', path: '/dashboard/settings', Icon: Settings, group: 'SaaS Admin', keywords: 'configuration preferences', allowedUserTypes: ['SUPER_ADMIN'] },
 ];
 
-// Quick actions
-const quickActions = [
-    { id: 'new-booking', label: 'New Booking', keywords: 'create reservation', shortcut: ['N', 'B'], allowedUserTypes: ['HOTEL_STAFF'] },
-    { id: 'new-order', label: 'New Order', keywords: 'create pos', shortcut: ['N', 'O'], allowedUserTypes: ['HOTEL_STAFF'] },
+const quickActions: QuickAction[] = [
+    { id: 'new-booking', label: 'New Booking', keywords: 'create reservation', shortcut: ['N', 'B'], allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.BOOKINGS.CREATE] },
+    { id: 'new-order', label: 'New Order', keywords: 'create pos', shortcut: ['N', 'O'], allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.ORDERS.CREATE] },
     { id: 'logout', label: 'Logout', keywords: 'signout exit', Icon: LogOut },
 ];
 
 export default function CommandPalette() {
-    const [isOpen, setIsOpen] = useState(false);
-    const [search, setSearch] = useState("");
-    const { user } = useAuth();
-    const { can, isUserType } = usePermissions();
+    const [search, setSearch] = useState('');
+    const { user, logout, impersonation } = useAuth();
+    const { can } = usePermissions();
+    const { isOpen, toggle, close } = useCommandPalette();
+    const router = useRouter();
 
-    // Toggle with Cmd+K / Ctrl+K
     useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-                e.preventDefault();
-                setIsOpen((prev) => !prev);
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+                event.preventDefault();
+                toggle();
+                return;
             }
-            if (e.key === "Escape" && isOpen) {
-                setIsOpen(false);
+
+            if (event.key === 'Escape' && isOpen) {
+                close();
             }
         };
-        document.addEventListener("keydown", handleKeyDown);
-        return () => document.removeEventListener("keydown", handleKeyDown);
-    }, [isOpen]);
 
-    // Listen for custom open event
-    useEffect(() => {
-        const open = () => setIsOpen(true);
-        window.addEventListener("open-command-palette", open);
-        return () => window.removeEventListener("open-command-palette", open);
-    }, []);
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [close, isOpen, toggle]);
 
-    // Reset when closed
     useEffect(() => {
         if (!isOpen) {
-            setSearch("");
+            setSearch('');
         }
     }, [isOpen]);
 
-    // Filter items based on permissions
     const filteredItems = useMemo(() => {
         if (!user) return [];
-        return navigationItems.filter(item => {
-            // Check User Type
-            if (item.allowedUserTypes && !item.allowedUserTypes.includes(user.userType as any)) {
+
+        return navigationItems.filter((item) => {
+            if (item.allowedUserTypes && !item.allowedUserTypes.includes(user.userType as 'SUPER_ADMIN' | 'HOTEL_STAFF')) {
                 return false;
             }
-            // Check Permissions
-            if (item.requiredPermissions && !item.requiredPermissions.some(p => can(p)) && user.userType !== 'SUPER_ADMIN') {
+
+            if (user.userType !== 'SUPER_ADMIN' && item.requiredPermissions && !item.requiredPermissions.every((permission) => can(permission))) {
                 return false;
             }
+
             return true;
         });
-    }, [user, can]);
-
-    // Filter quick actions
-    const { impersonation } = useAuth();
+    }, [can, user]);
 
     const filteredQuickActions = useMemo(() => {
         if (!user) return [];
-        return quickActions.filter(action => {
-            if (action.id === 'logout' && impersonation.isImpersonating) return false;
-            if (action.allowedUserTypes && !action.allowedUserTypes.includes(user.userType as any)) {
+
+        return quickActions.filter((action) => {
+            if (action.id === 'logout' && impersonation.isImpersonating) {
                 return false;
             }
+
+            if (action.allowedUserTypes && !action.allowedUserTypes.includes(user.userType as 'SUPER_ADMIN' | 'HOTEL_STAFF')) {
+                return false;
+            }
+
+            if (user.userType !== 'SUPER_ADMIN' && action.requiredPermissions && !action.requiredPermissions.every((permission) => can(permission))) {
+                return false;
+            }
+
             return true;
         });
-    }, [user, impersonation]);
+    }, [can, impersonation.isImpersonating, user]);
 
-    // Group filtered items
     const groupedItems = useMemo(() => {
-        const groups: Record<string, typeof navigationItems> = {};
-        filteredItems.forEach(item => {
-            if (!groups[item.group]) groups[item.group] = [];
+        const groups: Record<string, NavigationItem[]> = {};
+
+        filteredItems.forEach((item) => {
+            if (!groups[item.group]) {
+                groups[item.group] = [];
+            }
             groups[item.group]!.push(item);
         });
+
         return groups;
     }, [filteredItems]);
 
     const handleAction = useCallback((actionId: string) => {
-        setIsOpen(false);
+        close();
+
         switch (actionId) {
             case 'logout':
-                localStorage.removeItem('nivas_auth_token');
-                navigateTo('/login');
+                logout();
                 break;
             case 'new-booking':
-                navigateTo('/dashboard/bookings?action=new');
+                router.push('/dashboard/bookings?action=new');
                 break;
             case 'new-order':
-                navigateTo('/dashboard/orders?action=new');
+                router.push('/dashboard/orders?action=new');
+                break;
+            default:
                 break;
         }
-    }, []);
+    }, [close, logout, router]);
 
     const handleNavigate = useCallback((path: string) => {
-        setIsOpen(false);
-        navigateTo(path);
-    }, []);
+        close();
+        router.push(path);
+    }, [close, router]);
 
     if (!isOpen) return null;
 
@@ -186,16 +213,16 @@ export default function CommandPalette() {
                     justifyContent: 'center',
                     padding: '16px',
                     paddingTop: 'max(16px, 12vh)',
-                    backgroundColor: "rgba(0, 0, 0, 0.5)",
-                    backdropFilter: "blur(4px)"
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    backdropFilter: 'blur(4px)',
                 }}
-                onClick={() => setIsOpen(false)}
+                onClick={close}
             >
                 <motion.div
                     initial={{ opacity: 0, scale: 0.95, y: -20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: -20 }}
-                    transition={{ type: "spring", damping: 25, stiffness: 500 }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 500 }}
                     className="command-palette-modal"
                     style={{
                         position: 'relative',
@@ -208,15 +235,11 @@ export default function CommandPalette() {
                         backgroundColor: 'var(--notion-bg)',
                         border: '1px solid var(--notion-border)',
                         borderRadius: 'var(--radius-lg)',
-                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
                     }}
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
                 >
-                    <Command
-                        label="Command Palette"
-                        className="flex flex-col h-full"
-                    >
-                        {/* Search Input */}
+                    <Command label="Command Palette" className="flex flex-col h-full">
                         <div
                             style={{
                                 display: 'flex',
@@ -246,7 +269,6 @@ export default function CommandPalette() {
                             <KeyboardHint keys={['esc']} />
                         </div>
 
-                        {/* Results */}
                         <Command.List
                             style={{
                                 flex: 1,
@@ -254,32 +276,35 @@ export default function CommandPalette() {
                                 padding: 'var(--space-2)',
                             }}
                         >
-                            <Command.Empty style={{
-                                padding: 'var(--space-8)',
-                                textAlign: 'center',
-                                color: 'var(--notion-text-secondary)',
-                                fontSize: '14px',
-                            }}>
+                            <Command.Empty
+                                style={{
+                                    padding: 'var(--space-8)',
+                                    textAlign: 'center',
+                                    color: 'var(--notion-text-secondary)',
+                                    fontSize: '14px',
+                                }}
+                            >
                                 No results found for "{search}"
                             </Command.Empty>
 
-                            {/* Quick Actions */}
                             <Command.Group
                                 heading={
-                                    <span style={{
-                                        fontSize: '11px',
-                                        fontWeight: 600,
-                                        color: 'var(--notion-text-tertiary)',
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.05em',
-                                        padding: 'var(--space-2) var(--space-3)',
-                                        display: 'block',
-                                    }}>
+                                    <span
+                                        style={{
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            color: 'var(--notion-text-tertiary)',
+                                            textTransform: 'uppercase',
+                                            letterSpacing: '0.05em',
+                                            padding: 'var(--space-2) var(--space-3)',
+                                            display: 'block',
+                                        }}
+                                    >
                                         Quick Actions
                                     </span>
                                 }
                             >
-                                {filteredQuickActions.map(action => (
+                                {filteredQuickActions.map((action) => (
                                     <Command.Item
                                         key={action.id}
                                         value={`${action.label} ${action.keywords}`}
@@ -298,38 +323,39 @@ export default function CommandPalette() {
                                     >
                                         {action.Icon && <action.Icon size={16} style={{ opacity: 0.7 }} />}
                                         <span style={{ flex: 1 }}>{action.label}</span>
-                                        {action.shortcut && (
-                                            <KeyboardHint keys={action.shortcut} />
-                                        )}
+                                        {action.shortcut && <KeyboardHint keys={action.shortcut} />}
                                     </Command.Item>
                                 ))}
                             </Command.Group>
 
-                            <Command.Separator style={{
-                                height: '1px',
-                                backgroundColor: 'var(--notion-divider)',
-                                margin: 'var(--space-2) 0',
-                            }} />
+                            <Command.Separator
+                                style={{
+                                    height: '1px',
+                                    backgroundColor: 'var(--notion-divider)',
+                                    margin: 'var(--space-2) 0',
+                                }}
+                            />
 
-                            {/* Navigation Groups */}
                             {Object.entries(groupedItems).map(([groupName, items]) => (
                                 <Command.Group
                                     key={groupName}
                                     heading={
-                                        <span style={{
-                                            fontSize: '11px',
-                                            fontWeight: 600,
-                                            color: 'var(--notion-text-tertiary)',
-                                            textTransform: 'uppercase',
-                                            letterSpacing: '0.05em',
-                                            padding: 'var(--space-2) var(--space-3)',
-                                            display: 'block',
-                                        }}>
+                                        <span
+                                            style={{
+                                                fontSize: '11px',
+                                                fontWeight: 600,
+                                                color: 'var(--notion-text-tertiary)',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.05em',
+                                                padding: 'var(--space-2) var(--space-3)',
+                                                display: 'block',
+                                            }}
+                                        >
                                             {groupName}
                                         </span>
                                     }
                                 >
-                                    {items.map(item => (
+                                    {items.map((item) => (
                                         <Command.Item
                                             key={item.id}
                                             value={`${item.label} ${item.keywords}`}
@@ -355,17 +381,18 @@ export default function CommandPalette() {
                             ))}
                         </Command.List>
 
-                        {/* Footer */}
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: 'var(--space-3) var(--space-4)',
-                            borderTop: '1px solid var(--notion-divider)',
-                            backgroundColor: 'var(--notion-bg-secondary)',
-                            fontSize: '11px',
-                            color: 'var(--notion-text-tertiary)',
-                        }}>
+                        <div
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: 'var(--space-3) var(--space-4)',
+                                borderTop: '1px solid var(--notion-divider)',
+                                backgroundColor: 'var(--notion-bg-secondary)',
+                                fontSize: '11px',
+                                color: 'var(--notion-text-tertiary)',
+                            }}
+                        >
                             <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
                                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                     <ArrowUp size={11} />
@@ -385,7 +412,6 @@ export default function CommandPalette() {
                 </motion.div>
             </motion.div>
 
-            {/* CSS for command items */}
             <style>{`
                 .command-item[data-selected="true"],
                 .command-item[aria-selected="true"] {

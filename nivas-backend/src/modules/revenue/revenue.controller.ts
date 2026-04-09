@@ -90,6 +90,7 @@ export const revenueController = new Elysia({ prefix: '/revenue' })
         return createResponse(data, 'Dynamic price calculated successfully');
     }, {
         isSignedIn: true,
+        hasPermission: PERMISSIONS.BOOKINGS.READ,
         query: t.Object({
             basePrice: t.String(),
             checkIn: t.String(),

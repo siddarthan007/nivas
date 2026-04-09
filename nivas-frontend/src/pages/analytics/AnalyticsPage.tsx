@@ -81,7 +81,7 @@ export default function AnalyticsPage() {
                     gap: 'var(--space-4)',
                     marginBottom: 'var(--space-6)'
                 }}>
-                    <KPICard title="Total Revenue" value={`₹${totalRevenue.toLocaleString()}`} icon={DollarSign} color="var(--notion-green)" bg="var(--notion-green-bg)" />
+                    <KPICard title="License Revenue" value={`₹${totalRevenue.toLocaleString()}`} icon={DollarSign} color="var(--notion-green)" bg="var(--notion-green-bg)" />
                     <KPICard title="Active Tenants" value={activeTenants} icon={Building2} color="var(--notion-blue)" bg="var(--notion-blue-bg)" />
                     <KPICard title="Total Tenants" value={totalTenants} icon={Users} color="var(--notion-orange)" bg="var(--notion-yellow-bg)" />
                     <KPICard title="Expiring Licenses" value={expiringLicenses} icon={Activity} color="var(--notion-purple)" bg="var(--notion-purple-bg)" />

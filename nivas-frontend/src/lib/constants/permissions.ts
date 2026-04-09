@@ -5,6 +5,13 @@ export const PERMISSIONS = {
         MANAGE_SETTINGS: 'system:manage_settings',
     },
 
+    SAAS_ADMIN: {
+        MANAGE_LICENSES: 'saas:manage_licenses',
+        MANAGE_SUBSCRIPTIONS: 'saas:manage_subscriptions',
+        MANAGE_PACKAGES: 'saas:manage_packages',
+        VIEW_PAYMENTS: 'saas:view_payments',
+        RECORD_PAYMENTS: 'saas:record_payments',
+    },
     USERS: {
         CREATE: 'users:create',
         READ: 'users:read',
@@ -100,6 +107,12 @@ export const PERMISSIONS = {
         CREATE: 'housekeeping:create',
         UPDATE: 'housekeeping:update',
         ASSIGN: 'housekeeping:assign',
+        VIEW_TASKS: 'housekeeping:view_tasks',
+        UPDATE_STATUS: 'housekeeping:update_status',
+    },
+
+    STORAGE: {
+        UPLOAD: 'storage:upload',
     },
 
     MENU: {

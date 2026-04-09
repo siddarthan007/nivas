@@ -1,12 +1,13 @@
 import { db } from '../../db';
-import { rooms, bookings, housekeepingTasks, orders, orderItems, menuItems } from '../../db/schema';
-import { eq, and, inArray } from 'drizzle-orm';
-import { WSService as NotificationService } from '../notifications/ws.service';
-import { BusinessLogicError, ForbiddenError, NotFoundError, ValidationError } from '../../utils/errors';
+import { rooms, bookings, housekeepingTasks, menuItems, orders } from '../../db/schema';
+import { eq, and } from 'drizzle-orm';
+import { BusinessLogicError, ForbiddenError, NotFoundError } from '../../utils/errors';
+import { EventBus } from '../../shared/event-bus';
+import { OrdersService } from '../orders/orders.service';
 
 export const GuestActionsService = {
     async validateGuestAccess(user: any) {
-        if (user.type !== 'GUEST' || !user.roomId) {
+        if (!user || !user.roomId || (user.type !== 'GUEST' && !String(user.id).startsWith('guest-'))) {
             throw new ForbiddenError('Guest access required');
         }
         return { hotelId: user.hotelId!, roomId: user.roomId, userId: user.id };
@@ -20,12 +21,13 @@ export const GuestActionsService = {
             })
             .where(eq(rooms.id, roomId));
 
-        NotificationService.broadcastToRole(
+        EventBus.emit({
+            type: 'GuestDndToggled',
             hotelId,
-            ['Receptionist', 'House Keeping'],
-            'DND_UPDATE',
-            { roomId, status: enabled ? 'ON' : 'OFF' }
-        );
+            source: 'guest-actions',
+            timestamp: new Date(),
+            payload: { roomId, enabled },
+        }).catch(() => {});
     },
 
     async requestCheckout(hotelId: number, roomId: number) {
@@ -38,16 +40,17 @@ export const GuestActionsService = {
 
         if (!booking) throw new NotFoundError('Active booking');
 
-        NotificationService.broadcastToRole(
+        EventBus.emit({
+            type: 'GuestCheckoutRequested',
             hotelId,
-            ['Receptionist'],
-            'CHECKOUT_REQUEST',
-            {
+            source: 'guest-actions',
+            timestamp: new Date(),
+            payload: {
                 roomId,
                 guestName: booking.guestName,
-                bookingId: booking.id
-            }
-        );
+                bookingId: booking.id,
+            },
+        }).catch(() => {});
     },
 
     async getMenu(hotelId: number) {
@@ -76,89 +79,29 @@ export const GuestActionsService = {
         const booking = await db.query.bookings.findFirst({
             where: and(
                 eq(bookings.roomId, roomId),
+                eq(bookings.hotelId, hotelId),
                 eq(bookings.status, 'CHECKED_IN')
             )
         });
 
         if (!booking) throw new NotFoundError('Active booking');
 
-        const menuItemIds = items.map(i => i.menuItemId);
-        const menuItemsData = await db.query.menuItems.findMany({
-            where: and(
-                inArray(menuItems.id, menuItemIds),
-                eq(menuItems.hotelId, hotelId),
-                eq(menuItems.isAvailable, true)
-            )
-        });
-
-        if (menuItemsData.length !== menuItemIds.length) {
-            throw new ValidationError('Some menu items are not available');
-        }
-
-        const priceMap = new Map(menuItemsData.map(m => [m.id, parseFloat(m.price)]));
-        const totalAmount = items.reduce((sum, item) =>
-            sum + (priceMap.get(item.menuItemId) ?? 0) * item.quantity, 0);
-
-        const orderNumber = `RS-${Date.now()}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
-
-        const [newOrder] = await db.insert(orders).values({
-            hotelId,
+        const newOrder = await OrdersService.createOrder(hotelId, userId, {
             roomId,
             bookingId: booking.id,
-            orderNumber,
             customerName: booking.guestName,
-            totalAmount: totalAmount.toString(),
             orderType: 'ROOM_SERVICE',
-            status: 'PENDING',
-            createdById: userId
-        }).returning();
-
-        if (!newOrder) throw new BusinessLogicError('Failed to create order');
-
-        await db.insert(orderItems).values(
-            items.map(item => ({
-                orderId: newOrder.id,
-                menuItemId: item.menuItemId,
-                quantity: item.quantity,
-                price: (priceMap.get(item.menuItemId) ?? 0).toString(),
-                notes: item.notes
+            items: items.map(i => ({
+                menuItemId: i.menuItemId,
+                quantity: i.quantity,
+                price: 0,
+                notes: i.notes
             }))
-        );
-
-        // Notifications
-        NotificationService.broadcastToRole(
-            hotelId,
-            ['Kitchen', 'Chef'],
-            'NEW_ORDER',
-            {
-                orderId: newOrder.id,
-                orderNumber,
-                roomNumber: roomId,
-                guestName: booking.guestName,
-                items: items.map(i => ({
-                    name: menuItemsData.find(m => m.id === i.menuItemId)?.name,
-                    quantity: i.quantity,
-                    notes: i.notes
-                })),
-                totalAmount
-            }
-        );
-
-        NotificationService.broadcastToRole(
-            hotelId,
-            ['Receptionist'],
-            'ROOM_SERVICE_ORDER',
-            {
-                orderNumber,
-                roomId,
-                guestName: booking.guestName,
-                total: totalAmount
-            }
-        );
+        });
 
         return {
-            orderNumber,
-            totalAmount,
+            orderNumber: newOrder.orderNumber,
+            totalAmount: parseFloat(newOrder.totalAmount),
             estimatedTime: '20-30 minutes'
         };
     },
@@ -202,18 +145,18 @@ export const GuestActionsService = {
 
         if (!task) throw new BusinessLogicError('Failed to create housekeeping task');
 
-        NotificationService.broadcastToRole(
+        EventBus.emit({
+            type: 'GuestHousekeepingRequested',
             hotelId,
-            ['House Keeping', 'Receptionist'],
-            'HOUSEKEEPING_REQUEST',
-            {
-                taskId: task.id,
+            source: 'guest-actions',
+            timestamp: new Date(),
+            payload: {
+                taskId: task.id.toString(),
                 roomId,
                 taskType: taskType || 'CLEANING',
                 notes,
-                message: `Room ${roomId} requests ${taskType || 'cleaning'} service`
-            }
-        );
+            },
+        }).catch(() => {});
 
         return task;
     }

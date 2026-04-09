@@ -16,7 +16,7 @@ interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 }
 
 const Select = forwardRef<HTMLSelectElement, SelectProps>(
-    ({ options, label, error, fullWidth = false, helperText, className = '', style, children, ...props }, ref) => {
+    ({ options, label, error, fullWidth = false, helperText, className = '', style, children, onKeyDown: parentOnKeyDown, ...restProps }, ref) => {
         return (
             <div style={{ width: fullWidth ? '100%' : 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 {label && (
@@ -49,7 +49,6 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
                         }}
                         className={`hover-border-focus ${className}`}
                         onKeyDown={(e) => {
-                            // Enter moves to next field
                             if (e.key === 'Enter') {
                                 e.preventDefault();
                                 const form = e.currentTarget.form;
@@ -63,14 +62,12 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
                                     }
                                 }
                             }
-                            // Escape blurs
                             if (e.key === 'Escape') {
                                 e.currentTarget.blur();
                             }
-                            // Pass through to parent handler
-                            props.onKeyDown?.(e);
+                            parentOnKeyDown?.(e);
                         }}
-                        {...props}
+                        {...restProps}
                     >
                         {options ? options.map((opt) => (
                             <option key={opt.value} value={opt.value}>

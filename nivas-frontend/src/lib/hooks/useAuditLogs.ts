@@ -50,13 +50,12 @@ export function useAuditLogs() {
             const params = new URLSearchParams({
                 page: String(page),
                 limit: String(pagination.limit),
-                ...Object.fromEntries(
-                    Object.entries(filters).filter(([, v]) => v !== undefined && v !== '')
-                ),
             });
+            for (const [key, val] of Object.entries(filters)) {
+                if (val !== undefined && val !== '') params.append(key, val);
+            }
 
-
-            const response = await api.get<any[]>(`/audit/?limit=${pagination.limit}&page=${page}`);
+            const response = await api.get<any[]>(`/audit/?${params.toString()}`);
 
             if (response.data) {
                 // Backend returns logs with nested user object { user: { fullName, roleId } }
@@ -80,8 +79,13 @@ export function useAuditLogs() {
                 }));
 
                 setLogs(mappedLogs);
-                // Update pagination total since backend doesn't provide it
-                setPagination(prev => ({ ...prev, total: mappedLogs.length }));
+                const total = (response as any).meta?.total ?? mappedLogs.length;
+                setPagination(prev => ({
+                    ...prev,
+                    page,
+                    total,
+                    totalPages: Math.max(1, Math.ceil(total / prev.limit)),
+                }));
             } else {
                 setLogs([]);
             }

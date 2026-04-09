@@ -57,18 +57,21 @@ export const invoicesController = new Elysia({ prefix: '/invoices' })
     /**
      * Get invoice data for display/PDF generation
      */
-    .get('/:id', async ({ params }) => {
-        const data = await InvoiceService.getInvoiceData(params.id);
-        return { status: 'success', data };
+    .get('/:id', async ({ params, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const data = await InvoiceService.getInvoiceData(params.id, user.hotelId);
+        return createResponse(data, 'Invoice data fetched successfully');
     }, {
         isSignedIn: true,
+        hasPermission: PERMISSIONS.FINANCE.VIEW_INVOICES,
         detail: { summary: 'Get Invoice Data', tags: ['Finance'] }
     })
     /**
      * Download Invoice PDF
      */
-    .get('/:id/pdf', async ({ params, set }) => {
-        const pdfBuffer = await InvoiceService.generatePdf(params.id);
+    .get('/:id/pdf', async ({ params, set, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const pdfBuffer = await InvoiceService.generatePdf(params.id, user.hotelId);
         set.headers = {
             'Content-Type': 'application/pdf',
             'Content-Disposition': `attachment; filename="invoice-${params.id}.pdf"`
@@ -76,6 +79,7 @@ export const invoicesController = new Elysia({ prefix: '/invoices' })
         return pdfBuffer;
     }, {
         isSignedIn: true,
+        hasPermission: PERMISSIONS.FINANCE.VIEW_INVOICES,
         detail: { summary: 'Download Invoice PDF', tags: ['Finance'] }
     })
     /**
@@ -83,7 +87,7 @@ export const invoicesController = new Elysia({ prefix: '/invoices' })
      */
     .post('/:id/sync-cbms', async ({ params, user }) => {
         const result = await CbmsService.syncInvoice(params.id, user!.hotelId!);
-        return { status: result.status === 'success' ? 'success' : 'error', data: result };
+        return createResponse(result, 'CBMS sync completed');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.FINANCE.GENERATE_INVOICE,
@@ -103,7 +107,7 @@ export const invoicesController = new Elysia({ prefix: '/invoices' })
             }
         });
 
-        return { status: 'success', data: invoicesList };
+        return createResponse(invoicesList, 'Invoices fetched');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.FINANCE.VIEW_RECORDS,

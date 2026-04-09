@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
-import { useAuth } from '@/lib/contexts/AuthContext';
+import { useAuth, type UserType } from '@/lib/contexts/AuthContext';
 
 interface HotelPlanInfo {
     licenseStatus: string;
@@ -38,64 +38,141 @@ const DEFAULT_PLAN: HotelPlanInfo = {
     isLicenseActive: true,
 };
 
-export function useHotelPlan() {
-    const { user } = useAuth();
-    const [plan, setPlan] = useState<HotelPlanInfo>(DEFAULT_PLAN);
-    const [isLoading, setIsLoading] = useState(true);
+const PLAN_CACHE_TTL_MS = 30_000;
 
-    const fetchPlan = useCallback(async () => {
-        if (!user?.hotelId || user.userType === 'SUPER_ADMIN') {
-            setPlan({ ...DEFAULT_PLAN, modules: [], allowedRoles: [], features: [] });
-            setIsLoading(false);
-            return;
-        }
+let planCache: { key: string; data: HotelPlanInfo; fetchedAt: number } | null = null;
+let inFlightRequest: Promise<HotelPlanInfo> | null = null;
+let inFlightKey: string | null = null;
 
+export function clearPlanCache(): void {
+    planCache = null;
+    inFlightRequest = null;
+    inFlightKey = null;
+}
+
+function createPlanCacheKey(hotelId?: number | null, userType?: UserType): string {
+    return `${userType || 'UNKNOWN'}:${hotelId ?? 'none'}`;
+}
+
+function getDefaultPlanForUser(userType?: UserType): HotelPlanInfo {
+    if (userType === 'SUPER_ADMIN') {
+        return { ...DEFAULT_PLAN, modules: [], allowedRoles: [], features: [] };
+    }
+
+    return DEFAULT_PLAN;
+}
+
+function mapPlanResponse(data: any): HotelPlanInfo {
+    const hotel = data?.hotel;
+    const subscription = data?.subscription;
+    const pkg = subscription?.package;
+
+    const licenseStatus = hotel?.licenseStatus || 'TRIAL';
+    const expiresAt = hotel?.licenseExpiresAt || subscription?.trialEndsAt || null;
+
+    let daysRemaining: number | null = null;
+    if (expiresAt) {
+        const diff = new Date(expiresAt).getTime() - Date.now();
+        daysRemaining = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+    }
+
+    const isTrialExpired = licenseStatus === 'EXPIRED' || (licenseStatus === 'TRIAL' && daysRemaining !== null && daysRemaining <= 0);
+    const isLicenseActive = ['ACTIVE', 'TRIAL'].includes(licenseStatus) && !isTrialExpired;
+
+    return {
+        licenseStatus,
+        licenseExpiresAt: hotel?.licenseExpiresAt || null,
+        trialEndsAt: subscription?.trialEndsAt || null,
+        planName: pkg?.name || 'Free Trial',
+        planCode: pkg?.code || 'TRIAL',
+        maxRooms: pkg?.maxRooms || null,
+        maxUsers: pkg?.maxUsers || null,
+        features: pkg?.features || [],
+        modules: pkg?.modules || [],
+        allowedRoles: pkg?.allowedRoles || [],
+        trialDays: pkg?.trialDays || 14,
+        daysRemaining,
+        isTrialExpired,
+        isLicenseActive,
+    };
+}
+
+async function fetchHotelPlanData(hotelId: number | null | undefined, userType: UserType | undefined, force = false): Promise<HotelPlanInfo> {
+    const cacheKey = createPlanCacheKey(hotelId, userType);
+    const fallbackPlan = getDefaultPlanForUser(userType);
+
+    if (!hotelId || userType === 'SUPER_ADMIN') {
+        return fallbackPlan;
+    }
+
+    const now = Date.now();
+    if (!force && planCache && planCache.key === cacheKey && now - planCache.fetchedAt < PLAN_CACHE_TTL_MS) {
+        return planCache.data;
+    }
+
+    if (!force && inFlightRequest && inFlightKey === cacheKey) {
+        return inFlightRequest;
+    }
+
+    inFlightKey = cacheKey;
+    inFlightRequest = (async () => {
         try {
             const res = await api.get<any>('/saas-billing/my-subscription');
-            const data = res.data;
-            const hotel = data?.hotel;
-            const sub = data?.subscription;
-            const pkg = sub?.package;
-
-            const licenseStatus = hotel?.licenseStatus || 'TRIAL';
-            const expiresAt = hotel?.licenseExpiresAt || sub?.trialEndsAt || null;
-
-            let daysRemaining: number | null = null;
-            if (expiresAt) {
-                const diff = new Date(expiresAt).getTime() - Date.now();
-                daysRemaining = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-            }
-
-            const isTrialExpired = licenseStatus === 'EXPIRED' || (licenseStatus === 'TRIAL' && daysRemaining !== null && daysRemaining <= 0);
-            const isLicenseActive = ['ACTIVE', 'TRIAL'].includes(licenseStatus) && !isTrialExpired;
-
-            setPlan({
-                licenseStatus,
-                licenseExpiresAt: hotel?.licenseExpiresAt || null,
-                trialEndsAt: sub?.trialEndsAt || null,
-                planName: pkg?.name || 'Free Trial',
-                planCode: pkg?.code || 'TRIAL',
-                maxRooms: pkg?.maxRooms || null,
-                maxUsers: pkg?.maxUsers || null,
-                features: pkg?.features || [],
-                modules: pkg?.modules || [],
-                allowedRoles: pkg?.allowedRoles || [],
-                trialDays: pkg?.trialDays || 14,
-                daysRemaining,
-                isTrialExpired,
-                isLicenseActive,
-            });
+            const nextPlan = mapPlanResponse(res.data);
+            planCache = {
+                key: cacheKey,
+                data: nextPlan,
+                fetchedAt: Date.now(),
+            };
+            return nextPlan;
         } catch (err) {
             console.warn('Failed to fetch hotel plan:', err);
-            setPlan(DEFAULT_PLAN);
+            return planCache?.key === cacheKey ? planCache.data : fallbackPlan;
         } finally {
-            setIsLoading(false);
+            inFlightRequest = null;
+            inFlightKey = null;
         }
+    })();
+
+    return inFlightRequest;
+}
+
+export function useHotelPlan() {
+    const { user } = useAuth();
+    const cacheKey = createPlanCacheKey(user?.hotelId, user?.userType);
+    const cachedPlan = planCache?.key === cacheKey ? planCache.data : getDefaultPlanForUser(user?.userType);
+    const [plan, setPlan] = useState<HotelPlanInfo>(cachedPlan);
+    const [isLoading, setIsLoading] = useState(planCache?.key === cacheKey ? false : true);
+
+    const fetchPlan = useCallback(async (force = false) => {
+        setIsLoading(true);
+        const nextPlan = await fetchHotelPlanData(user?.hotelId, user?.userType, force);
+        setPlan(nextPlan);
+        setIsLoading(false);
+        return nextPlan;
     }, [user?.hotelId, user?.userType]);
 
     useEffect(() => {
-        fetchPlan();
-    }, [fetchPlan]);
+        let cancelled = false;
+
+        fetchHotelPlanData(user?.hotelId, user?.userType)
+            .then(nextPlan => {
+                if (!cancelled) {
+                    setPlan(nextPlan);
+                    setIsLoading(false);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setPlan(getDefaultPlanForUser(user?.userType));
+                    setIsLoading(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [user?.hotelId, user?.userType]);
 
     const hasModule = useCallback((moduleId: string): boolean => {
         // If no modules are set (empty array), allow everything (backwards compat / Owner plan)
@@ -122,6 +199,6 @@ export function useHotelPlan() {
         hasModule,
         hasFeature,
         isRoleAllowed,
-        refetch: fetchPlan,
+        refetch: () => fetchPlan(true),
     };
 }

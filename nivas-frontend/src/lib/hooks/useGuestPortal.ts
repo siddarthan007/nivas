@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '@/lib/api';
+import { api, tokenStorage } from '@/lib/api';
+
+const GUEST_SESSION_KEY = 'nivas_guest_session';
 
 interface GuestSession {
     id: string;
@@ -39,50 +41,118 @@ interface ServiceRequest {
     createdAt: string;
 }
 
+function saveGuestSession(session: GuestSession, token: string) {
+    try {
+        localStorage.setItem(GUEST_SESSION_KEY, JSON.stringify(session));
+        localStorage.setItem('guest_token', token);
+        tokenStorage.setToken(token);
+    } catch { /* SSR / storage full */ }
+}
+
+function loadGuestSession(): { session: GuestSession; token: string } | null {
+    try {
+        const raw = localStorage.getItem(GUEST_SESSION_KEY);
+        const token = localStorage.getItem('guest_token');
+        if (!raw || !token) return null;
+        return { session: JSON.parse(raw), token };
+    } catch {
+        return null;
+    }
+}
+
+function clearGuestSession() {
+    try {
+        localStorage.removeItem(GUEST_SESSION_KEY);
+        localStorage.removeItem('guest_token');
+        tokenStorage.removeToken();
+    } catch { /* safe */ }
+}
+
+/** Backend GET /guest/actions/menu returns { [category]: items[] }, not a flat array */
+function normalizeMenuByCategory(raw: unknown): Record<string, MenuItem[]> {
+    if (!raw || typeof raw !== 'object') return {};
+    if (Array.isArray(raw)) {
+        return raw.reduce((acc: Record<string, MenuItem[]>, item: any) => {
+            const cat = String(item.category || 'Other');
+            const menuItem: MenuItem = {
+                id: String(item.id),
+                name: String(item.name ?? ''),
+                description: item.description,
+                price: Number(item.price) || 0,
+                category: cat,
+                available: item.available !== false,
+                image: item.imageUrl ?? item.image,
+            };
+            if (!acc[cat]) acc[cat] = [];
+            acc[cat]!.push(menuItem);
+            return acc;
+        }, {});
+    }
+    const out: Record<string, MenuItem[]> = {};
+    for (const [category, items] of Object.entries(raw as Record<string, unknown>)) {
+        if (!Array.isArray(items)) continue;
+        out[category] = items.map((item: any) => ({
+            id: String(item.id),
+            name: String(item.name ?? ''),
+            description: item.description,
+            price: Number(item.price) || 0,
+            category,
+            available: true,
+            image: item.imageUrl ?? item.image,
+        }));
+    }
+    return out;
+}
+
 /**
  * Hook for guest portal functionality
  */
 export function useGuestPortal() {
     const [session, setSession] = useState<GuestSession | null>(null);
     const [bills, setBills] = useState<GuestBill[]>([]);
-    const [menu, setMenu] = useState<MenuItem[]>([]);
+    const [menuByCategory, setMenuByCategory] = useState<Record<string, MenuItem[]>>({});
     const [requests, setRequests] = useState<ServiceRequest[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Login with PIN (last 4 digits of phone)
+    // Restore session on mount
+    useEffect(() => {
+        const saved = loadGuestSession();
+        if (saved) {
+            tokenStorage.setToken(saved.token);
+            setSession(saved.session);
+            setIsAuthenticated(true);
+        }
+        setIsLoading(false);
+    }, []);
+
     const loginWithPin = async (roomNumber: string, pin: string): Promise<boolean> => {
         setIsLoading(true);
         setError(null);
         try {
-            const response = await api.post<{ session: GuestSession; token: string }>('/guest/login', {
-                roomNumber,
-                pin,
-            });
+            const response = await api.post<any>('/guest/login', { roomNumber, pin });
 
             if (response.data) {
-                const serverData = response.data as any;
+                const d = response.data;
+                const token = d.token as string;
+                if (!token) {
+                    setError('Login succeeded but no token received');
+                    return false;
+                }
+
                 const sessionData: GuestSession = {
-                    id: serverData.room?.id || serverData.id || '',
-                    guestName: serverData.guestName || serverData.room?.guestName || 'Guest',
-                    roomNumber: serverData.room?.number || serverData.roomNumber || roomNumber,
-                    checkInDate: serverData.checkInDate || serverData.room?.checkInDate || '',
-                    checkOutDate: serverData.checkOutDate || serverData.room?.checkOutDate || '',
-                    bookingId: serverData.bookingId || serverData.room?.bookingId || '',
+                    id: String(d.room?.id ?? ''),
+                    guestName: d.booking?.guestName ?? 'Guest',
+                    roomNumber: String(d.room?.number ?? roomNumber),
+                    checkInDate: d.booking?.checkInDate ?? '',
+                    checkOutDate: d.booking?.checkOutDate ?? '',
+                    bookingId: d.booking?.id ?? '',
                 };
 
+                saveGuestSession(sessionData, token);
                 setSession(sessionData);
                 setIsAuthenticated(true);
-                // Store guest token
-                localStorage.setItem('guest_token', response.data.token);
-                // Set token in API client
-                // Note: api.ts reads from localStorage 'nivas_auth_token', but we use 'guest_token'.
-                // We might need to handle this. For now let's assume api.ts checks both or we use one key.
-                // Actually best to set it as the main token for this session context.
-                if (typeof window !== 'undefined') {
-                    localStorage.setItem('nivas_auth_token', response.data.token);
-                }
                 return true;
             }
             return false;
@@ -125,11 +195,10 @@ export function useGuestPortal() {
         }
     }, [isAuthenticated]);
 
-    // Fetch menu
     const fetchMenu = useCallback(async () => {
         try {
-            const response = await api.get<MenuItem[]>('/guest/actions/menu');
-            setMenu(response.data || []);
+            const response = await api.get<Record<string, unknown>>('/guest/actions/menu');
+            setMenuByCategory(normalizeMenuByCategory(response.data));
         } catch (err) {
             console.error('Failed to fetch menu:', err);
         }
@@ -225,25 +294,18 @@ export function useGuestPortal() {
         }
     };
 
-    // Logout
     const logout = () => {
         setSession(null);
         setIsAuthenticated(false);
         setBills([]);
+        setMenuByCategory({});
         setRequests([]);
-        localStorage.removeItem('guest_token');
+        clearGuestSession();
     };
 
     // Calculate totals
     const totalSpent = bills.reduce((sum, bill) => sum + bill.amount, 0);
     const pendingAmount = bills.filter(b => b.status === 'PENDING').reduce((sum, b) => sum + b.amount, 0);
-
-    // Group menu by category
-    const menuByCategory = menu.reduce((acc, item) => {
-        if (!acc[item.category]) acc[item.category] = [];
-        acc[item.category]!.push(item);
-        return acc;
-    }, {} as Record<string, MenuItem[]>);
 
     return {
         session,
@@ -251,7 +313,6 @@ export function useGuestPortal() {
         isLoading,
         error,
         bills,
-        menu,
         menuByCategory,
         requests,
         totalSpent,

@@ -10,7 +10,7 @@ interface LicenseGuardProps {
     children: ReactNode;
 }
 
-const STATUS_CONFIG: Record<string, { icon: typeof AlertTriangle; title: string; color: string; bgColor: string }> = {
+const STATUS_CONFIG: Record<LicenseErrorInfo['licenseStatus'], { icon: typeof AlertTriangle; title: string; color: string; bgColor: string }> = {
     EXPIRED: {
         icon: AlertTriangle,
         title: 'License Expired',
@@ -55,7 +55,7 @@ export default function LicenseGuard({ children }: LicenseGuardProps) {
 
     // Show license error page if license is invalid
     if (licenseError) {
-        const config = STATUS_CONFIG[licenseError.licenseStatus] || STATUS_CONFIG.EXPIRED;
+        const config = STATUS_CONFIG[licenseError.licenseStatus];
         const Icon = config.icon;
         const isGracePeriod = licenseError.graceEndsAt && new Date(licenseError.graceEndsAt) > new Date();
 
@@ -181,3 +181,6 @@ export default function LicenseGuard({ children }: LicenseGuardProps) {
 
     return <>{children}</>;
 }
+
+
+

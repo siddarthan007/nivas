@@ -13,7 +13,7 @@ export const housekeepingController = new Elysia({ prefix: '/housekeeping' })
         return createResponse(tasks, 'Housekeeping tasks fetched successfully');
     }, {
         isSignedIn: true,
-        hasPermission: PERMISSIONS.ROOMS.MANAGE_CLEANING,
+        hasPermission: PERMISSIONS.HOUSEKEEPING.VIEW,
         detail: {
             summary: 'Get all housekeeping tasks',
             tags: ['Housekeeping']
@@ -25,13 +25,14 @@ export const housekeepingController = new Elysia({ prefix: '/housekeeping' })
         return createResponse(newTask, 'Task assigned successfully');
     }, {
         isSignedIn: true,
-        hasPermission: PERMISSIONS.ROOMS.MANAGE_CLEANING,
+        hasPermission: PERMISSIONS.HOUSEKEEPING.CREATE,
         body: t.Object({
             roomId: t.Number(),
             assignedToId: t.Optional(t.String()),
             taskType: t.String(),
             priority: t.String(),
-            notes: t.Optional(t.String())
+            notes: t.Optional(t.String()),
+            bookingId: t.Optional(t.String())
         }),
         detail: {
             summary: 'Assign housekeeping task',
@@ -44,7 +45,7 @@ export const housekeepingController = new Elysia({ prefix: '/housekeeping' })
         return createResponse(updatedTask, 'Task status updated successfully');
     }, {
         isSignedIn: true,
-        hasPermission: PERMISSIONS.ROOMS.MANAGE_CLEANING,
+        hasPermission: PERMISSIONS.HOUSEKEEPING.UPDATE_STATUS,
         body: t.Object({
             status: t.Union([
                 t.Literal('PENDING'),
@@ -88,6 +89,7 @@ export const housekeepingController = new Elysia({ prefix: '/housekeeping' })
         return createResponse(startedTask, 'Task started successfully');
     }, {
         isSignedIn: true,
-        hasPermission: PERMISSIONS.HOUSEKEEPING.UPDATE,
+        hasPermission: PERMISSIONS.HOUSEKEEPING.UPDATE_STATUS,
         detail: { summary: 'Start a cleaning task', tags: ['Housekeeping'] }
     });
+

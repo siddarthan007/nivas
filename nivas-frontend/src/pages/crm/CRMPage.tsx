@@ -3,8 +3,6 @@
 import { useState, useEffect } from 'react';
 import {
     useCRM,
-    type Guest,
-    type GuestHistory,
     type Company,
     type TravelAgent,
     type CreateCompanyPayload,
@@ -16,30 +14,21 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
-import Pagination from '@/components/ui/Pagination';
+import { SkeletonCard } from '@/components/ui';
 import {
-    Users,
     Building2,
     Briefcase,
-    Search,
     Plus,
     RefreshCw,
-    Star,
-    History,
     Mail,
-    Phone,
     Pencil,
     Trash2,
-    Calendar,
-    IndianRupee,
     AlertTriangle,
-    Loader2,
 } from 'lucide-react';
 
 // Tab Navigation
 function TabNav({ activeTab, onTabChange }: { activeTab: string; onTabChange: (tab: string) => void }) {
     const tabs = [
-        { id: 'guests', label: 'Guests', icon: Users },
         { id: 'companies', label: 'Corporate', icon: Building2 },
         { id: 'agents', label: 'Agents', icon: Briefcase },
     ];
@@ -73,71 +62,6 @@ function TabNav({ activeTab, onTabChange }: { activeTab: string; onTabChange: (t
                     {tab.label}
                 </button>
             ))}
-        </div>
-    );
-}
-
-// Guest Card
-function GuestCard({ guest, onViewHistory, onToggleVip }: { guest: Guest; onViewHistory: () => void; onToggleVip: () => void }) {
-    return (
-        <div style={{
-            backgroundColor: 'var(--notion-bg-secondary)',
-            borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--notion-border)',
-            padding: 'var(--space-4)',
-        }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-3)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                    <div style={{
-                        width: '40px',
-                        height: '40px',
-                        borderRadius: '50%',
-                        backgroundColor: 'var(--notion-blue-bg)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '16px',
-                        fontWeight: '600',
-                        color: 'var(--notion-blue)',
-                    }}>
-                        {(guest.firstName?.[0] || guest.email?.[0] || '?').toUpperCase()}
-                    </div>
-                    <div>
-                        <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--notion-text)' }}>
-                            {guest.firstName} {guest.lastName}
-                        </div>
-                        <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
-                            {guest.email}
-                        </div>
-                    </div>
-                </div>
-                {guest.isVip && (
-                    <Star size={16} fill="var(--notion-yellow)" color="var(--notion-yellow)" />
-                )}
-            </div>
-
-            {guest.phone && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-2)' }}>
-                    <Phone size={12} />
-                    {guest.phone}
-                </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 'var(--space-4)', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-3)' }}>
-                <span>{guest.stays || 0} stays</span>
-                <span>₹{(guest.totalSpend || 0).toLocaleString()} total</span>
-            </div>
-
-            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                <Button size="sm" variant="secondary" onClick={onViewHistory}>
-                    <History size={12} style={{ marginRight: '4px' }} />
-                    History
-                </Button>
-                <Button size="sm" variant="secondary" onClick={onToggleVip}>
-                    <Star size={12} style={{ marginRight: '4px' }} />
-                    {guest.isVip ? 'Remove VIP' : 'Make VIP'}
-                </Button>
-            </div>
         </div>
     );
 }
@@ -372,159 +296,6 @@ function CreateAgentModal({ isOpen, onClose, onSubmit }: {
     );
 }
 
-// Guest History Modal
-function GuestHistoryModal({ isOpen, onClose, guest, onFetchHistory }: {
-    isOpen: boolean;
-    onClose: () => void;
-    guest: Guest | null;
-    onFetchHistory: (guestId: string) => Promise<GuestHistory | null>;
-}) {
-    const [history, setHistory] = useState<GuestHistory | null>(null);
-    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-
-    useEffect(() => {
-        if (isOpen && guest) {
-            setIsLoadingHistory(true);
-            onFetchHistory(guest.id).then(data => {
-                setHistory(data);
-                setIsLoadingHistory(false);
-            });
-        }
-        if (!isOpen) {
-            setHistory(null);
-        }
-    }, [isOpen, guest, onFetchHistory]);
-
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Stay History — ${guest?.firstName || ''} ${guest?.lastName || ''}`} size="lg">
-            <div style={{ minHeight: '200px' }}>
-                {isLoadingHistory ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-8)', color: 'var(--notion-text-secondary)' }}>
-                        <Loader2 size={20} style={{ marginRight: '8px', animation: 'spin 1s linear infinite' }} />
-                        Loading history...
-                    </div>
-                ) : !history ? (
-                    <div style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--notion-text-secondary)' }}>
-                        No history data available
-                    </div>
-                ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                        <div style={{
-                            display: 'flex', gap: 'var(--space-6)', padding: 'var(--space-4)',
-                            backgroundColor: 'var(--notion-bg)', borderRadius: 'var(--radius-md)',
-                            border: '1px solid var(--notion-border)',
-                        }}>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-text)' }}>
-                                    {history.bookings?.length || 0}
-                                </div>
-                                <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Bookings</div>
-                            </div>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-text)' }}>
-                                    {history.orders?.length || 0}
-                                </div>
-                                <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Orders</div>
-                            </div>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-green)' }}>
-                                    ₹{(history.totalSpend || 0).toLocaleString()}
-                                </div>
-                                <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Total Spend</div>
-                            </div>
-                        </div>
-
-                        {history.bookings && history.bookings.length > 0 && (
-                            <div>
-                                <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)', marginBottom: 'var(--space-3)' }}>
-                                    Bookings
-                                </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                    {history.bookings.map((booking: any, idx: number) => (
-                                        <div key={booking.id || idx} style={{
-                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                            padding: 'var(--space-3)', backgroundColor: 'var(--notion-bg)',
-                                            borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)',
-                                        }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                                                <Calendar size={14} style={{ color: 'var(--notion-blue)' }} />
-                                                <div>
-                                                    <div style={{ fontSize: '13px', color: 'var(--notion-text)' }}>
-                                                        Room {booking.roomNumber || booking.roomId || '—'}
-                                                    </div>
-                                                    <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
-                                                        {booking.checkIn ? new Date(booking.checkIn).toLocaleDateString() : '—'}
-                                                        {' → '}
-                                                        {booking.checkOut ? new Date(booking.checkOut).toLocaleDateString() : '—'}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                                                <span style={{
-                                                    fontSize: '11px', padding: '2px 8px', borderRadius: 'var(--radius-sm)',
-                                                    backgroundColor: booking.status === 'checked_out' ? 'var(--notion-bg-tertiary)' :
-                                                        booking.status === 'confirmed' ? 'var(--notion-blue-bg)' :
-                                                        'var(--notion-green-bg)',
-                                                    color: booking.status === 'checked_out' ? 'var(--notion-text-secondary)' :
-                                                        booking.status === 'confirmed' ? 'var(--notion-blue)' :
-                                                        'var(--notion-green)',
-                                                }}>
-                                                    {booking.status || 'unknown'}
-                                                </span>
-                                                <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--notion-text)' }}>
-                                                    ₹{(booking.totalAmount || 0).toLocaleString()}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {history.orders && history.orders.length > 0 && (
-                            <div>
-                                <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)', marginBottom: 'var(--space-3)' }}>
-                                    Orders
-                                </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                    {history.orders.map((order: any, idx: number) => (
-                                        <div key={order.id || idx} style={{
-                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                            padding: 'var(--space-3)', backgroundColor: 'var(--notion-bg)',
-                                            borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)',
-                                        }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                                                <IndianRupee size={14} style={{ color: 'var(--notion-orange)' }} />
-                                                <div>
-                                                    <div style={{ fontSize: '13px', color: 'var(--notion-text)' }}>
-                                                        {order.orderType || order.type || 'Order'}
-                                                    </div>
-                                                    <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
-                                                        {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : '—'}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--notion-text)' }}>
-                                                ₹{(order.totalAmount || order.amount || 0).toLocaleString()}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {(!history.bookings || history.bookings.length === 0) && (!history.orders || history.orders.length === 0) && (
-                            <div style={{ textAlign: 'center', padding: 'var(--space-6)', color: 'var(--notion-text-secondary)' }}>
-                                No stay history recorded yet
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
-        </Modal>
-    );
-}
-
 // Edit Company Modal
 function EditCompanyModal({ isOpen, onClose, company, onSubmit }: {
     isOpen: boolean;
@@ -731,13 +502,9 @@ function DeleteConfirmModal({ isOpen, onClose, onConfirm, entityName, entityType
 // Main Page
 export default function CRMPage() {
     const {
-        guests,
         companies,
         agents,
         isLoading,
-        searchGuests,
-        getGuestHistory,
-        updateGuestProfile,
         fetchCompanies,
         createCompany,
         updateCompany,
@@ -748,15 +515,9 @@ export default function CRMPage() {
         deleteAgent,
     } = useCRM();
 
-    const [activeTab, setActiveTab] = useState('guests');
-    const [searchQuery, setSearchQuery] = useState('');
+    const [activeTab, setActiveTab] = useState('companies');
     const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
     const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
-    const [guestPage, setGuestPage] = useState(1);
-    const [guestLimit, setGuestLimit] = useState(20);
-
-    // Guest history
-    const [historyGuest, setHistoryGuest] = useState<Guest | null>(null);
 
     // Edit modals
     const [editingCompany, setEditingCompany] = useState<Company | null>(null);
@@ -767,192 +528,122 @@ export default function CRMPage() {
     const [deletingAgent, setDeletingAgent] = useState<TravelAgent | null>(null);
 
     useEffect(() => {
-        searchGuests();
         fetchCompanies();
         fetchAgents();
-    }, [searchGuests, fetchCompanies, fetchAgents]);
-
-    const handleSearch = () => {
-        searchGuests(searchQuery);
-        setGuestPage(1);
-    };
-
-    // Guest pagination
-    const guestTotalPages = Math.ceil(guests.length / guestLimit);
-    const paginatedGuests = guests.slice((guestPage - 1) * guestLimit, guestPage * guestLimit);
+    }, [fetchCompanies, fetchAgents]);
 
     return (
         <DashboardLayout>
             <div style={{ padding: 'var(--space-8)' }}>
-                    {/* Header */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
-                        <div>
-                            <h1 style={{
-                                fontSize: '28px',
-                                fontWeight: '600',
-                                color: 'var(--notion-text)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 'var(--space-3)',
-                            }}>
-                                <Users size={28} />
-                                CRM
-                            </h1>
-                            <p style={{ fontSize: '14px', color: 'var(--notion-text-secondary)', marginTop: 'var(--space-1)' }}>
-                                Guest profiles, corporate accounts, and travel agents
-                            </p>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                            <Button variant="secondary" onClick={() => { searchGuests(); fetchCompanies(); fetchAgents(); }} disabled={isLoading}>
-                                <RefreshCw size={14} style={{ marginRight: '6px' }} />
-                                Refresh
-                            </Button>
-                            {activeTab === 'companies' && (
-                                <Button onClick={() => setIsCompanyModalOpen(true)}>
-                                    <Plus size={14} style={{ marginRight: '6px' }} />
-                                    Add Company
-                                </Button>
-                            )}
-                            {activeTab === 'agents' && (
-                                <Button onClick={() => setIsAgentModalOpen(true)}>
-                                    <Plus size={14} style={{ marginRight: '6px' }} />
-                                    Add Agent
-                                </Button>
-                            )}
-                        </div>
+                {/* Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
+                    <div>
+                        <h1 style={{
+                            fontSize: '28px',
+                            fontWeight: '600',
+                            color: 'var(--notion-text)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 'var(--space-3)',
+                        }}>
+                            <Briefcase size={28} />
+                            CRM
+                        </h1>
+                        <p style={{ fontSize: '14px', color: 'var(--notion-text-secondary)', marginTop: 'var(--space-1)' }}>
+                            Corporate accounts and travel agents
+                        </p>
                     </div>
 
-                    {/* Stats */}
-                    <div style={{ display: 'flex', gap: 'var(--space-6)', marginBottom: 'var(--space-6)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                            <span style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-text)' }}>{guests.length}</span>
-                            <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Guests</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                            <span style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-yellow)' }}>{guests.filter(g => g.isVip).length}</span>
-                            <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>VIP</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                            <span style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-blue)' }}>{companies.length}</span>
-                            <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Companies</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                            <span style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-orange)' }}>{agents.length}</span>
-                            <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Agents</span>
-                        </div>
-                    </div>
-
-                    {/* Search (Guests tab) */}
-                    {activeTab === 'guests' && (
-                        <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
-                            <Input
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                                placeholder="Search by name, email, or phone..."
-                                style={{ maxWidth: '400px' }}
-                                onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                            />
-                            <Button onClick={handleSearch} disabled={isLoading}>
-                                <Search size={14} style={{ marginRight: '6px' }} />
-                                Search
+                    <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                        <Button variant="secondary" onClick={() => { fetchCompanies(); fetchAgents(); }} disabled={isLoading}>
+                            <RefreshCw size={14} style={{ marginRight: '6px' }} />
+                            Refresh
+                        </Button>
+                        {activeTab === 'companies' && (
+                            <Button onClick={() => setIsCompanyModalOpen(true)}>
+                                <Plus size={14} style={{ marginRight: '6px' }} />
+                                Add Company
                             </Button>
-                        </div>
-                    )}
+                        )}
+                        {activeTab === 'agents' && (
+                            <Button onClick={() => setIsAgentModalOpen(true)}>
+                                <Plus size={14} style={{ marginRight: '6px' }} />
+                                Add Agent
+                            </Button>
+                        )}
+                    </div>
+                </div>
 
-                    {/* Tabs */}
-                    <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
+                {/* Stats */}
+                <div style={{ display: 'flex', gap: 'var(--space-6)', marginBottom: 'var(--space-6)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                        <span style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-blue)' }}>{companies.length}</span>
+                        <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Companies</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                        <span style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-orange)' }}>{agents.length}</span>
+                        <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Agents</span>
+                    </div>
+                </div>
 
-                    {/* Tab Content */}
-                    {activeTab === 'guests' && (
-                        <>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
-                                {guests.length === 0 ? (
-                                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
-                                        <Users size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
-                                        <p>No guests found</p>
-                                    </div>
-                                ) : (
-                                    paginatedGuests.map(guest => (
-                                        <GuestCard
-                                            key={guest.id}
-                                            guest={guest}
-                                            onViewHistory={() => setHistoryGuest(guest)}
-                                            onToggleVip={() => updateGuestProfile(guest.id, { isVip: !guest.isVip })}
-                                        />
-                                    ))
-                                )}
+                {/* Tabs */}
+                <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
+
+                {/* Tab Content */}
+                {isLoading ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
+                        {Array.from({ length: 4 }).map((_, i) => (
+                            <SkeletonCard key={i} />
+                        ))}
+                    </div>
+                ) : activeTab === 'companies' ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
+                        {companies.length === 0 ? (
+                            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
+                                <Building2 size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
+                                <p>No corporate accounts</p>
+                                <Button onClick={() => setIsCompanyModalOpen(true)} style={{ marginTop: 'var(--space-4)' }}>
+                                    Add First Company
+                                </Button>
                             </div>
-                            {guests.length > 0 && (
-                                <Pagination
-                                    page={guestPage}
-                                    totalPages={guestTotalPages}
-                                    total={guests.length}
-                                    limit={guestLimit}
-                                    onPageChange={setGuestPage}
-                                    onLimitChange={(l) => { setGuestLimit(l); setGuestPage(1); }}
+                        ) : (
+                            companies.map(company => (
+                                <CompanyCard
+                                    key={company.id}
+                                    company={company}
+                                    onEdit={() => setEditingCompany(company)}
+                                    onDelete={() => setDeletingCompany(company)}
                                 />
-                            )}
-                        </>
-                    )}
-
-                    {activeTab === 'companies' && (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
-                            {companies.length === 0 ? (
-                                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
-                                    <Building2 size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
-                                    <p>No corporate accounts</p>
-                                    <Button onClick={() => setIsCompanyModalOpen(true)} style={{ marginTop: 'var(--space-4)' }}>
-                                        Add First Company
-                                    </Button>
-                                </div>
-                            ) : (
-                                companies.map(company => (
-                                    <CompanyCard
-                                        key={company.id}
-                                        company={company}
-                                        onEdit={() => setEditingCompany(company)}
-                                        onDelete={() => setDeletingCompany(company)}
-                                    />
-                                ))
-                            )}
-                        </div>
-                    )}
-
-                    {activeTab === 'agents' && (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
-                            {agents.length === 0 ? (
-                                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
-                                    <Briefcase size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
-                                    <p>No travel agents</p>
-                                    <Button onClick={() => setIsAgentModalOpen(true)} style={{ marginTop: 'var(--space-4)' }}>
-                                        Add First Agent
-                                    </Button>
-                                </div>
-                            ) : (
-                                agents.map(agent => (
-                                    <AgentCard
-                                        key={agent.id}
-                                        agent={agent}
-                                        onEdit={() => setEditingAgent(agent)}
-                                        onDelete={() => setDeletingAgent(agent)}
-                                    />
-                                ))
-                            )}
-                        </div>
-                    )}
+                            ))
+                        )}
+                    </div>
+                ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
+                        {agents.length === 0 ? (
+                            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
+                                <Briefcase size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
+                                <p>No travel agents</p>
+                                <Button onClick={() => setIsAgentModalOpen(true)} style={{ marginTop: 'var(--space-4)' }}>
+                                    Add First Agent
+                                </Button>
+                            </div>
+                        ) : (
+                            agents.map(agent => (
+                                <AgentCard
+                                    key={agent.id}
+                                    agent={agent}
+                                    onEdit={() => setEditingAgent(agent)}
+                                    onDelete={() => setDeletingAgent(agent)}
+                                />
+                            ))
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Modals */}
             <CreateCompanyModal isOpen={isCompanyModalOpen} onClose={() => setIsCompanyModalOpen(false)} onSubmit={createCompany} />
             <CreateAgentModal isOpen={isAgentModalOpen} onClose={() => setIsAgentModalOpen(false)} onSubmit={createAgent} />
-
-            <GuestHistoryModal
-                isOpen={!!historyGuest}
-                onClose={() => setHistoryGuest(null)}
-                guest={historyGuest}
-                onFetchHistory={getGuestHistory}
-            />
 
             <EditCompanyModal
                 isOpen={!!editingCompany}

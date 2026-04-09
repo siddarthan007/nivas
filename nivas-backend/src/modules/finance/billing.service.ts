@@ -1,6 +1,8 @@
 import { db } from '../../db';
-import { bookings, orders, payments, hotels, folioCharges } from '../../db/schema';
+import { orders, payments, hotels, folioCharges } from '../../db/schema';
 import { eq, and, sum } from 'drizzle-orm';
+import { NotFoundError } from '../../utils/errors';
+import { BookingsService } from '../bookings/bookings.service';
 
 export interface BillingSummary {
     roomCharge: number;
@@ -30,17 +32,12 @@ export const BillingService = {
             where: eq(hotels.id, hotelId)
         });
 
-        if (!hotel) throw new Error('Hotel not found');
+        if (!hotel) throw new NotFoundError('Hotel');
 
         const serviceChargeRate = parseFloat(hotel.serviceChargeRate ?? '0.10');
         const taxRate = parseFloat(hotel.taxRate ?? '0.13');
 
-        // Get booking
-        const booking = await db.query.bookings.findFirst({
-            where: eq(bookings.id, bookingId)
-        });
-
-        if (!booking) throw new Error('Booking not found');
+        const booking = await BookingsService.getBookingById(hotelId, bookingId);
 
         // Get room charges from folio (Night Audit + Manual Charges)
         const [chargesResult] = await db.select({ total: sum(folioCharges.amount) })
@@ -98,15 +95,7 @@ export const BillingService = {
      * Calculate billing summary for a room (finds active booking)
      */
     async calculateRoomBillingSummary(hotelId: number, roomId: number): Promise<BillingSummary & { bookingId: string }> {
-        const currentBooking = await db.query.bookings.findFirst({
-            where: and(
-                eq(bookings.roomId, roomId),
-                eq(bookings.hotelId, hotelId),
-                eq(bookings.status, 'CHECKED_IN')
-            )
-        });
-
-        if (!currentBooking) throw new Error('No active booking found for this room');
+        const currentBooking = await BookingsService.findActiveByRoom(hotelId, roomId);
 
         const summary = await this.calculateBillingSummary(hotelId, currentBooking.id);
         return { ...summary, bookingId: currentBooking.id };

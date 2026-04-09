@@ -1,83 +1,91 @@
-import { useState, useCallback } from 'react';
-import api from '../api';
+import { useState, useEffect, useCallback } from 'react';
+import { api } from '@/lib/api';
+import type { MenuItem, CreateMenuItemPayload } from '@/lib/types/api.types';
+import { MenuCategoryService, type MenuCategory } from '@/lib/services/menu-category.service';
 import { toast } from 'sonner';
-import type { MenuItem, CreateMenuItemPayload } from '../types/api.types';
 
 export function useMenu() {
     const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
+    const [categories, setCategories] = useState<MenuCategory[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const fetchMenu = useCallback(async () => {
         setIsLoading(true);
-        setError(null);
         try {
-            const res = await api.get<MenuItem[]>('/menu');
-            setMenuItems(res.data || []);
+            const [itemsData, categoriesData] = await Promise.all([
+                api.get<MenuItem[]>('/menu').then(response => response.data || []),
+                MenuCategoryService.getAll(),
+            ]);
+            setMenuItems(itemsData);
+            setCategories(categoriesData);
+            setError(null);
         } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to fetch menu';
-            setError(msg);
-            toast.error(msg);
+            setError(err.message || 'Failed to fetch data');
+            toast.error('Failed to load menu data');
         } finally {
             setIsLoading(false);
         }
     }, []);
 
-    const createItem = async (data: CreateMenuItemPayload) => {
-        setIsLoading(true);
+    const createItem = async (data: CreateMenuItemPayload): Promise<boolean> => {
         try {
             await api.post('/menu', data);
             await fetchMenu();
-            toast.success('Menu item created successfully');
+            toast.success('Menu item created');
             return true;
         } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to create item';
-            toast.error(msg);
+            toast.error(err?.message || 'Failed to create menu item');
             return false;
-        } finally {
-            setIsLoading(false);
         }
     };
 
-    const updateItem = async (id: number, data: Partial<CreateMenuItemPayload>) => {
-        setIsLoading(true);
+    const updateItem = async (id: number, data: Partial<MenuItem>): Promise<boolean> => {
         try {
             await api.patch(`/menu/${id}`, data);
             await fetchMenu();
-            toast.success('Menu item updated successfully');
+            toast.success('Menu item updated');
             return true;
         } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to update item';
-            toast.error(msg);
+            toast.error(err?.message || 'Failed to update menu item');
             return false;
-        } finally {
-            setIsLoading(false);
         }
     };
 
-    const deleteItem = async (id: number) => {
-        setIsLoading(true);
+    const deleteItem = async (id: number): Promise<boolean> => {
         try {
             await api.delete(`/menu/${id}`);
             await fetchMenu();
-            toast.success('Menu item deleted successfully');
+            toast.success('Menu item deleted');
             return true;
         } catch (err: any) {
-            const msg = err?.response?.data?.message || err.message || 'Failed to delete item';
-            toast.error(msg);
+            toast.error(err?.message || 'Failed to delete menu item');
             return false;
-        } finally {
-            setIsLoading(false);
         }
     };
 
+    const refreshCategories = async () => {
+        try {
+            const data = await MenuCategoryService.getAll();
+            setCategories(data);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    useEffect(() => {
+        fetchMenu();
+    }, [fetchMenu]);
+
     return {
         menuItems,
+        categories,
         isLoading,
         error,
         fetchMenu,
         createItem,
         updateItem,
-        deleteItem
+        deleteItem,
+        refreshCategories,
     };
 }

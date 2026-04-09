@@ -2,6 +2,7 @@ import { db } from '../../db';
 import { users } from '../../db/schema';
 import { eq, and, ne } from 'drizzle-orm';
 import { NotFoundError } from '../../utils/errors';
+import { assertRoleBelongsToHotel } from '../../utils/tenant.guard';
 
 export class UsersService {
     static async getStaff(hotelId: number) {
@@ -19,6 +20,8 @@ export class UsersService {
     }
 
     static async updateRole(hotelId: number, userId: string, roleId: number) {
+        await assertRoleBelongsToHotel(roleId, hotelId);
+
         const [updatedUser] = await db.update(users)
             .set({
                 roleId,

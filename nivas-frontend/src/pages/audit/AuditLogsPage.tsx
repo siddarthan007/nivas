@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/contexts/AuthContext';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
 import {
     FileText,
     Download,
@@ -231,41 +232,23 @@ export default function AuditLogsPage() {
                                 borderRadius: 'var(--radius-md)',
                                 border: '1px solid var(--notion-border)',
                             }}>
-                                <select
+                                <Select
                                     value={selectedAction}
                                     onChange={e => setSelectedAction(e.target.value)}
-                                    style={{
-                                        padding: '8px 12px',
-                                        fontSize: '14px',
-                                        border: '1px solid var(--notion-border)',
-                                        borderRadius: 'var(--radius-md)',
-                                        backgroundColor: 'var(--notion-bg)',
-                                        color: 'var(--notion-text)',
-                                    }}
-                                >
-                                    <option value="">All Actions</option>
-                                    {actionTypes.map(action => (
-                                        <option key={action} value={action}>{action}</option>
-                                    ))}
-                                </select>
+                                    options={[
+                                        { value: '', label: 'All Actions' },
+                                        ...actionTypes.map(action => ({ value: action, label: action })),
+                                    ]}
+                                />
 
-                                <select
+                                <Select
                                     value={selectedEntity}
                                     onChange={e => setSelectedEntity(e.target.value)}
-                                    style={{
-                                        padding: '8px 12px',
-                                        fontSize: '14px',
-                                        border: '1px solid var(--notion-border)',
-                                        borderRadius: 'var(--radius-md)',
-                                        backgroundColor: 'var(--notion-bg)',
-                                        color: 'var(--notion-text)',
-                                    }}
-                                >
-                                    <option value="">All Entities</option>
-                                    {entityTypes.map(entity => (
-                                        <option key={entity} value={entity}>{entity}</option>
-                                    ))}
-                                </select>
+                                    options={[
+                                        { value: '', label: 'All Entities' },
+                                        ...entityTypes.map(entity => ({ value: entity, label: entity })),
+                                    ]}
+                                />
 
                                 <Button size="sm" onClick={handleApplyFilters}>
                                     Apply Filters

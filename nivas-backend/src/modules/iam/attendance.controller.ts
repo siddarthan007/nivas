@@ -1,5 +1,6 @@
 import { Elysia, t } from 'elysia';
 import { authMiddleware } from '../../middlewares/auth.middleware';
+import { PERMISSIONS } from '../../config/permissions';
 import { AttendanceService } from './attendance.service';
 import { createResponse } from '../../utils/response.helper';
 import { ValidationError } from '../../utils/errors';
@@ -35,6 +36,7 @@ export const attendanceController = new Elysia({ prefix: '/attendance' })
         return createResponse(data, 'Attendance fetched');
     }, {
         isSignedIn: true,
+        hasPermission: PERMISSIONS.ANALYTICS.VIEW_STAFF_PERFORMANCE,
         query: t.Object({
             date: t.Optional(t.String())
         }),

@@ -69,21 +69,23 @@ const staffItems: StaffNavItem[] = [
   { id: "finance", href: "/dashboard/finance", label: "Finance", Icon: CreditCard, permission: "finance:view_records" },
   { id: "revenue", href: "/dashboard/revenue", label: "Revenue", Icon: TrendingUp, permission: "analytics:view_financials" },
   { id: "crm", href: "/dashboard/crm", label: "CRM", Icon: UserCircle, permission: "crm:view_guests" },
+  { id: "guests", href: "/dashboard/guests", label: "Guests", Icon: Users, permission: "crm:view_guests" },
   { id: "events", href: "/dashboard/events", label: "Events", Icon: PartyPopper, permission: "banquets:view" },
   { id: "kitchen", href: "/dashboard/kitchen", label: "Kitchen Display", Icon: UtensilsCrossed, permission: "orders:read" },
   { id: "messages", href: "/dashboard/messages", label: "Messages", Icon: MessageSquare, permission: "communications:read_messages" },
-  { id: "attendance", href: "/dashboard/attendance", label: "Attendance", Icon: Clock },
+  { id: "attendance", href: "/dashboard/attendance", label: "Attendance", Icon: Clock, permission: "users:read" },
   { id: "procurement", href: "/dashboard/procurement", label: "Procurement", Icon: Package, permission: "inventory:manage_procurement" },
   { id: "facilities", href: "/dashboard/operations/facilities", label: "Facilities", Icon: Building2, permission: "operations:setup_facilities" },
   { id: "corporate", href: "/dashboard/corporate", label: "Corporate", Icon: Building2, permission: "crm:manage_guests" },
   { id: "channel-manager", href: "/dashboard/channel-manager", label: "Channel Manager", Icon: TrendingUp, permission: "system:manage_settings" },
-  { id: "saas-billing", href: "/dashboard/saas-billing", label: "Billing", Icon: CreditCard },
+  { id: "saas-billing", href: "/dashboard/saas-billing", label: "Billing", Icon: CreditCard, permission: "finance:view_records" },
 ];
 
 // Super Admin Navigation
 const superAdminItems = [
   { id: "dashboard", href: "/dashboard", label: "Overview", Icon: LayoutDashboard },
   { id: "tenants", href: "/dashboard/tenants", label: "Tenants", Icon: Building2 },
+  { id: "licenses", href: "/dashboard/licenses", label: "Licenses", Icon: Ticket },
   { id: "plans", href: "/dashboard/plans", label: "Plans", Icon: Package },
   { id: "analytics", href: "/dashboard/analytics", label: "SaaS Analytics", Icon: TrendingUp },
   { id: "audit", href: "/dashboard/audit", label: "Audit Logs", Icon: FileText },

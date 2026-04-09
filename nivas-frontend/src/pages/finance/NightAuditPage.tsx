@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNightAudit } from '@/lib/hooks/useNightAudit';
 import Button from '@/components/ui/Button';
+import { SkeletonTableRow } from '@/components/ui/Skeleton';
 import {
     Moon,
     CheckCircle,
@@ -65,7 +66,8 @@ function HistoryTable({ records, isLoading }: { records: NightAuditRecord[]; isL
             FAILED: { bg: 'var(--notion-red-bg)', color: 'var(--notion-red)' },
             IN_PROGRESS: { bg: 'var(--notion-orange-bg)', color: 'var(--notion-orange)' },
         };
-        const s = styles[status] || styles.FAILED;
+        const fallbackStyle = { bg: 'var(--notion-red-bg)', color: 'var(--notion-red)' };
+        const s = styles[status] ?? fallbackStyle;
 
         return (
             <span style={{
@@ -84,17 +86,12 @@ function HistoryTable({ records, isLoading }: { records: NightAuditRecord[]; isL
     if (isLoading) {
         return (
             <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 'var(--space-3)',
+                border: '1px solid var(--notion-border)',
+                borderRadius: 'var(--radius-lg)',
+                overflow: 'hidden',
             }}>
                 {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} style={{
-                        height: '48px',
-                        backgroundColor: 'var(--notion-bg-secondary)',
-                        borderRadius: 'var(--radius-md)',
-                        animation: 'pulse 1.5s ease-in-out infinite',
-                    }} />
+                    <SkeletonTableRow key={i} columns={6} />
                 ))}
             </div>
         );
@@ -255,3 +252,5 @@ export default function NightAuditPanel() {
         </div>
     );
 }
+
+

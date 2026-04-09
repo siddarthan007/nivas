@@ -6,7 +6,7 @@ import { NotFoundError } from '../../utils/errors';
 export const ProcurementService = {
     async getAllRequests(hotelId: number) {
         return await db.query.purchaseRequests.findMany({
-            where: eq(purchaseRequests.hotelId, hotelId)
+            where: eq(purchaseRequests.hotelId, hotelId),
         });
     },
 
@@ -15,7 +15,7 @@ export const ProcurementService = {
             hotelId,
             requesterId: userId,
             ...data,
-            status: 'PENDING'
+            status: 'PENDING',
         }).returning();
         return request;
     },
@@ -30,13 +30,17 @@ export const ProcurementService = {
         return updated;
     },
 
-    async createOrder(hotelId: number, data: { supplierId: number; items: any; totalAmount: number; expectedDeliveryDate: string }) {
+    async createOrder(hotelId: number, data: { supplierName: string; items: unknown; totalCost?: number; notes?: string }) {
         const [order] = await db.insert(purchaseOrders).values({
             hotelId,
-            ...data,
+            poNumber: `PO-${Date.now()}`,
+            supplierName: data.supplierName,
+            totalCost: (data.totalCost ?? 0).toString(),
             status: 'DRAFT',
-            items: JSON.stringify(data.items)
+            notes: data.notes,
+            items: data.items,
         }).returning();
+
         return order;
-    }
+    },
 };

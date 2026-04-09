@@ -22,6 +22,10 @@ export const ordersController = new Elysia({ prefix: '/orders' })
             roomId: t.Optional(t.Number()),
             customerName: t.Optional(t.String()),
             orderType: t.String(),
+            bookingId: t.Optional(t.String()),
+            guestId: t.Optional(t.String()),
+            restaurantTableId: t.Optional(t.Number()),
+            outletId: t.Optional(t.Number()),
             items: t.Array(t.Object({
                 menuItemId: t.Number(),
                 quantity: t.Number(),

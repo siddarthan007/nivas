@@ -4,6 +4,8 @@ import { upsellRules, rooms, bookings } from '../../db/schema';
 import { eq, and, ne } from 'drizzle-orm';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { PERMISSIONS } from '../../config/permissions';
+import { NotFoundError } from '../../utils/errors';
+import { createResponse } from '../../utils/response.helper';
 
 export const upsellController = new Elysia({ prefix: '/upsells' })
     .use(authMiddleware)
@@ -23,7 +25,7 @@ export const upsellController = new Elysia({ prefix: '/upsells' })
             isActive: true
         }).returning();
 
-        return { status: 'success', data: rule };
+        return createResponse(rule, 'Upsell rule created');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.ROOMS.UPDATE,
@@ -55,7 +57,7 @@ export const upsellController = new Elysia({ prefix: '/upsells' })
         const rules = await db.query.upsellRules.findMany({
             where: eq(upsellRules.hotelId, user!.hotelId!)
         });
-        return { status: 'success', data: rules };
+        return createResponse(rules, 'Upsell rules fetched');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.ROOMS.VIEW_STATUS,
@@ -70,7 +72,7 @@ export const upsellController = new Elysia({ prefix: '/upsells' })
             with: { room: true }
         });
 
-        if (!booking) throw new Error('Booking not found');
+        if (!booking) throw new NotFoundError('Booking');
 
         const currentRoomType = booking.room.type;
 
@@ -131,20 +133,17 @@ export const upsellController = new Elysia({ prefix: '/upsells' })
             }
         }
 
-        return {
-            status: 'success',
-            data: {
-                bookingId: booking.id,
-                guestName: booking.guestName,
-                currentRoom: {
-                    id: booking.room.id,
-                    number: booking.room.number,
-                    type: booking.room.type
-                },
-                roomUpgrades: upgradeOptions,
-                serviceUpsells
-            }
-        };
+        return createResponse({
+            bookingId: booking.id,
+            guestName: booking.guestName,
+            currentRoom: {
+                id: booking.room.id,
+                number: booking.room.number,
+                type: booking.room.type
+            },
+            roomUpgrades: upgradeOptions,
+            serviceUpsells
+        }, 'Check-in upsell options fetched');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.GUESTS.CHECK_IN,
@@ -164,8 +163,8 @@ export const upsellController = new Elysia({ prefix: '/upsells' })
             ))
             .returning();
 
-        if (!updated) throw new Error('Upsell rule not found');
-        return { status: 'success', data: updated };
+        if (!updated) throw new NotFoundError('Upsell rule');
+        return createResponse(updated, 'Upsell rule updated');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.ROOMS.UPDATE,
@@ -190,7 +189,7 @@ export const upsellController = new Elysia({ prefix: '/upsells' })
                 eq(upsellRules.id, parseInt(params.id)),
                 eq(upsellRules.hotelId, user!.hotelId!)
             ));
-        return { status: 'success', message: 'Upsell rule deleted' };
+        return createResponse(null, 'Upsell rule deleted');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.ROOMS.UPDATE,

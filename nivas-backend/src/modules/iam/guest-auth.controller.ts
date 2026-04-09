@@ -20,7 +20,11 @@ export const guestAuthController = new Elysia({ prefix: '/guest' })
             path: '/',
         });
 
-        return createResponse({ room: result.room }, `Welcome to Room ${result.room.number}`);
+        return createResponse({
+            token: result.token,
+            room: result.room,
+            booking: result.booking,
+        }, `Welcome to Room ${result.room.number}`);
     }, {
         body: t.Object({
             token: t.Optional(t.String()),

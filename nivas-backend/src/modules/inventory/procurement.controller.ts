@@ -43,7 +43,8 @@ export const procurementController = new Elysia({ prefix: '/procurement' })
                 itemId: t.Number(),
                 quantity: t.Number(),
                 unitCost: t.Number()
-            }))
+            })),
+            notes: t.Optional(t.String())
         }),
         detail: { summary: 'Create Purchase Order', tags: ['Inventory'] }
     })
@@ -63,7 +64,8 @@ export const procurementController = new Elysia({ prefix: '/procurement' })
                 itemId: t.Number(),
                 quantity: t.Number(),
                 unitCost: t.Number()
-            })))
+            }))),
+            notes: t.Optional(t.String())
         }),
         detail: { summary: 'Update a purchase order', tags: ['Inventory'] }
     })

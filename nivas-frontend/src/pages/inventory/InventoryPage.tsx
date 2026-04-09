@@ -6,6 +6,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
 import Pagination from '@/components/ui/Pagination';
 import EmptyState from '@/components/ui/EmptyState';
 import {
@@ -20,6 +21,7 @@ import {
     Trash2
 } from 'lucide-react';
 import type { InventoryItem, CreateInventoryPayload, ItemCategory } from '@/lib/types/api.types';
+import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal';
 
 const CATEGORIES: ItemCategory[] = ['FOOD', 'BEVERAGE', 'HOUSEKEEPING', 'STATIONERY', 'MAINTENANCE'];
 
@@ -36,14 +38,16 @@ function InventoryCard({
     onDelete: () => void;
 }) {
     const isLowStock = item.currentStock <= item.minStock;
-    const needsReorder = item.currentStock <= item.reorderLevel;
+    const stockPercent = item.reorderLevel > 0 ? Math.min(100, (item.currentStock / item.reorderLevel) * 100) : 100;
+    const stockColor = isLowStock ? 'var(--notion-red)' : stockPercent < 60 ? 'var(--notion-yellow)' : 'var(--notion-green)';
 
     return (
         <div style={{
-            backgroundColor: 'var(--notion-bg-secondary)',
+            backgroundColor: 'var(--notion-bg)',
             borderRadius: 'var(--radius-lg)',
             border: `1px solid ${isLowStock ? 'var(--notion-red)' : 'var(--notion-border)'}`,
-            padding: 'var(--space-4)',
+            padding: '0',
+            overflow: 'hidden',
             transition: 'transform 150ms ease, box-shadow 150ms ease',
         }}
             onMouseEnter={e => {
@@ -55,31 +59,36 @@ function InventoryCard({
                 e.currentTarget.style.boxShadow = 'none';
             }}
         >
-            {/* Header */}
+            {/* Header with category tag */}
             <div style={{
+                padding: '16px 16px 12px',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'flex-start',
-                marginBottom: 'var(--space-3)'
             }}>
-                <div>
+                <div style={{ flex: 1 }}>
                     <div style={{
                         fontSize: '15px',
                         fontWeight: '600',
                         color: 'var(--notion-text)',
+                        marginBottom: '4px',
                     }}>
                         {item.name}
                     </div>
-                    <div style={{
-                        fontSize: '12px',
+                    <span style={{
+                        display: 'inline-block',
+                        fontSize: '11px',
+                        fontWeight: '500',
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-full)',
+                        backgroundColor: 'var(--notion-bg-secondary)',
                         color: 'var(--notion-text-secondary)',
+                        border: '1px solid var(--notion-border)',
                         textTransform: 'capitalize',
                     }}>
-                        {(item.category || '').toLowerCase()}
-                    </div>
+                        {(item.category || '').toLowerCase().replace('_', ' ')}
+                    </span>
                 </div>
-
-                {/* Alert Badge */}
                 {isLowStock && (
                     <div style={{
                         display: 'inline-flex',
@@ -87,7 +96,8 @@ function InventoryCard({
                         gap: '4px',
                         padding: '3px 8px',
                         backgroundColor: 'var(--notion-red-bg)',
-                        borderRadius: '10px',
+                        borderRadius: 'var(--radius-full)',
+                        flexShrink: 0,
                     }}>
                         <AlertTriangle size={12} style={{ color: 'var(--notion-red)' }} />
                         <span style={{ fontSize: '11px', fontWeight: '500', color: 'var(--notion-red)' }}>
@@ -97,55 +107,95 @@ function InventoryCard({
                 )}
             </div>
 
-            {/* Stock Info */}
+            {/* Stock level with visual bar */}
             <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: 'var(--space-3)',
-                padding: 'var(--space-3) 0',
-                borderTop: '1px solid var(--notion-divider)',
-                borderBottom: '1px solid var(--notion-divider)',
+                padding: '0 16px 12px',
             }}>
-                <div>
-                    <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)' }}>Current Stock</div>
-                    <div style={{ fontSize: '18px', fontWeight: '600', color: isLowStock ? 'var(--notion-red)' : 'var(--notion-text)' }}>
-                        {item.currentStock} {item.unit}
-                    </div>
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'baseline',
+                    marginBottom: '6px',
+                }}>
+                    <span style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Current Stock</span>
+                    <span style={{
+                        fontSize: '20px',
+                        fontWeight: '700',
+                        color: stockColor,
+                        lineHeight: 1,
+                    }}>
+                        {item.currentStock ?? 0}{' '}
+                        <span style={{ fontSize: '12px', fontWeight: '400', color: 'var(--notion-text-secondary)', marginLeft: '4px' }}>
+                            {item.unit || 'pcs'}
+                        </span>
+                    </span>
                 </div>
-                <div>
-                    <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)' }}>Min / Reorder</div>
-                    <div style={{ fontSize: '14px', color: 'var(--notion-text-secondary)' }}>
-                        {item.minStock} / {item.reorderLevel}
-                    </div>
+                {/* Stock bar */}
+                <div style={{
+                    height: '4px',
+                    borderRadius: '2px',
+                    backgroundColor: 'var(--notion-bg-secondary)',
+                    overflow: 'hidden',
+                }}>
+                    <div style={{
+                        height: '100%',
+                        width: `${Math.min(100, Math.max(5, stockPercent))}%`,
+                        backgroundColor: stockColor,
+                        borderRadius: '2px',
+                        transition: 'width 300ms ease',
+                    }} />
                 </div>
             </div>
 
-            {/* Price */}
+            {/* Info grid */}
             <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginTop: 'var(--space-3)',
-                marginBottom: 'var(--space-3)',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '1px',
+                backgroundColor: 'var(--notion-border)',
+                borderTop: '1px solid var(--notion-border)',
             }}>
-                <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Unit Cost</span>
-                <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>
-                    ₹{(item.costPrice || 0).toLocaleString()}
-                </span>
+                <div style={{ padding: '10px 16px', backgroundColor: 'var(--notion-bg)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', marginBottom: '2px' }}>Min Stock</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>
+                        {item.minStock ?? 0}
+                    </div>
+                </div>
+                <div style={{ padding: '10px 16px', backgroundColor: 'var(--notion-bg)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', marginBottom: '2px' }}>Reorder At</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>
+                        {item.reorderLevel ?? 0}
+                    </div>
+                </div>
+                <div style={{ padding: '10px 16px', backgroundColor: 'var(--notion-bg)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', marginBottom: '2px' }}>Unit Cost</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>
+                        ₹{(item.costPrice || 0).toLocaleString()}
+                    </div>
+                </div>
+                <div style={{ padding: '10px 16px', backgroundColor: 'var(--notion-bg)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', marginBottom: '2px' }}>Total Value</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-green)' }}>
+                        ₹{((item.costPrice || 0) * (item.currentStock || 0)).toLocaleString()}
+                    </div>
+                </div>
             </div>
 
             {/* Actions */}
             <div style={{
                 display: 'flex',
-                gap: 'var(--space-2)',
+                gap: '6px',
+                padding: '12px 16px',
+                borderTop: '1px solid var(--notion-border)',
+                backgroundColor: 'var(--notion-bg)',
             }}>
-                <Button size="sm" variant="secondary" onClick={() => onAdjustStock(-1)} style={{ flex: 1 }}>
+                <Button size="sm" variant="secondary" onClick={() => onAdjustStock(-1)} style={{ flex: 1, gap: '4px' }}>
                     <ArrowDown size={14} /> -1
                 </Button>
-                <Button size="sm" onClick={() => onAdjustStock(1)} style={{ flex: 1 }}>
+                <Button size="sm" onClick={() => onAdjustStock(1)} style={{ flex: 1, gap: '4px' }}>
                     <ArrowUp size={14} /> +1
                 </Button>
-                <Button size="sm" variant="secondary" onClick={onEdit}>
+                <Button size="sm" variant="secondary" onClick={onEdit} title="Edit">
                     <Edit size={14} />
                 </Button>
                 <Button
@@ -153,6 +203,7 @@ function InventoryCard({
                     variant="secondary"
                     onClick={onDelete}
                     style={{ color: 'var(--notion-red)' }}
+                    title="Delete"
                 >
                     <Trash2 size={14} />
                 </Button>
@@ -210,26 +261,13 @@ function InventoryFormModal({
                         />
                     </div>
                     <div>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Category
-                        </label>
-                        <select
+                        <Select
+                            label="Category"
                             value={formData.category}
                             onChange={e => setFormData({ ...formData, category: e.target.value as ItemCategory })}
-                            style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                fontSize: '14px',
-                                border: '1px solid var(--notion-border)',
-                                borderRadius: 'var(--radius-md)',
-                                backgroundColor: 'var(--notion-bg)',
-                                color: 'var(--notion-text)',
-                            }}
-                        >
-                            {CATEGORIES.map(cat => (
-                                <option key={cat} value={cat}>{cat}</option>
-                            ))}
-                        </select>
+                            fullWidth
+                            options={CATEGORIES.map(cat => ({ value: cat, label: cat }))}
+                        />
                     </div>
                 </div>
 
@@ -325,6 +363,7 @@ export default function InventoryPage() {
     const [showLowStock, setShowLowStock] = useState(false);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<InventoryItem | undefined>();
+    const [deleteTarget, setDeleteTarget] = useState<InventoryItem | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageLimit, setPageLimit] = useState(20);
 
@@ -359,10 +398,8 @@ export default function InventoryPage() {
         await addItem(data);
     };
 
-    const handleDeleteItem = async (id: number) => {
-        if (confirm('Are you sure you want to delete this item? This action cannot be undone.')) {
-            await deleteItem(id);
-        }
+    const handleDeleteItem = async (item: InventoryItem) => {
+        setDeleteTarget(item);
     };
 
     return (
@@ -433,48 +470,24 @@ export default function InventoryPage() {
                         gap: 'var(--space-3)',
                         marginBottom: 'var(--space-6)',
                     }}>
-                        <div style={{ position: 'relative', flex: 1, maxWidth: '300px' }}>
-                            <Search size={16} style={{
-                                position: 'absolute',
-                                left: '12px',
-                                top: '50%',
-                                transform: 'translateY(-50%)',
-                                color: 'var(--notion-text-secondary)',
-                            }} />
-                            <input
+                        <div style={{ flex: 1, maxWidth: '300px' }}>
+                            <Input
                                 type="text"
                                 placeholder="Search items..."
                                 value={searchQuery}
                                 onChange={e => handleSearchChange(e.target.value)}
-                                style={{
-                                    width: '100%',
-                                    padding: '10px 12px 10px 36px',
-                                    fontSize: '14px',
-                                    border: '1px solid var(--notion-border)',
-                                    borderRadius: 'var(--radius-md)',
-                                    backgroundColor: 'var(--notion-bg-secondary)',
-                                    color: 'var(--notion-text)',
-                                }}
+                                icon={<Search size={16} />}
                             />
                         </div>
 
-                        <select
+                        <Select
                             value={categoryFilter}
                             onChange={e => handleCategoryChange(e.target.value as ItemCategory | 'ALL')}
-                            style={{
-                                padding: '10px 12px',
-                                fontSize: '14px',
-                                border: '1px solid var(--notion-border)',
-                                borderRadius: 'var(--radius-md)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                color: 'var(--notion-text)',
-                            }}
-                        >
-                            <option value="ALL">All Categories</option>
-                            {CATEGORIES.map(cat => (
-                                <option key={cat} value={cat}>{cat}</option>
-                            ))}
-                        </select>
+                            options={[
+                                { value: 'ALL', label: 'All Categories' },
+                                ...CATEGORIES.map(cat => ({ value: cat, label: cat })),
+                            ]}
+                        />
 
                         <Button
                             variant={showLowStock ? 'primary' : 'secondary'}
@@ -539,7 +552,7 @@ export default function InventoryPage() {
                                         item={item}
                                         onEdit={() => { setEditingItem(item); setIsFormOpen(true); }}
                                         onAdjustStock={(adj) => updateStock(item.id, adj)}
-                                        onDelete={() => handleDeleteItem(item.id)}
+                                        onDelete={() => handleDeleteItem(item)}
                                     />
                                 ))}
                             </div>
@@ -561,6 +574,20 @@ export default function InventoryPage() {
                 onClose={() => { setIsFormOpen(false); setEditingItem(undefined); }}
                 onSubmit={handleCreateItem}
                 editingItem={editingItem}
+            />
+
+            {/* Delete Confirmation */}
+            <SecurityConfirmModal
+                isOpen={!!deleteTarget}
+                onClose={() => setDeleteTarget(null)}
+                onConfirm={async () => {
+                    if (!deleteTarget) return;
+                    await deleteItem(deleteTarget.id);
+                }}
+                title="Delete Inventory Item"
+                message={`Are you sure you want to delete "${deleteTarget?.name}"? This action cannot be undone.`}
+                confirmText="Delete Item"
+                isDestructive
             />
         </DashboardLayout>
     );
