@@ -1802,6 +1802,8 @@ export default function SettingsPage() {
                                 </div>
 
                                 {activeTab === 'general' && (<>
+                                {/* AI Assistant — shown first so the Gemini key is easy to find. */}
+                                <AiSection />
                                 {/* Hotel Information */}
                                 <SettingsSection title="Hotel Information" icon={Building2}>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
@@ -2045,7 +2047,6 @@ export default function SettingsPage() {
                                     <BillReceiptSection />
                                     <FiscalYearSection />
                                     <CbmsSection />
-                                    <AiSection />
                                 </>)}
 
                                 {activeTab === 'guest' && (<>

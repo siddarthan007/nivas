@@ -21,7 +21,6 @@ const DEFAULT_BASE = process.env.AI_BASE_URL || 'https://generativelanguage.goog
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 // Flash models currently available in Google AI Studio.
 const FLASH_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
-const PLATFORM_KEY = process.env.AI_API_KEY || '';
 
 interface ResolvedAi { baseUrl: string; key: string; model: string }
 
@@ -35,8 +34,10 @@ export const AiService = {
         const cfg = (hotel?.aiConfig || {}) as any;
         if (cfg.enabled === false) return null; // per-hotel toggle off
 
-        const key = cfg.apiKey || PLATFORM_KEY;
-        if (!key) return null; // no usable key
+        // Strictly the hotel's OWN Gemini key — no platform/.env fallback. Each
+        // hotel brings + pays for its own key.
+        const key = cfg.apiKey;
+        if (!key) return null;
 
         // Hard-enforce a Gemini Flash model (cost control) regardless of stored value.
         const model = FLASH_MODELS.includes(cfg.model) ? cfg.model : DEFAULT_MODEL;

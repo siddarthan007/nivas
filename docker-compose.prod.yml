@@ -134,8 +134,7 @@ services:
       MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:?set MINIO_PUBLIC_URL}
       MINIO_BACKUP_BUCKET: ${MINIO_BACKUP_BUCKET:-nivas-backups}
       BACKUP_KEEP: ${BACKUP_KEEP:-3}
-      # Optional platform-wide AI fallback key (hotels can bring their own).
-      AI_API_KEY: ${AI_API_KEY:-}
+      # AI: each hotel brings its own Gemini key in Settings — no platform key.
     # No external port — nginx proxies internally. Scale with:
     #   docker compose -f docker-compose.prod.yml up -d --scale backend=3
     volumes:
