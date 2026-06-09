@@ -19,8 +19,13 @@ export const FacilitiesService = {
     },
 
     async updateFacility(hotelId: number, facilityId: number, data: any) {
+        const allowed = ['name', 'type', 'location', 'description', 'status', 'openTime', 'closeTime'];
+        const updateData: any = {};
+        for (const key of allowed) {
+            if (data[key] !== undefined) updateData[key] = data[key];
+        }
         const [updated] = await db.update(facilities)
-            .set({ ...data, updatedAt: new Date() })
+            .set({ ...updateData, updatedAt: new Date() })
             .where(and(eq(facilities.id, facilityId), eq(facilities.hotelId, hotelId)))
             .returning();
         if (!updated) throw new NotFoundError('Facility');

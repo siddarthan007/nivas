@@ -2,11 +2,35 @@ import { Elysia, t } from 'elysia';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { PERMISSIONS } from '../../config/permissions';
 import { SaasAdminService } from './saas-admin.service';
+import { PlatformSettingsService } from './platform-settings.service';
+import { BackupService } from '../system/backup.service';
+import { HotelStorageService } from '../analytics/hotel-storage.service';
 import { createResponse } from '../../utils/response.helper';
 import { LicenseNotificationService } from '../notifications/license-notification.service';
+import { requirePassword } from '../../utils/password.guard';
 
 export const saasAdminController = new Elysia({ prefix: '/saas-admin' })
     .use(authMiddleware)
+
+    // Platform-wide SMS / Email gateway (shared by all tenants)
+    .get('/platform-messaging', async () => {
+        return createResponse(await PlatformSettingsService.get(), 'Platform messaging config');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SAAS_ADMIN.MANAGE_LICENSES,
+        detail: { summary: 'Get platform SMS/Email gateway', tags: ['SaaS'] }
+    })
+    .patch('/platform-messaging', async ({ body }) => {
+        return createResponse(await PlatformSettingsService.update(body), 'Platform messaging updated');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SAAS_ADMIN.MANAGE_LICENSES,
+        body: t.Object({
+            sms: t.Optional(t.Object({ provider: t.Optional(t.String()), senderId: t.Optional(t.String()), apiKey: t.Optional(t.String()), apiSecret: t.Optional(t.String()) })),
+            email: t.Optional(t.Object({ smtpHost: t.Optional(t.String()), smtpPort: t.Optional(t.Number()), smtpUser: t.Optional(t.String()), smtpFromEmail: t.Optional(t.String()), smtpFromName: t.Optional(t.String()), smtpPassword: t.Optional(t.String()) })),
+        }),
+        detail: { summary: 'Update platform SMS/Email gateway', tags: ['SaaS'] }
+    })
 
     // List all tenants with subscription status
     .get('/tenants', async () => {
@@ -18,11 +42,99 @@ export const saasAdminController = new Elysia({ prefix: '/saas-admin' })
         detail: { summary: 'List all tenants', tags: ['SaaS'] }
     })
 
+    // Onboard new tenant
+    .post('/tenants', async ({ body, user }) => {
+        const result = await SaasAdminService.onboardTenant(body, user!.id);
+        return createResponse(result, 'Tenant onboarded successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SAAS_ADMIN.MANAGE_LICENSES,
+        body: t.Object({
+            hotelName: t.String(),
+            slug: t.String(),
+            hotelEmail: t.Optional(t.String()),
+            hotelPhone: t.Optional(t.String()),
+            planTier: t.Optional(t.String()),
+            adminName: t.String(),
+            adminEmail: t.String(),
+            adminPhone: t.String(),
+            adminPassword: t.String({ minLength: 6 })
+        }),
+        detail: { summary: 'Onboard new tenant hotel', tags: ['SaaS'] }
+    })
+
+    // Record SaaS payment
+    .post('/tenants/:hotelId/payments', async ({ params, body, user }) => {
+        const payment = await SaasAdminService.recordSaaSPayment(parseInt(params.hotelId), body, user!.id);
+        return createResponse(payment, 'SaaS payment recorded successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SAAS_ADMIN.MANAGE_SUBSCRIPTIONS,
+        params: t.Object({ hotelId: t.String() }),
+        body: t.Object({
+            amount: t.String(),
+            paymentMethod: t.Optional(t.String()),
+            reference: t.Optional(t.String()),
+            notes: t.Optional(t.String())
+        }),
+        detail: { summary: 'Record manual offline payment for SaaS', tags: ['SaaS'] }
+    })
+
     // List available features
     .get('/features', () => {
         return createResponse(SaasAdminService.getAvailableFeatures(), 'Features fetched successfully');
     }, {
         detail: { summary: 'List available SaaS features', tags: ['SaaS'] }
+    })
+
+    // Support contacts shown to all hotels (configured here).
+    .get('/support', async () => {
+        return createResponse(await SaasAdminService.getSupportConfig(), 'Support config');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SAAS_ADMIN.MANAGE_LICENSES,
+        detail: { summary: 'Get support contacts', tags: ['SaaS'] }
+    })
+    .patch('/support', async ({ body }) => {
+        return createResponse(await SaasAdminService.setSupportConfig(body), 'Support contacts updated');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SAAS_ADMIN.MANAGE_LICENSES,
+        body: t.Object({ email: t.Optional(t.String()), phone: t.Optional(t.String()), whatsapp: t.Optional(t.String()), hours: t.Optional(t.String()) }),
+        detail: { summary: 'Update support contacts', tags: ['SaaS'] }
+    })
+
+    // Database storage report (biggest tables)
+    .get('/database-stats', async () => {
+        return createResponse(await SaasAdminService.getDatabaseStats(), 'Database stats');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SAAS_ADMIN.MANAGE_LICENSES,
+        detail: { summary: 'Database storage usage by table', tags: ['SaaS'] }
+    })
+
+    // --- Database backups ---
+    .get('/backups', async () => {
+        return createResponse({ settings: await BackupService.getSettings(), backups: await BackupService.list() }, 'Backups');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SAAS_ADMIN.MANAGE_LICENSES,
+        detail: { summary: 'List DB backups + schedule', tags: ['SaaS'] }
+    })
+    .post('/backups', async () => {
+        return createResponse(await BackupService.create(), 'Backup created');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SAAS_ADMIN.MANAGE_LICENSES,
+        detail: { summary: 'Create a DB backup now', tags: ['SaaS'] }
+    })
+    .patch('/backups/settings', async ({ body }) => {
+        return createResponse(await BackupService.setSettings(body), 'Backup schedule updated');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SAAS_ADMIN.MANAGE_LICENSES,
+        body: t.Object({ autoEnabled: t.Optional(t.Boolean()), frequency: t.Optional(t.Union([t.Literal('DAILY'), t.Literal('WEEKLY')])) }),
+        detail: { summary: 'Update automatic backup schedule', tags: ['SaaS'] }
     })
 
     // List available modules
@@ -107,6 +219,16 @@ export const saasAdminController = new Elysia({ prefix: '/saas-admin' })
         detail: { summary: 'Get tenant details', tags: ['SaaS'] }
     })
 
+    // Per-tenant usage (DB record counts + bucket storage) — SaaS-admin analytics.
+    .get('/tenants/:hotelId/usage', async ({ params }) => {
+        return createResponse(await HotelStorageService.getUsage(parseInt(params.hotelId)), 'Tenant usage');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SAAS_ADMIN.MANAGE_LICENSES,
+        params: t.Object({ hotelId: t.String() }),
+        detail: { summary: 'Per-tenant storage + record usage', tags: ['SaaS'] }
+    })
+
     // Update tenant details
     .patch('/tenants/:hotelId', async ({ params, body }) => {
         const updatedHotel = await SaasAdminService.updateTenantDetails(parseInt(params.hotelId), body);
@@ -130,8 +252,7 @@ export const saasAdminController = new Elysia({ prefix: '/saas-admin' })
             taxRate: t.Optional(t.String()),
             maxRooms: t.Optional(t.Number()),
             maxUsers: t.Optional(t.Number()),
-            planTier: t.Optional(t.String()),
-            isCbmsEnabled: t.Optional(t.Boolean())
+            planTier: t.Optional(t.String())
         }),
         detail: { summary: 'Update tenant details', tags: ['SaaS'] }
     })
@@ -164,6 +285,8 @@ export const saasAdminController = new Elysia({ prefix: '/saas-admin' })
 
     // Revoke a tenant's license
     .post('/tenants/:hotelId/revoke', async ({ params, body, user, request }) => {
+        // Step-up: even a super-admin must re-enter their password to revoke a tenant.
+        await requirePassword(user!.id, body.confirmPassword);
         const ip = request.headers.get('x-forwarded-for') || undefined;
         const hotel = await SaasAdminService.revokeLicense(parseInt(params.hotelId), user!.id, body.reason, ip);
         return createResponse({ licenseStatus: 'REVOKED' }, `License for "${hotel?.name ?? 'Hotel'}" has been revoked`);
@@ -171,7 +294,7 @@ export const saasAdminController = new Elysia({ prefix: '/saas-admin' })
         isSignedIn: true,
         hasPermission: PERMISSIONS.SAAS_ADMIN.MANAGE_LICENSES,
         params: t.Object({ hotelId: t.String() }),
-        body: t.Object({ reason: t.String() }),
+        body: t.Object({ reason: t.String(), confirmPassword: t.String() }),
         detail: { summary: 'Revoke tenant license', tags: ['SaaS'] }
     })
 

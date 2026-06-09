@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { auditLogs } from '../../db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, lt } from 'drizzle-orm';
 
 export class AuditService {
     static async log(
@@ -41,6 +41,12 @@ export class AuditService {
             orderBy: [desc(auditLogs.createdAt)],
             limit
         });
+    }
+
+    /** Delete audit rows older than the retention window (bounds unbounded growth + PII). */
+    static async pruneOldLogs(retentionDays: number = 180) {
+        const cutoff = new Date(Date.now() - retentionDays * 86400000);
+        await db.delete(auditLogs).where(lt(auditLogs.createdAt, cutoff));
     }
 }
 

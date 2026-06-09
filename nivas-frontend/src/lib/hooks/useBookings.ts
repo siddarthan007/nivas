@@ -9,11 +9,15 @@ function getErrorMessage(err: unknown, fallback: string): string {
     return fallback;
 }
 
+export type BookingSegment = 'all' | 'arrivals' | 'reservations' | 'inhouse' | 'departures';
+
 export interface BookingFilters {
     page?: number;
     limit?: number;
     startDate?: string;
     endDate?: string;
+    segment?: BookingSegment;
+    search?: string;
 }
 
 export interface PaginationMeta {
@@ -37,6 +41,8 @@ export function useBookings() {
             queryParams.append('limit', (filters.limit || 20).toString());
             if (filters.startDate) queryParams.append('startDate', filters.startDate);
             if (filters.endDate) queryParams.append('endDate', filters.endDate);
+            if (filters.segment && filters.segment !== 'all') queryParams.append('segment', filters.segment);
+            if (filters.search && filters.search.trim()) queryParams.append('search', filters.search.trim());
 
             const response = await api.get<Booking[]>(`/bookings?${queryParams.toString()}`);
             if (response.data) {
@@ -92,6 +98,40 @@ export function useBookings() {
             toast.success('Check-out successful');
         } catch (err: unknown) {
             const msg = getErrorMessage(err, 'Failed to check out');
+            setError(msg);
+            toast.error(msg);
+            throw err;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const getCheckoutPreview = async (bookingId: string): Promise<any> => {
+        try {
+            const res = await api.get<any>(`/bookings/${bookingId}/checkout-preview`);
+            return res.data;
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to load checkout preview');
+            toast.error(msg);
+            throw err;
+        }
+    };
+
+    const processCheckout = async (bookingId: string, data: {
+        payments: { method: string; amount: number; transactionId?: string; notes?: string }[];
+        discount?: number;
+        guestPan?: string;
+        payLater?: boolean;
+        creditReason?: string;
+    }): Promise<any> => {
+        setIsLoading(true);
+        try {
+            const res = await api.post(`/bookings/${bookingId}/checkout`, data);
+            await fetchBookings();
+            toast.success('Checkout completed successfully');
+            return res.data;
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Checkout failed');
             setError(msg);
             toast.error(msg);
             throw err;
@@ -173,6 +213,8 @@ export function useBookings() {
         createBooking,
         checkIn,
         checkOut,
+        getCheckoutPreview,
+        processCheckout,
         updateBooking,
         updateBookingDates,
         cancelBooking,

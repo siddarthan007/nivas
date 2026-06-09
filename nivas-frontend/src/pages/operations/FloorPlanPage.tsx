@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { DndContext, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core';
+import { DndContext, useDraggable, useDroppable, DragOverlay, type DragEndEvent } from '@dnd-kit/core';
 import { useLayout } from '@/lib/hooks/useLayout';
+import { useRouter } from '@/lib/router';
 import Button from '@/components/ui/Button';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { Plus, Save, RotateCw, LayoutGrid } from 'lucide-react';
+import { Plus, Save, RotateCw, LayoutGrid, Users, FileText, Wrench, Sparkles, UtensilsCrossed, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 
 // --- Draggable Components ---
@@ -16,6 +17,7 @@ function DraggableRoom({ id, x, y, width, height, data, rotation = 0, disabled =
         data: { id, type: 'ROOM', x, y, rotation },
         disabled
     });
+    const [hovered, setHovered] = useState(false);
 
     const style = transform ? {
         transform: `translate3d(${transform.x}px, ${transform.y}px, 0) rotate(${rotation}deg)`,
@@ -31,6 +33,10 @@ function DraggableRoom({ id, x, y, width, height, data, rotation = 0, disabled =
         MAINTENANCE: 'var(--notion-gray)'
     };
 
+    const borderColor = statusColors[data.status as keyof typeof statusColors] || 'var(--notion-border)';
+    const guestName = data.guestName || data.currentGuest || data.booking?.guestName;
+    const checkoutDate = data.checkOutDate || data.booking?.checkOut;
+
     return (
         <div
             ref={setNodeRef}
@@ -41,15 +47,15 @@ function DraggableRoom({ id, x, y, width, height, data, rotation = 0, disabled =
                 width: width || 80,
                 height: height || 60,
                 backgroundColor: 'var(--notion-bg)',
-                border: `2px solid ${statusColors[data.status as keyof typeof statusColors] || 'var(--notion-border)'}`,
+                border: `2px solid ${borderColor}`,
                 borderRadius: '8px',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'grab',
-                zIndex: 10,
-                boxShadow: 'var(--shadow-sm)',
+                zIndex: hovered ? 30 : 10,
+                boxShadow: hovered ? 'var(--shadow-lg)' : 'var(--shadow-sm)',
                 fontSize: '12px',
                 fontWeight: 600,
                 color: 'var(--notion-text)',
@@ -57,11 +63,49 @@ function DraggableRoom({ id, x, y, width, height, data, rotation = 0, disabled =
             }}
             {...listeners}
             {...attributes}
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
         >
             <span>{data.number}</span>
             <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--notion-text-secondary)' }}>
                 {data.type}
             </span>
+            {hovered && (
+                <div style={{
+                    position: 'absolute',
+                    bottom: 'calc(100% + 6px)',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'var(--notion-bg)',
+                    border: '1px solid var(--notion-border)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '8px 12px',
+                    boxShadow: 'var(--shadow-lg)',
+                    minWidth: '140px',
+                    fontSize: '12px',
+                    pointerEvents: 'none',
+                    zIndex: 50,
+                    whiteSpace: 'nowrap'
+                }}>
+                    <div style={{ fontWeight: 600, marginBottom: '2px' }}>Room {data.number}</div>
+                    <div style={{ color: borderColor, fontWeight: 600, fontSize: '11px', marginBottom: '4px' }}>{data.status}</div>
+                    {guestName && (
+                        <div style={{ color: 'var(--notion-text-secondary)', fontSize: '11px' }}>
+                            Guest: {guestName}
+                        </div>
+                    )}
+                    {checkoutDate && (
+                        <div style={{ color: 'var(--notion-text-secondary)', fontSize: '11px' }}>
+                            Out: {new Date(checkoutDate).toLocaleDateString()}
+                        </div>
+                    )}
+                    <div style={{ marginTop: '4px', display: 'flex', gap: '4px', fontSize: '10px' }}>
+                        <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--notion-bg-secondary)' }}>
+                            {data.status === 'OCCUPIED' ? 'Checked In' : data.status === 'AVAILABLE' ? 'Ready' : data.status}
+                        </span>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -72,6 +116,7 @@ function DraggableTable({ id, x, y, width, height, data, rotation = 0, disabled 
         data: { id, type: 'TABLE', x, y, rotation },
         disabled
     });
+    const [hovered, setHovered] = useState(false);
 
     const style = transform ? {
         transform: `translate3d(${transform.x}px, ${transform.y}px, 0) rotate(${rotation}deg)`,
@@ -80,6 +125,7 @@ function DraggableTable({ id, x, y, width, height, data, rotation = 0, disabled 
     };
 
     const isRound = (data.tableNumber || '').toLowerCase().includes('r') || (width === height && width < 100);
+    const statusColor = data.status === 'OCCUPIED' ? 'var(--notion-red)' : data.status === 'RESERVED' ? 'var(--notion-orange)' : 'var(--notion-green)';
 
     return (
         <div
@@ -91,15 +137,15 @@ function DraggableTable({ id, x, y, width, height, data, rotation = 0, disabled 
                 width: width || 80,
                 height: height || 80,
                 backgroundColor: 'var(--notion-bg)',
-                border: '2px solid var(--notion-border)',
+                border: `2px solid ${hovered ? statusColor : 'var(--notion-border)'}`,
                 borderRadius: isRound ? '50%' : '8px',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'grab',
-                zIndex: 10,
-                boxShadow: 'var(--shadow-sm)',
+                zIndex: hovered ? 30 : 10,
+                boxShadow: hovered ? 'var(--shadow-lg)' : 'var(--shadow-sm)',
                 fontSize: '12px',
                 fontWeight: 600,
                 color: 'var(--notion-text)',
@@ -107,11 +153,36 @@ function DraggableTable({ id, x, y, width, height, data, rotation = 0, disabled 
             }}
             {...listeners}
             {...attributes}
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
         >
             <span>{data.tableNumber}</span>
             <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--notion-text-secondary)' }}>
                 {data.capacity} ppl
             </span>
+            {hovered && (
+                <div style={{
+                    position: 'absolute',
+                    bottom: 'calc(100% + 6px)',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'var(--notion-bg)',
+                    border: '1px solid var(--notion-border)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '8px 12px',
+                    boxShadow: 'var(--shadow-lg)',
+                    minWidth: '120px',
+                    fontSize: '12px',
+                    pointerEvents: 'none',
+                    zIndex: 50,
+                    whiteSpace: 'nowrap'
+                }}>
+                    <div style={{ fontWeight: 600 }}>Table {data.tableNumber}</div>
+                    <div style={{ color: statusColor, fontWeight: 600, fontSize: '11px', marginBottom: '4px' }}>{data.status || 'AVAILABLE'}</div>
+                    <div style={{ color: 'var(--notion-text-secondary)', fontSize: '11px' }}>Capacity: {data.capacity} ppl</div>
+                    {data.location && <div style={{ color: 'var(--notion-text-secondary)', fontSize: '11px' }}>{data.location.replace(/_/g, ' ')}</div>}
+                </div>
+            )}
         </div>
     );
 }
@@ -170,7 +241,7 @@ function Canvas({ children }: { children: React.ReactNode }) {
                 backgroundImage: 'radial-gradient(var(--notion-border) 1px, transparent 1px)',
                 backgroundSize: '20px 20px',
                 position: 'relative',
-                overflow: 'hidden',
+                overflow: 'visible',
                 borderRadius: 'var(--radius-lg)',
                 border: '1px solid var(--notion-border)'
             }}
@@ -191,6 +262,9 @@ export default function FloorPlanPage() {
     // Local state to track positions before saving
     // keys: `room-{id}` or `table-{id}`
     const [localPositions, setLocalPositions] = useState<Record<string, any>>({});
+
+    // Active drag item for DragOverlay
+    const [activeDragItem, setActiveDragItem] = useState<any>(null);
 
     useEffect(() => {
         fetchVisualData();
@@ -319,21 +393,23 @@ export default function FloorPlanPage() {
 
     const closeContextMenu = () => setContextMenu(null);
 
+    const router = useRouter();
+
     const handleContextAction = (action: string) => {
         if (!contextMenu) return;
         const { item, type } = contextMenu;
         if (type === 'ROOM') {
             switch (action) {
-                case 'check-in': toast.info(`Check-in to Room ${item.number}`); break;
-                case 'details': toast.info(`Guest details for Room ${item.number}`); break;
-                case 'cleaning': toast.info(`Marked Room ${item.number} for cleaning`); break;
-                case 'maintenance': toast.info(`Marked Room ${item.number} for maintenance`); break;
+                case 'check-in': router.push(`/hotel/bookings?room=${item.number}`); break;
+                case 'details': router.push(`/hotel/guests?room=${item.number}`); break;
+                case 'cleaning': toast.success(`Room ${item.number} marked for cleaning`); break;
+                case 'maintenance': toast.success(`Room ${item.number} set to maintenance`); break;
             }
         } else {
             switch (action) {
-                case 'order': toast.info(`Take order for Table ${item.tableNumber}`); break;
-                case 'bill': toast.info(`Print bill for Table ${item.tableNumber}`); break;
-                case 'status': toast.info(`Changed Table ${item.tableNumber} status`); break;
+                case 'order': router.push(`/hotel/orders?table=${item.tableNumber}`); break;
+                case 'bill': toast.info(`Bill for Table ${item.tableNumber}`); break;
+                case 'status': toast.info(`Table ${item.tableNumber} status updated`); break;
             }
         }
         closeContextMenu();
@@ -345,7 +421,22 @@ export default function FloorPlanPage() {
 
     return (
         <DashboardLayout>
-            <DndContext onDragEnd={handleDragEnd}>
+            <DndContext
+                onDragStart={({ active }) => {
+                    const data = active.data.current;
+                    if (!data) return;
+                    const isSidebar = active.id.toString().startsWith('sidebar-');
+                    if (isSidebar) {
+                        setActiveDragItem({ type: data.type === 'SIDEBAR_ROOM' ? 'ROOM' : 'TABLE', item: data.item });
+                    } else {
+                        setActiveDragItem({ type: data.type, item: data });
+                    }
+                }}
+                onDragEnd={(event) => {
+                    setActiveDragItem(null);
+                    handleDragEnd(event);
+                }}
+            >
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', padding: '24px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
@@ -447,6 +538,27 @@ export default function FloorPlanPage() {
                         </Canvas>
                     </div>
                 </div>
+                <DragOverlay>
+                    {activeDragItem && (
+                        <div style={{
+                            padding: '8px 12px',
+                            border: '1px solid var(--notion-border)',
+                            borderRadius: '6px',
+                            backgroundColor: 'var(--notion-bg)',
+                            boxShadow: 'var(--shadow-lg)',
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            color: 'var(--notion-text)',
+                            opacity: 0.9,
+                            cursor: 'grabbing',
+                            zIndex: 1000,
+                        }}>
+                            {activeDragItem.type === 'ROOM'
+                                ? `Room ${activeDragItem.item.number || activeDragItem.item.id}`
+                                : `Table ${activeDragItem.item.tableNumber || activeDragItem.item.id}`}
+                        </div>
+                    )}
+                </DragOverlay>
             </DndContext>
 
             {/* Status Legend */}

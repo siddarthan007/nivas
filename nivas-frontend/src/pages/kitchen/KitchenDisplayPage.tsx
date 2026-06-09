@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Button from '@/components/ui/Button';
 import { SkeletonCard, Skeleton } from '@/components/ui/Skeleton';
@@ -54,13 +54,14 @@ const getTimeElapsed = (createdAt: string): string => {
 };
 
 // KOT Card Component
-function KOTCard({ order, onStatusChange, isUpdating }: { order: KitchenOrder; onStatusChange: (id: number, status: KitchenOrder['status']) => void; isUpdating: boolean }) {
+function KOTCard({ order, onStatusChange, onDismiss, isUpdating, isShaking }: { order: KitchenOrder; onStatusChange: (id: number, status: KitchenOrder['status']) => void; onDismiss?: (id: number) => void; isUpdating: boolean; isShaking?: boolean }) {
     const statusStyle = getStatusStyle(order.status);
     const timeElapsed = getTimeElapsed(order.createdAt);
     const isOverdue = new Date().getTime() - new Date(order.createdAt).getTime() > 15 * 60000; // 15 mins
 
     return (
         <div style={{
+            animation: isShaking ? 'kotShake 0.45s ease-in-out 1, kotGlow 1.6s ease-in-out 2' : 'none',
             backgroundColor: 'var(--notion-bg)',
             border: `2px solid ${statusStyle.border}`,
             borderRadius: 'var(--radius-lg)',
@@ -186,17 +187,28 @@ function KOTCard({ order, onStatusChange, isUpdating }: { order: KitchenOrder; o
                     </Button>
                 )}
                 {order.status === 'READY' && (
-                    <div style={{
-                        flex: 1,
-                        textAlign: 'center',
-                        padding: '8px',
-                        backgroundColor: 'var(--notion-green-bg)',
-                        borderRadius: 'var(--radius-sm)',
-                        color: 'var(--notion-green)',
-                        fontWeight: '600'
-                    }}>
-                        ✓ Ready for Service
-                    </div>
+                    <>
+                        <Button
+                            variant="primary"
+                            size="sm"
+                            style={{ flex: 1, backgroundColor: 'var(--notion-green)' }}
+                            onClick={() => onStatusChange(order.id, 'SERVED')}
+                            disabled={isUpdating}
+                            icon={isUpdating ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                        >
+                            Mark Served
+                        </Button>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            style={{ color: 'var(--notion-text-secondary)' }}
+                            onClick={() => onDismiss?.(order.id)}
+                            disabled={isUpdating}
+                            title="Dismiss from display"
+                        >
+                            Dismiss
+                        </Button>
+                    </>
                 )}
             </div>
         </div>
@@ -217,6 +229,26 @@ function EmptyColumn() {
     );
 }
 
+function playKitchenAlert() {
+    try {
+        const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(523, ctx.currentTime);
+        osc.frequency.setValueAtTime(659, ctx.currentTime + 0.15);
+        osc.frequency.setValueAtTime(784, ctx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.5);
+    } catch { /* ignore */ }
+}
+
 export default function KitchenDisplayPage() {
     const { orders, isLoading, error, refresh, updateOrderStatus, socketStatus } = useKitchen();
 
@@ -224,6 +256,22 @@ export default function KitchenDisplayPage() {
     const [lastRefresh, setLastRefresh] = useState(new Date());
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [updatingId, setUpdatingId] = useState<number | null>(null);
+    const [shakingIds, setShakingIds] = useState<Set<number>>(new Set());
+    const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
+
+    // Auto-clear READY orders after 15 minutes (waiter likely already served)
+    useEffect(() => {
+        const readyOrders = orders.filter(o => o.status === 'READY' && !dismissedIds.has(o.id));
+        if (readyOrders.length === 0) return;
+        const timers = readyOrders.map(o => {
+            const elapsed = Date.now() - new Date(o.createdAt).getTime();
+            const delay = Math.max(0, 15 * 60 * 1000 - elapsed);
+            return setTimeout(() => {
+                setDismissedIds(prev => new Set(prev).add(o.id));
+            }, delay);
+        });
+        return () => timers.forEach(clearTimeout);
+    }, [orders, dismissedIds]);
 
     // Auto-refresh only when socket is not connected (fallback polling)
     useEffect(() => {
@@ -235,10 +283,32 @@ export default function KitchenDisplayPage() {
         return () => clearInterval(interval);
     }, [autoRefresh, socketStatus, refresh]);
 
+    const prevOrderIdsRef = useRef<Set<number>>(new Set());
+
+    useEffect(() => {
+        const currentIds = new Set(orders.map(o => o.id));
+        const newIds = orders.filter(o => !prevOrderIdsRef.current.has(o.id) && o.status === 'PENDING');
+        if (newIds.length > 0) {
+            playKitchenAlert();
+            setShakingIds(prev => {
+                const next = new Set(prev);
+                newIds.forEach(o => next.add(o.id));
+                return next;
+            });
+        }
+        prevOrderIdsRef.current = currentIds;
+    }, [orders]);
+
     const handleStatusChange = async (orderId: number, newStatus: KitchenOrder['status']) => {
         setUpdatingId(orderId);
         await updateOrderStatus(orderId, newStatus);
         setUpdatingId(null);
+        // Remove from shaking once acknowledged
+        setShakingIds(prev => {
+            const next = new Set(prev);
+            next.delete(orderId);
+            return next;
+        });
     };
 
     const handleRefresh = async () => {
@@ -256,12 +326,29 @@ export default function KitchenDisplayPage() {
         }
     };
 
-    // Group orders by status
-    const pendingOrders = orders.filter(o => o.status === 'PENDING');
-    const preparingOrders = orders.filter(o => o.status === 'PREPARING');
-    const readyOrders = orders.filter(o => o.status === 'READY');
+    // Group orders by status (exclude manually dismissed)
+    const visibleOrders = orders.filter(o => !dismissedIds.has(o.id));
+    const pendingOrders = visibleOrders.filter(o => o.status === 'PENDING');
+    const preparingOrders = visibleOrders.filter(o => o.status === 'PREPARING');
+    const readyOrders = visibleOrders.filter(o => o.status === 'READY');
 
     const content = (
+        <>
+        <style>{`
+            @keyframes kotShake {
+                0% { transform: translateX(0); }
+                30% { transform: translateX(-3px); }
+                60% { transform: translateX(3px); }
+                100% { transform: translateX(0); }
+            }
+            @keyframes kotGlow {
+                0%, 100% { box-shadow: 0 0 0 0 transparent; }
+                50% { box-shadow: 0 0 0 2px var(--notion-blue); }
+            }
+            @media (prefers-reduced-motion: reduce) {
+                [style*="kotShake"], [style*="kotGlow"] { animation: none !important; }
+            }
+        `}</style>
         <div style={{
             padding: 'var(--space-4)',
             height: '100%',
@@ -399,6 +486,7 @@ export default function KitchenDisplayPage() {
                                         order={order}
                                         onStatusChange={handleStatusChange}
                                         isUpdating={updatingId === order.id}
+                                        isShaking={shakingIds.has(order.id)}
                                     />
                                 ))
                             )}
@@ -429,6 +517,7 @@ export default function KitchenDisplayPage() {
                                         order={order}
                                         onStatusChange={handleStatusChange}
                                         isUpdating={updatingId === order.id}
+                                        isShaking={shakingIds.has(order.id)}
                                     />
                                 ))
                             )}
@@ -458,7 +547,9 @@ export default function KitchenDisplayPage() {
                                         key={order.id}
                                         order={order}
                                         onStatusChange={handleStatusChange}
+                                        onDismiss={(id) => setDismissedIds(prev => new Set(prev).add(id))}
                                         isUpdating={updatingId === order.id}
+                                        isShaking={shakingIds.has(order.id)}
                                     />
                                 ))
                             )}
@@ -467,6 +558,7 @@ export default function KitchenDisplayPage() {
                 </div>
             )}
         </div>
+        </>
     );
 
     return isFullscreen ? content : <DashboardLayout>{content}</DashboardLayout>;

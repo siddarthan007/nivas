@@ -1,6 +1,6 @@
 import { db } from '../../db';
-import { hotels, subscriptions, subscriptionPackages, subscriptionPayments } from '../../db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { hotels, subscriptions, subscriptionPackages, subscriptionPayments, tenantFeatures } from '../../db/schema';
+import { eq, desc, like, sql } from 'drizzle-orm';
 import { NotFoundError, BusinessLogicError } from '../../utils/errors';
 import { logAction } from '../system/audit.service';
 import { LicenseNotificationService } from '../notifications/license-notification.service';
@@ -228,6 +228,8 @@ export const LicenseService = {
 
         // Create or update subscription
         await this.ensureSubscription(hotelId, packageId, 'TRIAL', trialEndsAt);
+        // Turn on the features the chosen package includes.
+        await this.applyPackageFeatures(hotelId, packageId);
 
         await logAction(hotelId, userId, 'GRANT_TRIAL', 'HOTEL', hotelId.toString(), { trialDays, trialEndsAt }, ip);
         await LicenseNotificationService.sendTrialExtended(hotelId, hotel.name, trialEndsAt, trialDays);
@@ -301,6 +303,34 @@ export const LicenseService = {
     /**
      * Ensure subscription exists
      */
+    /**
+     * Enable the features a subscription package includes. Additive — it never
+     * disables features a tenant already has (so changing plans can't silently
+     * break a running hotel). Feature ids map 1:1 to tenantFeatures columns.
+     */
+    async applyPackageFeatures(hotelId: number, packageId?: number) {
+        if (!packageId) return;
+        const pkg = await db.query.subscriptionPackages.findFirst({ where: eq(subscriptionPackages.id, packageId) });
+        if (!pkg) return;
+        const FEATURE_KEYS = [
+            'enableMultiCurrency', 'enableChannelManager', 'enableAdvancedRevenue',
+            'enableSmsNotifications', 'enableWhatsappNotifications', 'enableEmailNotifications',
+            'enableBanquets', 'enablePosIntegration', 'enableInventory', 'enableHousekeeping',
+            'enableGuestPortal', 'enableFonepay', 'enableCbms', 'enableAi',
+        ];
+        const featSet = new Set((pkg.features || []) as string[]);
+        const enabled: Record<string, boolean> = {};
+        for (const k of FEATURE_KEYS) if (featSet.has(k)) enabled[k] = true;
+        if (Object.keys(enabled).length === 0) return;
+
+        const existing = await db.query.tenantFeatures.findFirst({ where: eq(tenantFeatures.hotelId, hotelId) });
+        if (existing) {
+            await db.update(tenantFeatures).set({ ...enabled, updatedAt: new Date() }).where(eq(tenantFeatures.hotelId, hotelId));
+        } else {
+            await db.insert(tenantFeatures).values({ hotelId, ...enabled });
+        }
+    },
+
     async ensureSubscription(hotelId: number, packageId: number | undefined, status: string, endsAt: Date) {
         const existing = await this.getSubscription(hotelId);
 
@@ -338,12 +368,13 @@ export const LicenseService = {
         hotelId: number,
         userId: string,
         amount: number,
-        currency: string = 'USD',
+        currency: string = 'NPR',
         billingCycle: BillingCycle = 'MONTHLY',
         paymentMethod?: string,
         transactionId?: string,
         packageId?: number,
-        ip?: string
+        ip?: string,
+        providedInvoiceNumber?: string
     ) {
         const hotel = await this.getHotel(hotelId);
         let subscription = await this.getSubscription(hotelId);
@@ -367,18 +398,27 @@ export const LicenseService = {
 
         periodEnd.setMonth(periodEnd.getMonth() + monthsToAdd);
 
-        // Record payment
-        const [payment] = await db.insert(subscriptionPayments).values({
-            subscriptionId: subscription!.id,
-            hotelId,
-            amount: amount.toString(),
-            currency,
-            paymentMethod,
-            transactionId,
-            periodStart,
-            periodEnd,
-            status: 'COMPLETED'
-        }).returning();
+        // Generate invoice number + insert atomically under a lock so concurrent
+        // payments can't produce duplicate SaaS invoice numbers.
+        const fiscalYear = this.getFiscalYear(periodStart);
+        const [payment] = await db.transaction(async (tx) => {
+            await tx.execute(sql`SELECT pg_advisory_xact_lock(987654321)`);
+            const invoiceNumber = providedInvoiceNumber || await this.generateInvoiceNumber(fiscalYear, tx);
+            return tx.insert(subscriptionPayments).values({
+                subscriptionId: subscription!.id,
+                hotelId,
+                amount: amount.toString(),
+                currency,
+                paymentMethod,
+                transactionId,
+                invoiceNumber,
+                periodStart,
+                periodEnd,
+                status: 'COMPLETED',
+                recordedById: userId
+            }).returning();
+        });
+        const invoiceNumber = payment?.invoiceNumber || '';
 
         // Update hotel license
         await db.update(hotels)
@@ -402,9 +442,33 @@ export const LicenseService = {
             })
             .where(eq(subscriptions.id, subscription!.id));
 
-        await logAction(hotelId, userId, 'RECORD_SUBSCRIPTION_PAYMENT', 'SUBSCRIPTION_PAYMENT', payment?.id ?? '', { amount, periodStart, periodEnd }, ip);
+        await logAction(hotelId, userId, 'RECORD_SUBSCRIPTION_PAYMENT', 'SUBSCRIPTION_PAYMENT', payment?.id ?? '', { amount, invoiceNumber, periodStart, periodEnd }, ip);
         await LicenseNotificationService.sendPaymentReceived(hotelId, hotel.name, amount, currency, periodEnd);
 
-        return { payment, periodStart, periodEnd };
+        return { payment, periodStart, periodEnd, invoiceNumber };
+    },
+
+    getFiscalYear(date: Date): string {
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        // Nepal fiscal year: Shrawan (mid-July) to Ashad (mid-July)
+        // Simplified: Apr-Mar for now, or use calendar year
+        return month >= 4 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+    },
+
+    async generateInvoiceNumber(fiscalYear: string, tx: any = db): Promise<string> {
+        const prefix = `NIV-SAAS-${fiscalYear}`;
+        // Filter in SQL by prefix (was scanning ALL tenants' payments).
+        const rows = await tx.query.subscriptionPayments.findMany({
+            where: like(subscriptionPayments.invoiceNumber, `${prefix}-%`),
+            columns: { invoiceNumber: true },
+        });
+        const sequences = rows
+            .map((p: any) => p.invoiceNumber)
+            .filter((n: any): n is string => !!n && n.startsWith(prefix))
+            .map((n: string) => parseInt(n.split('-').pop() || '0', 10))
+            .filter((n: number) => !isNaN(n));
+        const nextSeq = sequences.length > 0 ? Math.max(...sequences) + 1 : 1;
+        return `${prefix}-${nextSeq.toString().padStart(4, '0')}`;
     }
 };

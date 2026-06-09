@@ -1,6 +1,6 @@
 import { HttpError } from './errors';
 
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
     status: 'success' | 'error';
     message?: string;
     data?: T;

@@ -47,7 +47,7 @@ export default function OfflineBanner() {
             fontWeight: 500,
             boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
             backgroundColor: isOffline ? 'var(--notion-red)' : 'var(--notion-green)',
-            color: 'white',
+            color: 'var(--foreground-inverse)',
             transition: 'all 0.3s ease',
         }}>
             {isOffline ? (

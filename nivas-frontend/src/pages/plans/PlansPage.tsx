@@ -116,14 +116,14 @@ function PlanCard({
             }}>
                 <div>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--notion-text)' }}>
-                        ₹{(monthlyPrice || 0).toLocaleString()}
+                        Rs {(monthlyPrice || 0).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)' }}>per month</div>
                 </div>
                 {annualPrice && (
                     <div style={{ borderLeft: '1px solid var(--notion-border)', paddingLeft: 'var(--space-4)' }}>
                         <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--notion-text)' }}>
-                            ₹{(annualPrice || 0).toLocaleString()}
+                            Rs {(annualPrice || 0).toLocaleString()}
                         </div>
                         <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)' }}>per year</div>
                     </div>
@@ -342,7 +342,7 @@ function PlanModal({
         <div style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
+            backgroundColor: 'var(--notion-overlay)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -413,7 +413,7 @@ function PlanModal({
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                         <div>
                             <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>
-                                Monthly Price (₹) *
+                                Monthly Price (Rs ) *
                             </label>
                             <Input
                                 type="number"
@@ -428,7 +428,7 @@ function PlanModal({
                         </div>
                         <div>
                             <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>
-                                Annual Price (₹)
+                                Annual Price (Rs )
                             </label>
                             <Input
                                 type="number"

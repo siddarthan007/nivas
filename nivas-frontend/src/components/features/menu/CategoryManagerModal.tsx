@@ -85,7 +85,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onChange }: Cate
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            backgroundColor: 'var(--notion-overlay)',
             backdropFilter: 'blur(4px)',
         }}>
             <div style={{
@@ -234,7 +234,7 @@ export default function CategoryManagerModal({ isOpen, onClose, onChange }: Cate
                                                         display: 'flex',
                                                         transition: 'all 150ms ease',
                                                     }}
-                                                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(235,87,87,0.1)'; e.currentTarget.style.color = 'var(--notion-red)'; }}
+                                                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--notion-red-bg)'; e.currentTarget.style.color = 'var(--notion-red)'; }}
                                                     onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--notion-text-secondary)'; }}
                                                 >
                                                     <Trash2 size={14} />

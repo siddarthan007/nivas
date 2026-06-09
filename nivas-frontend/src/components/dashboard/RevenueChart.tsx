@@ -47,7 +47,7 @@ export default function RevenueChart({ data }: RevenueChartProps) {
                             axisLine={false}
                             tickLine={false}
                             tick={{ fill: 'var(--notion-text-secondary)', fontSize: 12 }}
-                            tickFormatter={(value) => `₹${value}`}
+                            tickFormatter={(value) => `Rs ${value}`}
                         />
                         <Tooltip
                             contentStyle={{

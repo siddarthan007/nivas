@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNightAudit } from '@/lib/hooks/useNightAudit';
 import Button from '@/components/ui/Button';
+import DateField from "@/components/ui/DateField";
 import { SkeletonTableRow } from '@/components/ui/Skeleton';
 import {
     Moon,
@@ -8,7 +9,9 @@ import {
     AlertTriangle,
     Play,
     Loader2,
+    Search,
 } from 'lucide-react';
+import DualDate from '@/components/ui/DualDate';
 import type { NightAuditRecord } from '@/lib/hooks/useNightAudit';
 
 function StatusCard({ completedToday, lastAudit }: { completedToday: boolean; lastAudit: NightAuditRecord | null }) {
@@ -49,7 +52,7 @@ function StatusCard({ completedToday, lastAudit }: { completedToday: boolean; la
                 </div>
                 <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
                     {lastAudit
-                        ? `Last audit: ${new Date(lastAudit.auditDate).toLocaleDateString()} — ${lastAudit.status}`
+                        ? <span>Last audit: <DualDate date={lastAudit.auditDate} format="compact" /> — {lastAudit.status}</span>
                         : 'No previous audit records found'}
                 </div>
             </div>
@@ -59,6 +62,29 @@ function StatusCard({ completedToday, lastAudit }: { completedToday: boolean; la
 
 function HistoryTable({ records, isLoading }: { records: NightAuditRecord[]; isLoading: boolean }) {
     const columns = ['Date', 'Status', 'Room Revenue', 'F&B Revenue', 'Occupancy %', 'Notes'];
+    const [sortBy, setSortBy] = useState<'date' | 'revenue'>('date');
+    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+    const sorted = useMemo(() => {
+        const data = [...records];
+        data.sort((a, b) => {
+            let cmp = 0;
+            if (sortBy === 'date') cmp = new Date(a.auditDate).getTime() - new Date(b.auditDate).getTime();
+            else cmp = parseFloat(a.roomRevenue || '0') - parseFloat(b.roomRevenue || '0');
+            return sortDir === 'asc' ? cmp : -cmp;
+        });
+        return data;
+    }, [records, sortBy, sortDir]);
+
+    const toggleSort = (col: 'Date' | 'Room Revenue') => {
+        if (col === 'Date') {
+            if (sortBy === 'date') setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+            else { setSortBy('date'); setSortDir('desc'); }
+        } else if (col === 'Room Revenue') {
+            if (sortBy === 'revenue') setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+            else { setSortBy('revenue'); setSortDir('desc'); }
+        }
+    };
 
     const statusBadge = (status: NightAuditRecord['status']) => {
         const styles: Record<string, { bg: string; color: string }> = {
@@ -133,37 +159,43 @@ function HistoryTable({ records, isLoading }: { records: NightAuditRecord[]; isL
                 <thead>
                     <tr>
                         {columns.map(col => (
-                            <th key={col} style={{
-                                textAlign: 'left',
-                                padding: 'var(--space-3) var(--space-4)',
-                                fontSize: '12px',
-                                fontWeight: '500',
-                                color: 'var(--notion-text-secondary)',
-                                borderBottom: '1px solid var(--notion-border)',
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.5px',
-                            }}>
+                            <th key={col}
+                                onClick={() => (col === 'Date' || col === 'Room Revenue') && toggleSort(col as any)}
+                                style={{
+                                    textAlign: 'left',
+                                    padding: 'var(--space-3) var(--space-4)',
+                                    fontSize: '12px',
+                                    fontWeight: '500',
+                                    color: 'var(--notion-text-secondary)',
+                                    borderBottom: '1px solid var(--notion-border)',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px',
+                                    cursor: (col === 'Date' || col === 'Room Revenue') ? 'pointer' : 'default',
+                                    userSelect: 'none',
+                                }}
+                            >
                                 {col}
+                                {(col === 'Date' && sortBy === 'date') || (col === 'Room Revenue' && sortBy === 'revenue') ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
                             </th>
                         ))}
                     </tr>
                 </thead>
                 <tbody>
-                    {records.map(record => (
+                    {sorted.map(record => (
                         <tr key={record.id} style={{
                             borderBottom: '1px solid var(--notion-divider)',
                         }}>
                             <td style={{ padding: 'var(--space-3) var(--space-4)', color: 'var(--notion-text)' }}>
-                                {new Date(record.auditDate).toLocaleDateString()}
+                                <DualDate date={record.auditDate} format="compact" />
                             </td>
                             <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
                                 {statusBadge(record.status)}
                             </td>
                             <td style={{ padding: 'var(--space-3) var(--space-4)', color: 'var(--notion-green)', fontWeight: '500' }}>
-                                ₹{parseFloat(record.roomRevenue || '0').toLocaleString()}
+                                NPR {parseFloat(record.roomRevenue || '0').toLocaleString()}
                             </td>
                             <td style={{ padding: 'var(--space-3) var(--space-4)', color: 'var(--notion-green)', fontWeight: '500' }}>
-                                ₹{parseFloat(record.fnbRevenue || '0').toLocaleString()}
+                                NPR {parseFloat(record.fnbRevenue || '0').toLocaleString()}
                             </td>
                             <td style={{ padding: 'var(--space-3) var(--space-4)', color: 'var(--notion-text)' }}>
                                 {parseFloat(record.occupancyPercent || '0').toFixed(1)}%
@@ -197,6 +229,32 @@ export default function NightAuditPanel() {
         triggerAudit,
     } = useNightAudit();
 
+    const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<'ALL' | NightAuditRecord['status']>('ALL');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+
+    const filteredHistory = useMemo(() => {
+        let data = [...history];
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            data = data.filter(r =>
+                (r.notes || '').toLowerCase().includes(q) ||
+                r.status.toLowerCase().includes(q)
+            );
+        }
+        if (statusFilter !== 'ALL') data = data.filter(r => r.status === statusFilter);
+        if (dateFrom) {
+            const from = new Date(dateFrom).getTime();
+            data = data.filter(r => new Date(r.auditDate).getTime() >= from);
+        }
+        if (dateTo) {
+            const to = new Date(dateTo).getTime() + 86400000;
+            data = data.filter(r => new Date(r.auditDate).getTime() <= to);
+        }
+        return data;
+    }, [history, searchQuery, statusFilter, dateFrom, dateTo]);
+
     useEffect(() => {
         fetchStatus();
         fetchHistory();
@@ -215,12 +273,7 @@ export default function NightAuditPanel() {
                 alignItems: 'center',
                 marginBottom: 'var(--space-5)',
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                    <Moon size={20} style={{ color: 'var(--notion-text-secondary)' }} />
-                    <span style={{ fontSize: '16px', fontWeight: '600', color: 'var(--notion-text)' }}>
-                        Night Audit
-                    </span>
-                </div>
+                <div />
 
                 <Button
                     onClick={handleTriggerAudit}
@@ -248,7 +301,39 @@ export default function NightAuditPanel() {
                 Audit History
             </div>
 
-            <HistoryTable records={history} isLoading={isLoading} />
+            {/* Filters */}
+            <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap', marginBottom: 'var(--space-4)', padding: 'var(--space-3)', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)' }}>
+                <div style={{ position: 'relative', minWidth: '200px', flex: 1, maxWidth: '280px' }}>
+                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--notion-text-muted)' }} />
+                    <input
+                        type="text"
+                        placeholder="Search notes or status..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        style={{ width: '100%', padding: '6px 10px 6px 32px', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)', backgroundColor: 'var(--notion-bg)', color: 'var(--notion-text)', fontSize: '13px', outline: 'none' }}
+                    />
+                </div>
+                <select
+                    value={statusFilter}
+                    onChange={e => setStatusFilter(e.target.value as any)}
+                    style={{ padding: '6px 10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)', backgroundColor: 'var(--notion-bg)', color: 'var(--notion-text)', fontSize: '13px', cursor: 'pointer' }}
+                >
+                    <option value="ALL">All Status</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="FAILED">Failed</option>
+                    <option value="IN_PROGRESS">In Progress</option>
+                </select>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ width: 150 }}><DateField value={dateFrom} onChange={setDateFrom} /></div>
+                    <span style={{ color: 'var(--notion-text-muted)', fontSize: '13px' }}>to</span>
+                    <div style={{ width: 150 }}><DateField value={dateTo} onChange={setDateTo} /></div>
+                </div>
+                {(searchQuery || statusFilter !== 'ALL' || dateFrom || dateTo) && (
+                    <button onClick={() => { setSearchQuery(''); setStatusFilter('ALL'); setDateFrom(''); setDateTo(''); }} style={{ fontSize: '12px', color: 'var(--notion-blue)', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
+                )}
+            </div>
+
+            <HistoryTable records={filteredHistory} isLoading={isLoading} />
         </div>
     );
 }

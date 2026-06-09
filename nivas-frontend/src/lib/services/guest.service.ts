@@ -1,36 +1,65 @@
 import { api } from '@/lib/api';
 
+export type CustomerType = 'HOTEL_GUEST' | 'RESTAURANT_CUSTOMER' | 'BOTH';
+
 export interface Guest {
     id: string;
     hotelId: number;
+    firstName?: string;
+    lastName?: string;
     fullName: string;
+    uniqueId?: string;
     phone?: string;
     email?: string;
+    fatherName?: string;
+    dob?: string;
+    occupation?: string;
+    nationality?: string;
+    address?: string;
+    city?: string;
+    country?: string;
     idType?: string;
     idNumber?: string;
-    address?: string;
+    panNumber?: string;
+    openingDueAmount?: string;
+    photoUrl?: string;
+    signatureUrl?: string;
+    customerType?: CustomerType;
     notes?: string;
     isVip: boolean;
     isBanned: boolean;
-    nationality?: string;
     createdAt: string;
 }
 
 export interface CreateGuestPayload {
+    firstName?: string;
+    lastName?: string;
     fullName: string;
+    uniqueId?: string;
     phone?: string;
     email?: string;
+    fatherName?: string;
+    dob?: string;
+    occupation?: string;
+    nationality?: string;
+    address?: string;
+    city?: string;
+    country?: string;
     idType?: string;
     idNumber?: string;
-    address?: string;
+    panNumber?: string;
+    openingDueAmount?: string;
+    photoUrl?: string;
+    signatureUrl?: string;
+    customerType?: CustomerType;
     notes?: string;
-    nationality?: string;
 }
 
 export interface GuestSearchResult extends Guest { }
 
 export interface GuestDetails extends Guest {
-    bookings: any[]; // refined type later
+    bookings: any[];
+    orders: any[];
 }
 
 export interface GuestFilters {
@@ -40,13 +69,15 @@ export interface GuestFilters {
     nationality?: string;
     roomNumber?: string;
     dateOfStay?: string;
+    customerType?: CustomerType;
     page?: number;
     limit?: number;
 }
 
 export interface GuestFinancials {
-    invoices: any[]; // refine type if possible
+    invoices: any[];
     payments: any[];
+    orders: any[];
     stats: {
         totalInvoiced: number;
         totalPaid: number;
@@ -66,6 +97,7 @@ export const GuestService = {
             if (filters.nationality) params.append('nationality', filters.nationality);
             if (filters.roomNumber) params.append('roomNumber', filters.roomNumber);
             if (filters.dateOfStay) params.append('dateOfStay', filters.dateOfStay);
+            if (filters.customerType) params.append('customerType', filters.customerType);
         }
 
         const { data } = await api.get<GuestSearchResult[]>(`/guests/search?${params.toString()}`);
@@ -80,10 +112,10 @@ export const GuestService = {
     getFinancials: async (id: string): Promise<GuestFinancials | null> => {
         const { data } = await api.get<any>(`/guests/${id}/financials`);
         if (!data) return null;
-        // Ensure stats numbers are parsed (backend decimal columns return strings)
         return {
             invoices: data.invoices || [],
             payments: data.payments || [],
+            orders: data.orders || [],
             stats: {
                 totalInvoiced: Number(data.stats?.totalInvoiced || 0),
                 totalPaid: Number(data.stats?.totalPaid || 0),

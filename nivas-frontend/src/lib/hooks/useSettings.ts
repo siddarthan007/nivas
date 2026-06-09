@@ -15,6 +15,8 @@ interface SettingsFeatures {
     enableInventory: boolean;
     emailNotifications: boolean;
     smsNotifications: boolean;
+    enableHotel: boolean;
+    enableFoodAndBeverage: boolean;
 }
 
 export interface SettingsViewModel {
@@ -60,6 +62,10 @@ export interface SettingsViewModel {
     checkOutTime?: string;
     taxRate?: number;
     serviceCharge?: number;
+    panNumber?: string;
+    vatNumber?: string;
+    latitude?: string;
+    longitude?: string;
     currency?: string;
     timezone?: string;
     invoicePrefix?: string;
@@ -70,6 +76,9 @@ export interface SettingsViewModel {
     enableInventory?: boolean;
     emailNotifications?: boolean;
     smsNotifications?: boolean;
+    enableHotel?: boolean;
+    enableFoodAndBeverage?: boolean;
+    enableFonepay?: boolean;
 }
 
 function flattenSettings(raw: any): SettingsViewModel {
@@ -83,8 +92,12 @@ function flattenSettings(raw: any): SettingsViewModel {
         phone: raw.contact?.phone || '',
         email: raw.contact?.email || '',
         website: raw.contact?.website || '',
+        latitude: raw.contact?.latitude || '',
+        longitude: raw.contact?.longitude || '',
         serviceCharge: raw.tax?.serviceChargeRate ?? 10,
         taxRate: raw.tax?.taxRate ?? 13,
+        panNumber: raw.tax?.panNumber || '',
+        vatNumber: raw.tax?.vatNumber || '',
         currency: raw.regional?.currency || 'NPR',
         timezone: raw.regional?.timezone || 'Asia/Kathmandu',
         invoicePrefix: raw.invoice?.prefix || 'INV',
@@ -97,6 +110,9 @@ function flattenSettings(raw: any): SettingsViewModel {
         enableInventory: features.enableInventory ?? true,
         emailNotifications: features.emailNotifications ?? true,
         smsNotifications: features.smsNotifications ?? false,
+        enableHotel: features.enableHotel ?? true,
+        enableFoodAndBeverage: features.enableFoodAndBeverage ?? true,
+        enableFonepay: features.enableFonepay ?? false,
     };
 }
 
@@ -107,19 +123,16 @@ export function useSettings() {
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-    const fetchSettings = useCallback(async () => {
+    const hasHotel = useCallback(() => {
         try {
             const userStr = localStorage.getItem('nivas_user_data');
-            if (userStr) {
-                const user = JSON.parse(userStr);
-                if (user.userType === 'SUPER_ADMIN') {
-                    setIsLoading(false);
-                    return;
-                }
-            }
-        } catch {
-            // Continue with fetch.
-        }
+            const user = userStr ? JSON.parse(userStr) : null;
+            return !!user?.hotelId;
+        } catch { return false; }
+    }, []);
+
+    const fetchSettings = useCallback(async () => {
+        if (!hasHotel()) { setIsLoading(false); return; }
 
         setIsLoading(true);
         setError(null);
@@ -136,7 +149,7 @@ export function useSettings() {
     }, []);
 
     useEffect(() => {
-        fetchSettings();
+        if (hasHotel()) fetchSettings();
     }, [fetchSettings]);
 
     useEffect(() => {
@@ -184,12 +197,16 @@ export function useSettings() {
             if (data.phone !== undefined) contactData.phone = data.phone;
             if (data.address !== undefined) contactData.address = data.address;
             if (data.website !== undefined) contactData.website = data.website;
+            if (data.latitude !== undefined) contactData.latitude = data.latitude;
+            if (data.longitude !== undefined) contactData.longitude = data.longitude;
 
             if (data.name !== undefined) brandingData.name = data.name;
             if (data.logo !== undefined) brandingData.logoUrl = data.logo;
 
             if (data.taxRate !== undefined) taxData.taxRate = data.taxRate;
             if (data.serviceCharge !== undefined) taxData.serviceChargeRate = data.serviceCharge;
+            if (data.panNumber !== undefined) taxData.panNumber = data.panNumber;
+            if (data.vatNumber !== undefined) taxData.vatNumber = data.vatNumber;
 
             if (data.checkInTime !== undefined) regionalData.checkInTime = data.checkInTime;
             if (data.checkOutTime !== undefined) regionalData.checkOutTime = data.checkOutTime;
@@ -201,6 +218,9 @@ export function useSettings() {
             if (data.enableInventory !== undefined) featuresData.enableInventory = data.enableInventory;
             if (data.emailNotifications !== undefined) featuresData.emailNotifications = data.emailNotifications;
             if (data.smsNotifications !== undefined) featuresData.smsNotifications = data.smsNotifications;
+            if (data.enableFonepay !== undefined) featuresData.enableFonepay = data.enableFonepay;
+            if (data.enableHotel !== undefined) featuresData.enableHotel = data.enableHotel;
+            if (data.enableFoodAndBeverage !== undefined) featuresData.enableFoodAndBeverage = data.enableFoodAndBeverage;
 
             if (Object.keys(contactData).length > 0) requests.push(api.patch('/settings/contact', contactData));
             if (Object.keys(taxData).length > 0) requests.push(api.patch('/settings/tax', taxData));

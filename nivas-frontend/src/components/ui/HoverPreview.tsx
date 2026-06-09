@@ -188,13 +188,13 @@ export function UserHoverPreview({
     user
 }: {
     children: ReactNode;
-    user: { name: string; role?: string; email?: string; department?: string }
+    user: { name: string; role?: { name?: string }; email?: string; department?: string }
 }) {
     return (
         <HoverPreview
             content={{
                 title: user.name,
-                subtitle: user.role,
+                subtitle: user.role?.name,
                 details: [
                     ...(user.email ? [{ icon: <User size={12} />, label: "Email", value: user.email }] : []),
                     ...(user.department ? [{ icon: <Tag size={12} />, label: "Dept", value: user.department }] : []),

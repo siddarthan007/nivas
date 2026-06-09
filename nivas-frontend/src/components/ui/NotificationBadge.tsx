@@ -26,7 +26,7 @@ export default function NotificationBadge({
             className={`notification-badge ${className}`}
             style={{
                 backgroundColor: "var(--notion-red)",
-                color: "white",
+                color: "var(--foreground-inverse)",
                 fontSize: "10px",
                 fontWeight: "600",
                 padding: "2px 5px",
@@ -60,7 +60,7 @@ export default function NotificationBadge({
                 className={`notification-badge ${className}`}
                 style={{
                     backgroundColor: "var(--notion-red)",
-                    color: "white",
+                    color: "var(--foreground-inverse)",
                     fontSize: "10px",
                     fontWeight: "600",
                     padding: "2px 5px",

@@ -83,13 +83,14 @@ export const OperationsService = {
         return deleted;
     },
 
-    async updateGuestPin(roomId: number, pin: string) {
+    async updateGuestPin(hotelId: number, roomId: number, pin: string) {
+        const hashedPin = await Bun.password.hash(pin);
         const [updatedRoom] = await db.update(rooms)
             .set({
-                currentGuestPin: pin,
+                currentGuestPin: hashedPin,
                 updatedAt: new Date()
             })
-            .where(eq(rooms.id, roomId))
+            .where(and(eq(rooms.id, roomId), eq(rooms.hotelId, hotelId)))
             .returning();
 
         if (!updatedRoom) throw new NotFoundError('Room');

@@ -31,12 +31,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--scrollbar-thumb);
   border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* ============================================
@@ -120,7 +120,7 @@ body {
 .sidebar-overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--notion-overlay);
   z-index: var(--z-sidebar, 50);
   backdrop-filter: blur(2px);
 }
@@ -174,19 +174,19 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(0, 0, 0, 0.75);
+  background-color: var(--modal-overlay-bg);
   backdrop-filter: blur(8px);
   padding: 20px;
   animation: fadeIn 0.2s ease-out;
 }
 
 .modal {
-  background-color: var(--notion-bg-secondary);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  background-color: var(--background);
+  border-radius: 12px;
+  box-shadow: var(--shadow-modal);
   width: 100%;
-  animation: modalEnter 0.2s ease-out;
-  border: 1px solid var(--notion-border);
+  animation: modalEnter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid var(--border);
 }
 
 .modal-header {
@@ -194,20 +194,20 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--notion-divider, var(--notion-border));
+  border-bottom: 1px solid var(--divider, var(--border));
 }
 
 .modal-title {
   font-size: 18px;
   font-weight: 600;
-  color: var(--notion-text);
+  color: var(--foreground);
   margin: 0;
 }
 
 .modal-close {
   background: transparent;
   border: none;
-  color: var(--notion-text-secondary);
+  color: var(--foreground-muted);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
@@ -218,8 +218,8 @@ body {
 }
 
 .modal-close:hover {
-  background-color: var(--notion-bg-tertiary);
-  color: var(--notion-text);
+  background-color: var(--surface-elevated);
+  color: var(--foreground);
 }
 
 .modal-body {
@@ -228,7 +228,7 @@ body {
 
 .modal-footer {
   padding: 16px 20px;
-  border-top: 1px solid var(--notion-divider, var(--notion-border));
+  border-top: 1px solid var(--divider, var(--border));
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -261,11 +261,11 @@ body {
    ============================================ */
 
 .hover-bg:hover {
-  background-color: var(--notion-bg-tertiary);
+  background-color: var(--surface-elevated);
 }
 
 .hover-bg-red:hover {
-  background-color: rgba(235, 87, 87, 0.1) !important;
+  background-color: var(--destructive-muted) !important;
 }
 
 .hover-reveal {
@@ -291,7 +291,7 @@ body {
 }
 
 .text-muted {
-  color: var(--notion-text-muted);
+  color: var(--foreground-faint);
 }
 
 .font-medium {
@@ -300,8 +300,8 @@ body {
 
 /* Selection Color */
 ::selection {
-  background: var(--notion-blue-bg);
-  color: var(--notion-text);
+  background: var(--selection-bg);
+  color: var(--selection-fg);
 }
 
 /* ============================================
@@ -309,7 +309,7 @@ body {
    ============================================ */
 
 .skeleton {
-  background: linear-gradient(90deg, var(--notion-bg-secondary) 0%, var(--notion-bg-tertiary) 50%, var(--notion-bg-secondary) 100%);
+  background: linear-gradient(90deg, var(--skeleton-start) 0%, var(--skeleton-mid) 50%, var(--skeleton-start) 100%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   border-radius: var(--radius-sm);
@@ -330,8 +330,8 @@ body {
    ============================================ */
 
 .btn-primary {
-  background-color: var(--notion-text);
-  color: var(--notion-bg);
+  background-color: var(--foreground);
+  color: var(--background);
   border: none;
   padding: 8px 14px;
   border-radius: var(--radius-md);
@@ -345,9 +345,10 @@ body {
 }
 
 .btn-primary:hover {
-  background-color: rgba(255, 255, 255, 0.95);
+  background-color: var(--foreground);
+  filter: brightness(1.1);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-primary:active {
@@ -362,8 +363,8 @@ body {
 
 .btn-secondary {
   background-color: transparent;
-  color: var(--notion-text-secondary);
-  border: 1px solid var(--notion-border);
+  color: var(--foreground-muted);
+  border: 1px solid var(--border);
   padding: 8px 14px;
   border-radius: var(--radius-md);
   font-size: 14px;
@@ -376,9 +377,9 @@ body {
 }
 
 .btn-secondary:hover {
-  background-color: var(--notion-bg-hover);
-  color: var(--notion-text);
-  border-color: var(--notion-text-muted);
+  background-color: var(--surface-hover);
+  color: var(--foreground);
+  border-color: var(--border-strong);
 }
 
 /* ============================================
@@ -397,23 +398,23 @@ body {
 }
 
 .status-badge.draft {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: var(--notion-text-secondary);
+  background-color: var(--surface-hover);
+  color: var(--foreground-muted);
 }
 
 .status-badge.pending {
-  background-color: var(--notion-yellow-bg);
-  color: var(--notion-yellow);
+  background-color: var(--warning-muted);
+  color: var(--warning);
 }
 
 .status-badge.paid {
-  background-color: var(--notion-green-bg);
-  color: var(--notion-green);
+  background-color: var(--success-muted);
+  color: var(--success);
 }
 
 .status-badge.overdue {
-  background-color: var(--notion-red-bg);
-  color: var(--notion-red);
+  background-color: var(--destructive-muted);
+  color: var(--destructive);
 }
 
 /* ============================================
@@ -427,8 +428,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: var(--notion-bg-tertiary);
-  color: var(--notion-text);
+  background-color: var(--surface-elevated);
+  color: var(--foreground);
   font-weight: 600;
 }
 
@@ -480,7 +481,7 @@ body {
   justify-content: center;
   padding: 64px 24px;
   text-align: center;
-  color: var(--notion-text-muted);
+  color: var(--foreground-faint);
 }
 
 .empty-state svg {
@@ -518,8 +519,8 @@ body {
   }
 
   body {
-    background: white !important;
-    color: black !important;
+    background: var(--print-bg) !important;
+    color: var(--print-fg) !important;
   }
 
   .sidebar,
@@ -532,5 +533,151 @@ body {
     padding: 0 !important;
     margin: 0 !important;
     width: 100% !important;
+  }
+}
+
+/* ============================================
+   BUTTON COMPONENTS
+   ============================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  transition: background-color 100ms ease, color 100ms ease, filter 100ms ease;
+  font-family: var(--font-body);
+  font-weight: 500;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.btn:disabled,
+.btn.btn-loading {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn-full {
+  display: flex;
+  width: 100%;
+}
+
+/* Sizes */
+.btn-sm { font-size: 12px; padding: 2px 8px; height: 24px; }
+.btn-md { font-size: 14px; padding: 4px 12px; height: 32px; }
+.btn-lg { font-size: 15px; padding: 6px 16px; height: 36px; }
+
+/* Variants */
+.btn-primary {
+  background-color: var(--accent-primary);
+  color: var(--accent-primary-foreground);
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.btn-secondary {
+  background-color: var(--surface-hover);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--surface-active);
+}
+
+.btn-ghost {
+  background-color: transparent;
+  color: var(--foreground-muted);
+}
+.btn-ghost:hover:not(:disabled) {
+  background-color: var(--surface-hover);
+  color: var(--foreground);
+}
+
+.btn-danger {
+  background-color: var(--destructive);
+  color: var(--destructive-foreground);
+}
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+/* ============================================
+   LAYOUT UTILITIES
+   ============================================ */
+
+.page-center {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--background);
+}
+
+.page-center-column {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--background);
+  gap: var(--space-4);
+}
+
+.card-box {
+  text-align: center;
+  padding: var(--space-8);
+  background-color: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent-primary);
+}
+
+.text-notion-secondary {
+  color: var(--foreground-muted);
+}
+
+.text-notion-muted {
+  color: var(--foreground-faint);
+}
+
+/* Sidebar nav: hide scrollbar so it doesn't steal horizontal space in the
+   narrow collapsed rail (scroll still works via wheel/trackpad/keys). */
+.sidebar-nav-scroll {
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* IE/Edge legacy */
+}
+.sidebar-nav-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* ── Mobile responsive safety net ──────────────────────────────
+   Many dashboards use inline-styled multi-column grids (repeat(3|4,1fr)).
+   Inline styles can't carry media queries, so collapse them here for phones/
+   small tablets. Scoped to 3- and 4-column grids only — 7-col calendars and
+   responsive auto-fit grids are untouched. */
+@media (max-width: 640px) {
+  [style*="repeat(3"],
+  [style*="repeat(4"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+@media (max-width: 420px) {
+  [style*="repeat(3"],
+  [style*="repeat(4"] {
+    grid-template-columns: 1fr !important;
   }
 }

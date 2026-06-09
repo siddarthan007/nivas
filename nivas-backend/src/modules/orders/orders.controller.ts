@@ -4,6 +4,7 @@ import { PERMISSIONS } from '../../config/permissions';
 import { OrdersService } from './orders.service';
 import { createResponse } from '../../utils/response.helper';
 import { ValidationError } from '../../utils/errors';
+import { requirePassword } from '../../utils/password.guard';
 
 export const ordersController = new Elysia({ prefix: '/orders' })
     .use(authMiddleware)
@@ -26,12 +27,16 @@ export const ordersController = new Elysia({ prefix: '/orders' })
             guestId: t.Optional(t.String()),
             restaurantTableId: t.Optional(t.Number()),
             outletId: t.Optional(t.Number()),
+            applyVat: t.Optional(t.Boolean()),
+            applyServiceCharge: t.Optional(t.Boolean()),
+            discountAmount: t.Optional(t.Number()),
+            couponId: t.Optional(t.Number()),
             items: t.Array(t.Object({
                 menuItemId: t.Number(),
-                quantity: t.Number(),
+                quantity: t.Number({ minimum: 1 }),
                 price: t.Number(),
                 notes: t.Optional(t.String())
-            }))
+            }), { minItems: 1 })
         }),
         detail: {
             summary: 'Create a new order',
@@ -45,7 +50,8 @@ export const ordersController = new Elysia({ prefix: '/orders' })
 
         const filters = {
             status: query.status ? query.status.split(',') : undefined,
-            type: query.type
+            type: query.type,
+            search: query.search,
         };
 
         const ordersList = await OrdersService.getOrders(user.hotelId, filters);
@@ -56,7 +62,8 @@ export const ordersController = new Elysia({ prefix: '/orders' })
         hasPermission: PERMISSIONS.ORDERS.READ,
         query: t.Object({
             status: t.Optional(t.String()),
-            type: t.Optional(t.String())
+            type: t.Optional(t.String()),
+            search: t.Optional(t.String()),
         }),
         detail: {
             summary: 'Get all orders',
@@ -120,6 +127,47 @@ export const ordersController = new Elysia({ prefix: '/orders' })
             summary: 'Cancel an order',
             tags: ['Orders']
         }
+    })
+    .post('/:id/items/:itemId/void', async ({ params, body, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const updated = await OrdersService.voidOrderItem(user.hotelId, user.id, params.id, parseInt(params.itemId), body.reason);
+        return createResponse(updated, 'Item voided');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.ORDERS.CANCEL,
+        body: t.Object({ reason: t.Optional(t.String()) }),
+        detail: { summary: 'Void a single line item from an order', tags: ['Orders'] }
+    })
+    .patch('/:id/table', async ({ params, body, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const updated = await OrdersService.changeTable(user.hotelId, user.id, params.id, body.tableId);
+        return createResponse(updated, 'Order moved to new table');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.ORDERS.UPDATE_STATUS,
+        body: t.Object({ tableId: t.Number() }),
+        detail: { summary: 'Move an open order to another table', tags: ['Orders'] }
+    })
+    .post('/:id/merge', async ({ params, body, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const merged = await OrdersService.mergeOrders(user.hotelId, user.id, params.id, body.sourceOrderIds);
+        return createResponse(merged, 'Orders merged');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.ORDERS.UPDATE_STATUS,
+        body: t.Object({ sourceOrderIds: t.Array(t.String(), { minItems: 1 }) }),
+        detail: { summary: 'Merge open orders into this order', tags: ['Orders'] }
+    })
+    .post('/:id/comp', async ({ params, body, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        await requirePassword(user.id, body.confirmPassword);
+        const comped = await OrdersService.compOrder(user.hotelId, user.id, params.id, body.reason);
+        return createResponse(comped, 'Order made complimentary');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.FINANCE.GENERATE_INVOICE, // comp = waiving revenue
+        body: t.Object({ reason: t.Optional(t.String({ maxLength: 300 })), confirmPassword: t.String() }),
+        detail: { summary: 'Make an order complimentary (comp)', tags: ['Orders'] }
     })
     .patch('/:id/status', async ({ params, body, user }) => {
         if (!user?.hotelId) {

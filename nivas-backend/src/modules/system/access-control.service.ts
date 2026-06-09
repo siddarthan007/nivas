@@ -18,10 +18,12 @@ export const AccessControlService = {
         const defaultRoles = [
             {
                 name: SYSTEM_ROLES.OWNER,
+                level: 0,
                 permissions: Object.values(PERMISSIONS).flatMap(group => Object.values(group)), // All permissions
             },
             {
                 name: SYSTEM_ROLES.MANAGER,
+                level: 1,
                 permissions: [
                     ...Object.values(PERMISSIONS.BOOKINGS),
                     ...Object.values(PERMISSIONS.GUESTS),
@@ -39,6 +41,7 @@ export const AccessControlService = {
             },
             {
                 name: SYSTEM_ROLES.FRONT_DESK,
+                level: 2,
                 permissions: [
                     ...Object.values(PERMISSIONS.BOOKINGS),
                     ...Object.values(PERMISSIONS.GUESTS),
@@ -52,6 +55,7 @@ export const AccessControlService = {
             },
             {
                 name: SYSTEM_ROLES.ACCOUNTANT,
+                level: 2,
                 permissions: [
                     ...Object.values(PERMISSIONS.FINANCE),
                     ...Object.values(PERMISSIONS.REPORTS),
@@ -61,6 +65,7 @@ export const AccessControlService = {
             },
             {
                 name: SYSTEM_ROLES.HOUSEKEEPING_SUPERVISOR,
+                level: 3,
                 permissions: [
                     ...Object.values(PERMISSIONS.HOUSEKEEPING),
                     PERMISSIONS.ROOMS.VIEW_STATUS,
@@ -72,6 +77,7 @@ export const AccessControlService = {
             },
             {
                 name: SYSTEM_ROLES.KITCHEN_MANAGER,
+                level: 3,
                 permissions: [
                     ...Object.values(PERMISSIONS.ORDERS),
                     PERMISSIONS.MENU.VIEW,
@@ -85,6 +91,7 @@ export const AccessControlService = {
             },
             {
                 name: SYSTEM_ROLES.WAITER,
+                level: 4,
                 permissions: [
                     PERMISSIONS.ORDERS.CREATE,
                     PERMISSIONS.ORDERS.READ,
@@ -107,8 +114,14 @@ export const AccessControlService = {
                 await db.insert(roles).values({
                     hotelId,
                     name: role.name,
+                    level: role.level,
                     permissions: role.permissions as string[]
                 });
+            } else if (existing.level === 99) {
+                // Update existing role with correct level if it was defaulted
+                await db.update(roles)
+                    .set({ level: role.level })
+                    .where(eq(roles.id, existing.id));
             }
         }
     },

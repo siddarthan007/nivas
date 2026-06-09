@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { UserCircle, Mail, Phone, Shield, Building2, KeyRound, Save, Loader2 } from 'lucide-react';
+import { UserCircle, Mail, Phone, Shield, Building2, KeyRound, Save, Loader2, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import PageContainer from '@/components/layout/PageContainer';
@@ -26,7 +26,8 @@ interface ProfileResponse {
 }
 
 export default function ProfilePage() {
-    const { user, refreshProfile } = useAuth();
+    const { user, refreshProfile, logout } = useAuth();
+    const [loggingOutAll, setLoggingOutAll] = useState(false);
     const [profile, setProfile] = useState<ProfileResponse | null>(null);
     const [formData, setFormData] = useState({ fullName: '', phone: '' });
     const [isLoading, setIsLoading] = useState(true);
@@ -82,7 +83,7 @@ export default function ProfilePage() {
         },
         {
             label: 'Role',
-            value: profile?.role?.name || user?.role || 'Unassigned',
+            value: profile?.role?.name || user?.role?.name || 'Unassigned',
             icon: <UserCircle size={16} />,
         },
         {
@@ -168,6 +169,37 @@ export default function ProfilePage() {
                                     </div>
                                 </form>
                             )}
+                        </div>
+                    </Card>
+
+                    <Card variant="outline" hoverEffect={false} style={{ padding: 'var(--space-5)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+                            <div>
+                                <h2 style={{ margin: 0, fontSize: '18px', color: 'var(--notion-text)' }}>Security</h2>
+                                <p style={{ margin: '6px 0 0', fontSize: '14px', color: 'var(--notion-text-secondary)' }}>
+                                    Sign out everywhere — invalidates every active session on all devices.
+                                </p>
+                            </div>
+                            <Button
+                                variant="secondary"
+                                icon={<LogOut size={16} />}
+                                disabled={loggingOutAll}
+                                onClick={async () => {
+                                    if (!confirm('Sign out of all devices? You will need to log in again.')) return;
+                                    setLoggingOutAll(true);
+                                    try {
+                                        await api.post('/iam/logout-all', {});
+                                        toast.success('Signed out of all devices');
+                                        logout();
+                                    } catch (e: any) {
+                                        toast.error(e?.message || 'Failed');
+                                        setLoggingOutAll(false);
+                                    }
+                                }}
+                                style={{ color: 'var(--notion-red)' }}
+                            >
+                                Log out all devices
+                            </Button>
                         </div>
                     </Card>
 

@@ -15,10 +15,13 @@ import {
     Loader2,
     AlertCircle,
     ShieldCheck,
+    Search,
+    X,
 } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import PageContainer from '@/components/layout/PageContainer';
 import Button from '@/components/ui/Button';
+import DateField from "@/components/ui/DateField";
 import { Card } from '@/components/ui/Card';
 import { api } from '@/lib/api';
 import { usePermissions } from '@/lib/hooks/usePermissions';
@@ -132,7 +135,7 @@ function PackageCard({
                     fontSize: '11px',
                     fontWeight: '600',
                     backgroundColor: 'var(--notion-blue)',
-                    color: 'white',
+                    color: 'var(--foreground-inverse)',
                     borderRadius: '999px',
                 }}>
                     {isCurrentPlan ? 'Current Plan' : 'Popular'}
@@ -158,7 +161,7 @@ function PackageCard({
             </div>
 
             <div>
-                <span style={{ fontSize: '32px', fontWeight: '700', color: 'var(--notion-text)' }}>{formatCurrency(pkg.price)}</span>
+                <span style={{ fontSize: '32px', fontWeight: '700', color: 'var(--notion-text)' }}>{formatCurrency(pkg.monthlyPrice)}</span>
                 <span style={{ fontSize: '14px', color: 'var(--notion-text-secondary)' }}> /month</span>
             </div>
 
@@ -218,6 +221,34 @@ export default function SaaSBillingPage() {
     const { can } = usePermissions();
     const [activeTab, setActiveTab] = useState('packages');
     const [subscribingId, setSubscribingId] = useState<number | null>(null);
+
+    const [paymentSearch, setPaymentSearch] = useState('');
+    const [paymentStatusFilter, setPaymentStatusFilter] = useState<'ALL' | string>('ALL');
+    const [paymentDateFrom, setPaymentDateFrom] = useState('');
+    const [paymentDateTo, setPaymentDateTo] = useState('');
+
+    const filteredPayments = useMemo(() => {
+        let data = [...payments];
+        if (paymentSearch.trim()) {
+            const q = paymentSearch.toLowerCase();
+            data = data.filter(p =>
+                (p.invoiceNumber || '').toLowerCase().includes(q) ||
+                (p.description || '').toLowerCase().includes(q)
+            );
+        }
+        if (paymentStatusFilter !== 'ALL') data = data.filter(p => p.status === paymentStatusFilter);
+        if (paymentDateFrom) {
+            const from = new Date(paymentDateFrom).getTime();
+            data = data.filter(p => new Date(p.dueDate ?? p.createdAt ?? '').getTime() >= from);
+        }
+        if (paymentDateTo) {
+            const to = new Date(paymentDateTo).getTime() + 86400000;
+            data = data.filter(p => new Date(p.dueDate ?? p.createdAt ?? '').getTime() <= to);
+        }
+        return data;
+    }, [payments, paymentSearch, paymentStatusFilter, paymentDateFrom, paymentDateTo]);
+
+    const paymentStatuses = useMemo(() => ['ALL', ...Array.from(new Set(payments.map(p => p.status).filter(Boolean)))], [payments]);
 
     const canSubscribe = can(PERMISSIONS.SAAS_ADMIN.MANAGE_SUBSCRIPTIONS);
     const apiBaseUrl = api.getBaseUrl();
@@ -352,20 +383,55 @@ export default function SaaSBillingPage() {
                             <div>No recent subscription payments were found.</div>
                         </Card>
                     ) : (
-                        <div style={{ backgroundColor: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                <thead>
-                                    <tr style={{ borderBottom: '1px solid var(--notion-border)' }}>
-                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Invoice</th>
-                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Description</th>
-                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Amount</th>
-                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Status</th>
-                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Billing Date</th>
-                                        <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {payments.map((payment: Payment) => {
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                            {/* Payments Filters */}
+                            <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap', padding: 'var(--space-3)', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)' }}>
+                                <div style={{ position: 'relative', minWidth: '200px', flex: 1, maxWidth: '320px' }}>
+                                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--notion-text-muted)' }} />
+                                    <input
+                                        type="text"
+                                        placeholder="Search invoices..."
+                                        value={paymentSearch}
+                                        onChange={e => setPaymentSearch(e.target.value)}
+                                        style={{ width: '100%', padding: '6px 10px 6px 32px', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)', backgroundColor: 'var(--notion-bg)', color: 'var(--notion-text)', fontSize: '13px', outline: 'none' }}
+                                    />
+                                    {paymentSearch && (
+                                        <button onClick={() => setPaymentSearch('')} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text-muted)' }}><X size={14} /></button>
+                                    )}
+                                </div>
+                                <select
+                                    value={paymentStatusFilter}
+                                    onChange={e => setPaymentStatusFilter(e.target.value)}
+                                    style={{ padding: '6px 10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)', backgroundColor: 'var(--notion-bg)', color: 'var(--notion-text)', fontSize: '13px', cursor: 'pointer' }}
+                                >
+                                    {paymentStatuses.map(s => <option key={s} value={s}>{s === 'ALL' ? 'All Status' : s}</option>)}
+                                </select>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <div style={{ width: 150 }}><DateField value={paymentDateFrom} onChange={setPaymentDateFrom} /></div>
+                                    <span style={{ color: 'var(--notion-text-muted)', fontSize: '13px' }}>to</span>
+                                    <div style={{ width: 150 }}><DateField value={paymentDateTo} onChange={setPaymentDateTo} /></div>
+                                </div>
+                                {(paymentSearch || paymentStatusFilter !== 'ALL' || paymentDateFrom || paymentDateTo) && (
+                                    <button onClick={() => { setPaymentSearch(''); setPaymentStatusFilter('ALL'); setPaymentDateFrom(''); setPaymentDateTo(''); }} style={{ fontSize: '12px', color: 'var(--notion-blue)', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
+                                )}
+                            </div>
+
+                            <div style={{ backgroundColor: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '1px solid var(--notion-border)' }}>
+                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Invoice</th>
+                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Description</th>
+                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Amount</th>
+                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Status</th>
+                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Billing Date</th>
+                                            <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredPayments.length === 0 ? (
+                                            <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>No payments found matching filters.</td></tr>
+                                        ) : filteredPayments.map((payment: Payment) => {
                                         const isPaid = payment.status === 'PAID' || payment.status === 'COMPLETED';
                                         return (
                                             <tr key={payment.id} style={{ borderTop: '1px solid var(--notion-border)' }}>
@@ -400,7 +466,8 @@ export default function SaaSBillingPage() {
                                 </tbody>
                             </table>
                         </div>
-                    )}
+                    </div>
+                )}
                 </div>
             </PageContainer>
         </DashboardLayout>

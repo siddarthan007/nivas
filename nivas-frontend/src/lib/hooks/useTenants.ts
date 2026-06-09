@@ -25,6 +25,15 @@ interface CreateTenantPayload {
     phone?: string;
     address?: string;
     planType?: 'BASIC' | 'PROFESSIONAL' | 'ENTERPRISE';
+    ownerName?: string;
+    website?: string;
+    logoUrl?: string;
+    panNumber?: string;
+    vatNumber?: string;
+    serviceChargeRate?: number;
+    taxRate?: number;
+    maxRooms?: number;
+    maxUsers?: number;
 }
 
 export interface Payment {
@@ -84,10 +93,18 @@ export function useTenants() {
                 name: data.name,
                 slug: data.slug,
                 address: data.address || 'Unknown',
-                ownerName: data.name,
+                ownerName: data.ownerName || data.name,
                 ownerEmail: data.email,
                 ownerPhone: data.phone || '0000000000',
                 ownerPassword: data.ownerPassword || 'Password@123',
+                website: data.website,
+                logoUrl: data.logoUrl,
+                panNumber: data.panNumber,
+                vatNumber: data.vatNumber,
+                serviceChargeRate: data.serviceChargeRate,
+                taxRate: data.taxRate,
+                maxRooms: data.maxRooms,
+                maxUsers: data.maxUsers,
             };
 
             if (data.packageId) payload.packageId = data.packageId;
@@ -95,14 +112,8 @@ export function useTenants() {
 
             const response = await api.post<Tenant>('/super-admin/onboard', payload);
 
-            if (data.planType && response.data) {
-                await api.patch(`/saas-admin/tenants/${response.data.id}`, {
-                    planTier: data.planType
-                });
-                response.data.planType = data.planType;
-            }
-
             if (response.data) {
+                response.data.planType = data.planType;
                 setTenants(prev => [response.data!, ...prev]);
                 toast.success(`Hotel "${data.name}" onboarded successfully`);
                 return response.data;
@@ -143,9 +154,10 @@ export function useTenants() {
 
             // Determine action based on current status
             const action = tenant.isActive ? 'pause' : 'resume';
-            await api.post(`/saas-admin/tenants/${id}/${action}`, { reason: 'Admin toggle' });
+            const res: any = await api.post(`/saas-admin/tenants/${id}/${action}`, { reason: 'Admin toggle' });
+            const newLicenseStatus = res?.data?.data?.licenseStatus || (tenant.isActive ? 'PAUSED' : 'ACTIVE');
 
-            setTenants(prev => prev.map(t => t.id === id ? { ...t, isActive: !t.isActive } : t));
+            setTenants(prev => prev.map(t => t.id === id ? { ...t, isActive: !t.isActive, licenseStatus: newLicenseStatus } : t));
             return true;
         } catch {
             return false;
@@ -169,13 +181,20 @@ export function useTenants() {
         }
     };
 
-    // Record payment
-    const recordPayment = async (id: string, amount: number, cycle: string): Promise<boolean> => {
+    // Record payment via billing service so it appears in analytics ledger
+    const recordPayment = async (id: string, amount: number, cycle: string, packageId?: number): Promise<any | null> => {
         try {
-            await api.post(`/saas-admin/tenants/${id}/payment`, { amount, cycle });
-            return true;
+            const res: any = await api.post('/saas-billing/record-payment', {
+                hotelId: parseInt(id, 10),
+                amount,
+                currency: 'NPR',
+                billingCycle: cycle,
+                paymentMethod: 'MANUAL',
+                packageId,
+            });
+            return res?.data?.data || res?.data || null;
         } catch {
-            return false;
+            return null;
         }
     };
 
@@ -183,7 +202,7 @@ export function useTenants() {
     const revokeLicense = async (id: string): Promise<boolean> => {
         try {
             await api.post(`/saas-admin/tenants/${id}/revoke`, { reason: 'Admin revoked' });
-            setTenants(prev => prev.map(t => t.id === id ? { ...t, isActive: false } : t));
+            setTenants(prev => prev.map(t => t.id === id ? { ...t, isActive: false, licenseStatus: 'REVOKED' } : t));
             return true;
         } catch {
             return false;
@@ -229,6 +248,7 @@ export function useTenants() {
             const token = (tokenData as any)?.token;
             const hotelName = (tokenData as any)?.hotelName || tenant?.name || 'Hotel';
             const impersonatedUser = (tokenData as any)?.user;
+            const impersonationId = (tokenData as any)?.impersonationId;
 
             // If we got the token from the response body, store it directly
             if (token) {
@@ -239,6 +259,7 @@ export function useTenants() {
             localStorage.setItem('impersonation_mode', 'true');
             localStorage.setItem('impersonation_hotel', hotelName);
             localStorage.setItem('impersonation_hotel_id', String(impersonatedUser?.hotelId || hotelId));
+            if (impersonationId) localStorage.setItem('impersonation_id', impersonationId);
 
             if (impersonatedUser || token) {
                 const ownerUserData = {
@@ -256,7 +277,7 @@ export function useTenants() {
             // Full page reload to reinitialize the entire app with owner context.
             // On reload, AuthContext.initAuth reads the impersonation_token cookie
             // (set by backend) and stores it in localStorage, ensuring the correct token.
-            window.location.href = '/dashboard';
+            window.location.href = '/hotel';
 
             return { success: true, token: token || 'cookie', hotelName };
         } catch (err) {
@@ -276,6 +297,8 @@ export function useTenants() {
                 tokenStorage.setToken(response.data.token);
                 localStorage.removeItem('impersonation_mode');
                 localStorage.removeItem('impersonation_hotel');
+                localStorage.removeItem('impersonation_hotel_id');
+                localStorage.removeItem('impersonation_id');
                 return true;
             }
             return false;
@@ -284,6 +307,8 @@ export function useTenants() {
             // Fallback: just clear impersonation state
             localStorage.removeItem('impersonation_mode');
             localStorage.removeItem('impersonation_hotel');
+            localStorage.removeItem('impersonation_hotel_id');
+            localStorage.removeItem('impersonation_id');
             return false;
         }
     };

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
 
 type PlanType = 'BASIC' | 'PROFESSIONAL' | 'ENTERPRISE';
-type LicenseStatus = 'ACTIVE' | 'EXPIRED' | 'SUSPENDED' | 'TRIAL';
+type LicenseStatus = 'ACTIVE' | 'EXPIRED' | 'SUSPENDED' | 'TRIAL' | 'PAUSED' | 'REVOKED';
 
 interface License {
     id: string;
@@ -150,6 +150,23 @@ export function useLicenses() {
         }
     };
 
+    // Revoke license
+    const revokeLicense = async (id: string, confirmPassword: string): Promise<boolean> => {
+        try {
+            const license = licenses.find(l => l.id === id);
+            if (!license) return false;
+
+            await api.post(`/saas-admin/tenants/${license.tenantId}/revoke`, { reason: 'Admin revoked', confirmPassword });
+
+            setLicenses(prev => prev.map(l =>
+                l.id === id ? { ...l, status: 'REVOKED' as LicenseStatus } : l
+            ));
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
     // Calculate days until expiry
     const getDaysUntilExpiry = (expiryDate: string): number => {
         const expiry = new Date(expiryDate);
@@ -167,6 +184,8 @@ export function useLicenses() {
             return l.status === 'ACTIVE' && days > 0 && days <= 30;
         }).length,
         trial: licenses.filter(l => l.status === 'TRIAL').length,
+        paused: licenses.filter(l => l.status === 'PAUSED').length,
+        revoked: licenses.filter(l => l.status === 'REVOKED').length,
     };
 
     // Plan revenue breakdown
@@ -187,6 +206,7 @@ export function useLicenses() {
         renewLicense,
         suspendLicense,
         reactivateLicense,
+        revokeLicense,
         getDaysUntilExpiry,
     };
 }

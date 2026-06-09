@@ -2,522 +2,58 @@
 
 import { useState, useEffect } from 'react';
 import { useFinance } from '@/lib/hooks/useFinance';
+import { useAuth } from '@/lib/contexts/AuthContext';
+import { useHotelPlan } from '@/lib/hooks/useHotelPlan';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Modal from '@/components/ui/Modal';
+import { usePasswordConfirm } from '@/components/ui/usePasswordConfirm';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
-import Select from '@/components/ui/Select';
-import CustomDatePicker from '@/components/ui/DatePicker';
-import { SkeletonCard, SkeletonList, Skeleton } from '@/components/ui/Skeleton';
-import {
-    Receipt,
-    CreditCard,
-    FileText,
-    Clock,
-    RefreshCw,
-    Download,
-    Plus,
-    AlertTriangle,
-    CheckCircle,
-    XCircle,
-    DollarSign,
-    Moon,
-} from 'lucide-react';
+import { RefreshCw, Plus, Receipt } from 'lucide-react';
+import type { Invoice, Payment } from '@/lib/hooks/useFinance';
+
+// Sub-pages
 import NightAuditPanel from './NightAuditPage';
-import type { Invoice, Payment, CreditNote, RecordPaymentPayload } from '@/lib/hooks/useFinance';
+import GLPage from './GLPage';
+import RevenuePage from '../revenue/RevenuePage';
+import CustomerLedgerPage from './CustomerLedgerPage';
+import TransactionHistoryPage from './TransactionHistoryPage';
+import BalanceSheetPage from './BalanceSheetPage';
+import ProfitLossPage from './ProfitLossPage';
 
-// Tab Navigation
-function TabNav({ activeTab, onTabChange }: { activeTab: string; onTabChange: (tab: string) => void }) {
-    const tabs = [
-        { id: 'invoices', label: 'Invoices', icon: FileText },
-        { id: 'payments', label: 'Payments', icon: CreditCard },
-        { id: 'credit-notes', label: 'Credit Notes', icon: XCircle },
-        { id: 'shifts', label: 'Shifts', icon: Clock },
-        { id: 'night-audit', label: 'Night Audit', icon: Moon },
-        { id: 'exports', label: 'Exports', icon: Download },
-    ];
+// Modular tab components
+import FinanceSidebar from '@/components/features/finance/FinanceSidebar';
+import FinanceDashboardTab from '@/components/features/finance/FinanceDashboardTab';
+import InvoicesTab from '@/components/features/finance/InvoicesTab';
+import PaymentsTab from '@/components/features/finance/PaymentsTab';
+import CreditNotesTab from '@/components/features/finance/CreditNotesTab';
+import CreditSettlementTab from '@/components/features/finance/CreditSettlementTab';
+import ShiftsTab from '@/components/features/finance/ShiftsTab';
+import ExportsTab from '@/components/features/finance/ExportsTab';
+import RecordPaymentModal from '@/components/features/finance/RecordPaymentModal';
 
-    return (
-        <div style={{
-            display: 'flex',
-            gap: 'var(--space-1)',
-            borderBottom: '1px solid var(--notion-divider)',
-            marginBottom: 'var(--space-6)',
-        }}>
-            {tabs.map(tab => (
-                <button
-                    key={tab.id}
-                    onClick={() => onTabChange(tab.id)}
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 'var(--space-2)',
-                        padding: 'var(--space-3) var(--space-4)',
-                        fontSize: '14px',
-                        fontWeight: activeTab === tab.id ? '600' : '400',
-                        color: activeTab === tab.id ? 'var(--notion-text)' : 'var(--notion-text-secondary)',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        borderBottom: activeTab === tab.id ? '2px solid var(--notion-blue)' : '2px solid transparent',
-                        cursor: 'pointer',
-                        transition: 'all 150ms ease',
-                    }}
-                >
-                    <tab.icon size={16} />
-                    {tab.label}
-                </button>
-            ))}
-        </div>
-    );
-}
-
-// Invoice Card
-function InvoiceCard({ invoice, onSync, onVoid }: { invoice: Invoice; onSync: () => void; onVoid: () => void }) {
-    return (
-        <div style={{
-            backgroundColor: 'var(--notion-bg-secondary)',
-            borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--notion-border)',
-            padding: 'var(--space-4)',
-            opacity: invoice.isVoided ? 0.6 : 1,
-        }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-3)' }}>
-                <div>
-                    <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--notion-text)' }}>
-                        {invoice.invoiceNumber}
-                    </div>
-                    <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
-                        {invoice.booking?.guestName || invoice.guestName}
-                    </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--notion-green)' }}>
-                        ₹{(parseFloat(invoice.grandTotal) || 0).toLocaleString()}
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)' }}>
-                        {new Date(invoice.createdAt).toLocaleDateString()}
-                    </div>
-                </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
-                {invoice.isVoided && (
-                    <span style={{
-                        padding: '2px 8px',
-                        fontSize: '11px',
-                        fontWeight: '500',
-                        backgroundColor: 'var(--notion-red-bg)',
-                        color: 'var(--notion-red)',
-                        borderRadius: 'var(--radius-sm)',
-                    }}>
-                        VOIDED
-                    </span>
-                )}
-                <span style={{
-                    padding: '2px 8px',
-                    fontSize: '11px',
-                    fontWeight: '500',
-                    backgroundColor: invoice.cbmsSynced ? 'var(--notion-green-bg)' : 'var(--notion-orange-bg)',
-                    color: invoice.cbmsSynced ? 'var(--notion-green)' : 'var(--notion-orange)',
-                    borderRadius: 'var(--radius-sm)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                }}>
-                    {invoice.cbmsSynced ? <CheckCircle size={10} /> : <AlertTriangle size={10} />}
-                    {invoice.cbmsSynced ? 'CBMS Synced' : 'Pending Sync'}
-                </span>
-            </div>
-
-            {!invoice.isVoided && (
-                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                    <Button size="sm" variant="secondary" onClick={() => window.open(`/api/v1/invoices/${invoice.id}/pdf`, '_blank')}>
-                        <Download size={12} style={{ marginRight: '4px' }} />
-                        PDF
-                    </Button>
-                    {!invoice.cbmsSynced && (
-                        <Button size="sm" variant="secondary" onClick={onSync}>
-                            <RefreshCw size={12} style={{ marginRight: '4px' }} />
-                            Sync CBMS
-                        </Button>
-                    )}
-                    <Button size="sm" variant="secondary" onClick={onVoid}>
-                        <XCircle size={12} style={{ marginRight: '4px' }} />
-                        Void
-                    </Button>
-                </div>
-            )}
-        </div>
-    );
-}
-
-// Payment Card
-function PaymentCard({ payment, onVoid }: { payment: Payment; onVoid: () => void }) {
-    const methodColors: Record<string, string> = {
-        CASH: 'var(--notion-green)',
-        CARD: 'var(--notion-blue)',
-        ESEWA: 'var(--notion-green)',
-        KHALTI: 'var(--notion-purple)',
-        UPI: 'var(--notion-orange)',
-        BANK_TRANSFER: 'var(--notion-text)',
-        OTHER: 'var(--notion-text-secondary)',
+function getTabTitle(tab: string): string {
+    const titles: Record<string, string> = {
+        overview: 'Dashboard',
+        'general-ledger': 'General Ledger',
+        revenue: 'Revenue Analytics',
+        invoices: 'Invoices',
+        outstanding: 'Outstanding / Credit Settlement',
+        payments: 'Payments',
+        'credit-notes': 'Credit Notes',
+        'customer-ledger': 'Customer Ledger',
+        transactions: 'Transaction History',
+        'profit-loss': 'Profit & Loss',
+        'balance-sheet': 'Balance Sheet',
+        shifts: 'Shifts',
+        'night-audit': 'Night Audit',
+        exports: 'Exports & Compliance',
     };
-
-    return (
-        <div style={{
-            backgroundColor: 'var(--notion-bg-secondary)',
-            borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--notion-border)',
-            padding: 'var(--space-4)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-        }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                <div style={{
-                    width: '40px',
-                    height: '40px',
-                    borderRadius: 'var(--radius-md)',
-                    backgroundColor: 'var(--notion-bg-tertiary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                }}>
-                    <DollarSign size={20} style={{ color: methodColors[payment.paymentMethod] || 'var(--notion-text)' }} />
-                </div>
-                <div>
-                    <div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--notion-text)' }}>
-                        {payment.paymentMethod.replace('_', ' ')}
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
-                        {new Date(payment.createdAt).toLocaleString()}
-                    </div>
-                </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '16px', fontWeight: '600', color: 'var(--notion-green)' }}>
-                        +₹{(parseFloat(payment.amount) || 0).toLocaleString()}
-                    </div>
-                    {payment.transactionId && (
-                        <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)' }}>
-                            Ref: {payment.transactionId}
-                        </div>
-                    )}
-                </div>
-                <Button size="sm" variant="ghost" onClick={onVoid} style={{ color: 'var(--notion-red)' }}>
-                    <XCircle size={14} style={{ marginRight: '4px' }} />
-                    Void
-                </Button>
-            </div>
-        </div>
-    );
+    return titles[tab] || 'Finance';
 }
 
-// Record Payment Modal
-function RecordPaymentModal({ isOpen, onClose, onSubmit }: {
-    isOpen: boolean;
-    onClose: () => void;
-    onSubmit: (data: RecordPaymentPayload) => Promise<boolean>;
-}) {
-    const [formData, setFormData] = useState<RecordPaymentPayload>({
-        amount: 0,
-        paymentMethod: 'CASH',
-    });
-    const [isSubmitting, setIsSubmitting] = useState(false);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setIsSubmitting(true);
-        const payload: RecordPaymentPayload = { ...formData };
-        if (!payload.bookingId) delete payload.bookingId;
-        if (!payload.transactionId) delete payload.transactionId;
-        if (!payload.notes) delete payload.notes;
-        const success = await onSubmit(payload);
-        setIsSubmitting(false);
-        if (success) {
-            setFormData({ amount: 0, paymentMethod: 'CASH' });
-            onClose();
-        }
-    };
-
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Record Payment">
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Booking ID (optional)
-                    </label>
-                    <Input
-                        type="text"
-                        value={formData.bookingId || ''}
-                        onChange={e => setFormData({ ...formData, bookingId: e.target.value })}
-                        placeholder="Link payment to a booking"
-                    />
-                </div>
-
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Amount (₹) *
-                    </label>
-                    <Input
-                        type="number"
-                        min={0}
-                        value={formData.amount}
-                        onChange={e => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
-                        required
-                    />
-                </div>
-
-                <Select
-                    label="Payment Method *"
-                    value={formData.paymentMethod}
-                    onChange={e => setFormData({ ...formData, paymentMethod: e.target.value as any })}
-                    options={[
-                        { value: 'CASH', label: 'Cash' },
-                        { value: 'CARD', label: 'Card' },
-                        { value: 'ESEWA', label: 'eSewa' },
-                        { value: 'KHALTI', label: 'Khalti' },
-                        { value: 'UPI', label: 'UPI' },
-                        { value: 'CONNECT_IPS', label: 'Connect IPS' },
-                        { value: 'BANK_TRANSFER', label: 'Bank Transfer' },
-                        { value: 'OTHER', label: 'Other' },
-                    ]}
-                    fullWidth
-                />
-
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Transaction ID
-                    </label>
-                    <Input
-                        type="text"
-                        value={formData.transactionId || ''}
-                        onChange={e => setFormData({ ...formData, transactionId: e.target.value })}
-                        placeholder="For digital payments"
-                    />
-                </div>
-
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Notes
-                    </label>
-                    <Input
-                        type="text"
-                        value={formData.notes || ''}
-                        onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                        placeholder="Optional notes"
-                    />
-                </div>
-
-                <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
-                    <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>
-                        Cancel
-                    </Button>
-                    <Button type="submit" disabled={isSubmitting || formData.amount <= 0} style={{ flex: 1 }}>
-                        {isSubmitting ? 'Recording...' : 'Record Payment'}
-                    </Button>
-                </div>
-            </form>
-        </Modal>
-    );
-}
-
-// Shift Panel
-function ShiftPanel({ currentShift, onStart, onEnd, isLoading }: {
-    currentShift: any;
-    onStart: (startFloat: number) => void;
-    onEnd: (endCashCount: number, notes?: string) => void;
-    isLoading: boolean;
-}) {
-    const [startFloat, setStartFloat] = useState(0);
-    const [endCashCount, setEndCashCount] = useState(0);
-    const [notes, setNotes] = useState('');
-
-    if (currentShift) {
-        return (
-            <div style={{
-                backgroundColor: 'var(--notion-bg-secondary)',
-                borderRadius: 'var(--radius-lg)',
-                border: '1px solid var(--notion-border)',
-                padding: 'var(--space-6)',
-            }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
-                    <div style={{
-                        width: '48px',
-                        height: '48px',
-                        borderRadius: '50%',
-                        backgroundColor: 'var(--notion-green-bg)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                    }}>
-                        <Clock size={24} style={{ color: 'var(--notion-green)' }} />
-                    </div>
-                    <div>
-                        <div style={{ fontSize: '16px', fontWeight: '600', color: 'var(--notion-text)' }}>
-                            Shift Active
-                        </div>
-                        <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
-                            Started: {new Date(currentShift.startTime).toLocaleString()}
-                        </div>
-                    </div>
-                </div>
-
-                <div style={{ marginBottom: 'var(--space-4)' }}>
-                    <div style={{ fontSize: '14px', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-2)' }}>
-                        Starting Float: ₹{(parseFloat(currentShift.startFloat) || 0).toLocaleString()}
-                    </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
-                    <Input
-                        type="number"
-                        min={0}
-                        value={endCashCount}
-                        onChange={e => setEndCashCount(parseFloat(e.target.value) || 0)}
-                        placeholder="Count cash in drawer"
-                    />
-                </div>
-                <Input
-                    type="text"
-                    value={notes}
-                    onChange={e => setNotes(e.target.value)}
-                    placeholder="End of shift notes (optional)"
-                    style={{ marginBottom: 'var(--space-3)' }}
-                />
-                <Button onClick={() => onEnd(endCashCount, notes)} disabled={isLoading} style={{ width: '100%' }}>
-                    End Shift & Count Cash
-                </Button>
-            </div>
-        );
-    }
-
-    return (
-        <div style={{
-            backgroundColor: 'var(--notion-bg-secondary)',
-            borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--notion-border)',
-            padding: 'var(--space-6)',
-            textAlign: 'center',
-        }}>
-            <Clock size={48} style={{ color: 'var(--notion-text-secondary)', opacity: 0.5, marginBottom: 'var(--space-4)' }} />
-            <div style={{ fontSize: '16px', fontWeight: '500', color: 'var(--notion-text)', marginBottom: 'var(--space-4)' }}>
-                No Active Shift
-            </div>
-            <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'center', marginBottom: 'var(--space-3)' }}>
-                <Input
-                    type="number"
-                    min={0}
-                    value={startFloat}
-                    onChange={e => setStartFloat(parseFloat(e.target.value) || 0)}
-                    placeholder="Starting float amount"
-                    style={{ maxWidth: '200px' }}
-                />
-            </div>
-            <Button onClick={() => onStart(startFloat)} disabled={isLoading}>
-                Start Shift
-            </Button>
-        </div>
-    );
-}
-
-// Exports Panel
-function ExportsPanel({ onExportTally, onExportAnnex5, onRetryFailed }: {
-    onExportTally: (date?: string, type?: 'sales' | 'purchase' | 'receipt') => void;
-    onExportAnnex5: (date?: string, type?: 'sales' | 'purchase') => void;
-    onRetryFailed: () => void;
-}) {
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-
-    return (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-4)' }}>
-            {/* Tally Exports */}
-            <div style={{
-                backgroundColor: 'var(--notion-bg-secondary)',
-                borderRadius: 'var(--radius-lg)',
-                border: '1px solid var(--notion-border)',
-                padding: 'var(--space-4)',
-            }}>
-                <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--notion-text)', marginBottom: 'var(--space-3)' }}>
-                    Tally Exports (XML)
-                </div>
-                <div style={{ marginBottom: 'var(--space-3)' }}>
-                    <CustomDatePicker
-                        selected={date ? new Date(date) : null}
-                        onChange={d => setDate(d ? d.toISOString().split('T')[0] : '')}
-                        placeholder="Select date"
-                    />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                    <Button variant="secondary" onClick={() => onExportTally(date, 'sales')}>
-                        <Download size={14} style={{ marginRight: '6px' }} />
-                        Sales XML
-                    </Button>
-                    <Button variant="secondary" onClick={() => onExportTally(date, 'purchase')}>
-                        <Download size={14} style={{ marginRight: '6px' }} />
-                        Purchase XML
-                    </Button>
-                    <Button variant="secondary" onClick={() => onExportTally(date, 'receipt')}>
-                        <Download size={14} style={{ marginRight: '6px' }} />
-                        Receipt XML
-                    </Button>
-                </div>
-            </div>
-
-            {/* IRD Annex 5 */}
-            <div style={{
-                backgroundColor: 'var(--notion-bg-secondary)',
-                borderRadius: 'var(--radius-lg)',
-                border: '1px solid var(--notion-border)',
-                padding: 'var(--space-4)',
-            }}>
-                <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--notion-text)', marginBottom: 'var(--space-3)' }}>
-                    IRD Annex 5 (CSV)
-                </div>
-                <div style={{ marginBottom: 'var(--space-3)' }}>
-                    <CustomDatePicker
-                        selected={date ? new Date(date) : null}
-                        onChange={d => setDate(d ? d.toISOString().split('T')[0] : '')}
-                        placeholder="Select date"
-                    />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                    <Button variant="secondary" onClick={() => onExportAnnex5(date, 'sales')}>
-                        <Download size={14} style={{ marginRight: '6px' }} />
-                        Sales Register
-                    </Button>
-                    <Button variant="secondary" onClick={() => onExportAnnex5(date, 'purchase')}>
-                        <Download size={14} style={{ marginRight: '6px' }} />
-                        Purchase Register
-                    </Button>
-                </div>
-            </div>
-
-            {/* CBMS Retry */}
-            <div style={{
-                backgroundColor: 'var(--notion-bg-secondary)',
-                borderRadius: 'var(--radius-lg)',
-                border: '1px solid var(--notion-border)',
-                padding: 'var(--space-4)',
-            }}>
-                <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--notion-text)', marginBottom: 'var(--space-3)' }}>
-                    CBMS Sync
-                </div>
-                <p style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-3)' }}>
-                    Retry syncing all invoices that failed CBMS submission.
-                </p>
-                <Button variant="secondary" onClick={onRetryFailed}>
-                    <RefreshCw size={14} style={{ marginRight: '6px' }} />
-                    Retry Failed Syncs
-                </Button>
-            </div>
-        </div>
-    );
-}
-
-// Main Page
 export default function FinancePage() {
+    const { confirm: pwConfirm, modal: pwModal } = usePasswordConfirm();
     const {
         invoices,
         payments,
@@ -528,7 +64,6 @@ export default function FinancePage() {
         fetchPayments,
         fetchCreditNotes,
         checkCurrentShift,
-        syncInvoiceCbms,
         createCreditNote,
         recordPayment,
         voidPayment,
@@ -536,13 +71,45 @@ export default function FinancePage() {
         endShift,
         exportTally,
         exportAnnex5,
-        retryFailedCbms,
     } = useFinance();
 
-    const [activeTab, setActiveTab] = useState('invoices');
+    const { impersonation, user } = useAuth();
+    const { plan } = useHotelPlan();
+
+    const showLicenseBanner = (() => {
+        if (!user?.hotelId || user?.userType === 'SUPER_ADMIN') return false;
+        const status = plan.licenseStatus;
+        const days = plan.daysRemaining;
+        if (status === 'EXPIRED' || plan.isTrialExpired) return true;
+        if (status === 'TRIAL' && days !== null && days <= 7) return true;
+        if (status === 'ACTIVE' && days !== null && days <= 30) return true;
+        if (status === 'PAUSED') return true;
+        return false;
+    })();
+
+    const topOffset = (impersonation.isImpersonating ? 50 : 0) + (showLicenseBanner ? 36 : 0);
+
+    const [activeTab, setActiveTab] = useState('overview');
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [voidInvoice, setVoidInvoice] = useState<Invoice | null>(null);
     const [voidReason, setVoidReason] = useState('');
+    const [voidPaymentTarget, setVoidPaymentTarget] = useState<Payment | null>(null);
+
+    // Deep link support: read ?tab= and ?bookingId= from URL on initial load
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const tabFromUrl = params.get('tab');
+        const bookingIdFromUrl = params.get('bookingId');
+        // Only accept known tabs — a bad/legacy deep link must not blank the page.
+        const VALID_TABS = ['overview', 'invoices', 'payments', 'credit-notes', 'customer-ledger', 'shifts', 'exports', 'night-audit', 'general-ledger'];
+        if (tabFromUrl && VALID_TABS.includes(tabFromUrl)) {
+            setActiveTab(tabFromUrl);
+        }
+        if (bookingIdFromUrl) {
+            // Store for CustomerLedgerPage to pick up via localStorage event
+            localStorage.setItem('finance_selected_booking', bookingIdFromUrl);
+        }
+    }, []);
 
     useEffect(() => {
         fetchInvoices();
@@ -553,209 +120,159 @@ export default function FinancePage() {
 
     const handleVoidInvoice = async () => {
         if (!voidInvoice || !voidReason.trim()) return;
-        await createCreditNote(voidInvoice.id, voidReason);
+        const pw = await pwConfirm('Void invoice', 'Re-enter your password to void this invoice via credit note.');
+        if (!pw) return;
+        await createCreditNote(voidInvoice.id, voidReason, pw);
         setVoidInvoice(null);
         setVoidReason('');
     };
 
-    const handleVoidPayment = async (payment: Payment) => {
-        if (!confirm(`Void this ${(payment.paymentMethod || '').replace('_', ' ')} payment of ₹${(parseFloat(payment.amount) || 0).toLocaleString()}? This action cannot be undone.`)) return;
-        await voidPayment(payment.id);
+    const handleVoidPayment = (payment: Payment) => {
+        setVoidPaymentTarget(payment);
+    };
+
+    const confirmVoidPayment = async () => {
+        if (!voidPaymentTarget) return;
+        const pw = await pwConfirm('Void payment', 'Re-enter your password to void this payment.');
+        if (!pw) return;
+        await voidPayment(voidPaymentTarget.id, pw);
+        setVoidPaymentTarget(null);
     };
 
     const stats = {
         totalInvoices: invoices.length,
-        totalPayments: payments.reduce((sum, p) => sum + parseFloat(p.amount), 0),
-        pendingSync: invoices.filter(i => !i.cbmsSynced && !i.isVoided).length,
+        totalRevenue: invoices
+            .filter(i => !i.isVoided)
+            .reduce((sum, i) => sum + (parseFloat(i.grandTotal) || 0), 0),
+        totalPayments: payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0),
         voidedCount: invoices.filter(i => i.isVoided).length,
     };
 
     return (
         <DashboardLayout>
-            <div style={{ padding: 'var(--space-8)' }}>
-                {/* Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
-                    <div>
-                        <h1 style={{
-                            fontSize: '28px',
-                            fontWeight: '600',
-                            color: 'var(--notion-text)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 'var(--space-3)',
-                        }}>
-                            <Receipt size={28} />
-                            Finance
-                        </h1>
-                        <p style={{ fontSize: '14px', color: 'var(--notion-text-secondary)', marginTop: 'var(--space-1)' }}>
-                            Manage invoices, payments, and accounting exports
-                        </p>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                        <Button variant="secondary" onClick={() => { fetchInvoices(); fetchPayments(); }} disabled={isLoading}>
-                            <RefreshCw size={14} style={{ marginRight: '6px' }} />
-                            Refresh
-                        </Button>
-                        <Button onClick={() => setIsPaymentModalOpen(true)}>
-                            <Plus size={14} style={{ marginRight: '6px' }} />
-                            Record Payment
-                        </Button>
-                    </div>
+            {pwModal}
+            <div style={{ display: 'flex' }}>
+                <div style={{
+                    width: '240px',
+                    flexShrink: 0,
+                    position: 'sticky',
+                    top: `${topOffset}px`,
+                    alignSelf: 'flex-start',
+                    height: `calc(100vh - ${topOffset}px)`,
+                    overflowY: 'auto',
+                    zIndex: 30,
+                }}>
+                    <FinanceSidebar activeTab={activeTab} onTabChange={(tab) => {
+                        setActiveTab(tab);
+                        // Clear deep link params when user manually changes tab
+                        if (window.location.search) {
+                            window.history.replaceState({}, '', window.location.pathname);
+                        }
+                    }} />
                 </div>
 
-                {/* Stats */}
-                <div style={{ display: 'flex', gap: 'var(--space-6)', marginBottom: 'var(--space-6)' }}>
-                    {[
-                        { label: 'Invoices', value: stats.totalInvoices, color: 'var(--notion-text)' },
-                        { label: 'Revenue', value: `₹${(stats.totalPayments ?? 0).toLocaleString()}`, color: 'var(--notion-green)' },
-                        { label: 'Pending Sync', value: stats.pendingSync, color: 'var(--notion-orange)' },
-                        { label: 'Voided', value: stats.voidedCount, color: 'var(--notion-red)' },
-                    ].map(stat => (
-                        <div key={stat.label} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                            <span style={{ fontSize: '20px', fontWeight: '600', color: stat.color }}>{stat.value}</span>
-                            <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{stat.label}</span>
-                        </div>
-                    ))}
-                </div>
-
-                {/* Tabs */}
-                <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
-
-                {/* Tab Content */}
-                {activeTab === 'invoices' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 'var(--space-4)' }}>
-                        {isLoading ? (
-                            Array.from({ length: 6 }).map((_, i) => (
-                                <SkeletonCard key={i} />
-                            ))
-                        ) : invoices.length === 0 ? (
-                            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
-                                <FileText size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
-                                <p>No invoices yet</p>
-                            </div>
-                        ) : (
-                            invoices.map(invoice => (
-                                <InvoiceCard
-                                    key={invoice.id}
-                                    invoice={invoice}
-                                    onSync={() => syncInvoiceCbms(invoice.id)}
-                                    onVoid={() => setVoidInvoice(invoice)}
-                                />
-                            ))
-                        )}
-                    </div>
-                )}
-
-                {activeTab === 'payments' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                        {isLoading ? (
-                            <SkeletonList items={4} />
-                        ) : payments.length === 0 ? (
-                            <div style={{
-                                textAlign: 'center',
-                                padding: 'var(--space-12)',
-                                color: 'var(--notion-text-secondary)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                borderRadius: 'var(--radius-lg)',
-                                border: '1px solid var(--notion-border)',
+                <div style={{ flex: 1, padding: 'var(--space-6)', backgroundColor: 'var(--notion-bg)', minHeight: '100vh' }}>
+                    {/* Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
+                        <div>
+                            <h1 style={{
+                                fontSize: '24px',
+                                fontWeight: '700',
+                                color: 'var(--notion-text)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 'var(--space-3)',
                             }}>
-                                <CreditCard size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
-                                <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: 'var(--space-2)' }}>No payments recorded</p>
-                                <p style={{ fontSize: '13px', marginBottom: 'var(--space-4)' }}>Record your first payment to start tracking revenue.</p>
+                                <Receipt size={24} />
+                                {getTabTitle(activeTab)}
+                            </h1>
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                            {['overview', 'invoices', 'payments', 'credit-notes', 'customer-ledger', 'shifts', 'exports', 'night-audit'].includes(activeTab) && (
+                                <Button variant="secondary" onClick={() => { fetchInvoices(); fetchPayments(); }} disabled={isLoading}>
+                                    <RefreshCw size={14} style={{ marginRight: '6px' }} />
+                                    Refresh
+                                </Button>
+                            )}
+                            {activeTab === 'payments' && (
                                 <Button onClick={() => setIsPaymentModalOpen(true)}>
                                     <Plus size={14} style={{ marginRight: '6px' }} />
                                     Record Payment
                                 </Button>
-                            </div>
-                        ) : (
-                            payments.map(payment => (
-                                <PaymentCard
-                                    key={payment.id}
-                                    payment={payment}
-                                    onVoid={() => handleVoidPayment(payment)}
-                                />
-                            ))
-                        )}
-                    </div>
-                )}
-
-                {activeTab === 'credit-notes' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                        {isLoading ? (
-                            <SkeletonList items={3} />
-                        ) : creditNotes.length === 0 ? (
-                            <div style={{
-                                textAlign: 'center',
-                                padding: 'var(--space-12)',
-                                color: 'var(--notion-text-secondary)',
-                                backgroundColor: 'var(--notion-bg-secondary)',
-                                borderRadius: 'var(--radius-lg)',
-                                border: '1px solid var(--notion-border)',
-                            }}>
-                                <XCircle size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
-                                <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: 'var(--space-2)' }}>No credit notes</p>
-                                <p style={{ fontSize: '13px' }}>Credit notes are created when invoices are voided. Go to the Invoices tab to void an invoice.</p>
-                            </div>
-                        ) : (
-                            creditNotes.map(cn => (
-                                <div key={cn.id} style={{
-                                    backgroundColor: 'var(--notion-bg-secondary)',
-                                    borderRadius: 'var(--radius-lg)',
-                                    border: '1px solid var(--notion-border)',
-                                    padding: 'var(--space-4)',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                }}>
-                                    <div>
-                                        <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>
-                                            {cn.creditNoteNumber}
-                                        </div>
-                                        <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
-                                            Void: {cn.originalInvoice?.invoiceNumber} - {cn.reason}
-                                        </div>
-                                    </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-red)' }}>
-                                            -₹{(parseFloat(cn.amount) || 0).toLocaleString()}
-                                        </div>
-                                        <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)' }}>
-                                            {new Date(cn.createdAt).toLocaleDateString()}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                )}
-
-                {activeTab === 'shifts' && (
-                    isLoading ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                            <Skeleton variant="line" width="40%" height={20} />
-                            <Skeleton variant="card" height={180} />
+                            )}
                         </div>
-                    ) : (
-                        <ShiftPanel
+                    </div>
+
+                    {/* Mini stats strip for Sales tabs */}
+                    {['invoices', 'payments', 'credit-notes', 'customer-ledger'].includes(activeTab) && (
+                        <div style={{ display: 'flex', gap: 'var(--space-6)', marginBottom: 'var(--space-6)', padding: 'var(--space-4)', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)' }}>
+                            {[
+                                { label: 'Invoices', value: stats.totalInvoices, color: 'var(--notion-text)' },
+                                { label: 'Revenue', value: `NPR ${(stats.totalRevenue ?? 0).toLocaleString()}`, color: 'var(--notion-green)' },
+                                { label: 'Voided', value: stats.voidedCount, color: 'var(--notion-red)' },
+                            ].map(stat => (
+                                <div key={stat.label} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                    <span style={{ fontSize: '20px', fontWeight: '600', color: stat.color }}>{stat.value}</span>
+                                    <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{stat.label}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Tab Content */}
+                    {activeTab === 'overview' && (
+                        <FinanceDashboardTab onNavigate={setActiveTab} />
+                    )}
+
+                    {activeTab === 'general-ledger' && <GLPage />}
+                    {activeTab === 'revenue' && <RevenuePage />}
+                    {activeTab === 'customer-ledger' && <CustomerLedgerPage invoices={invoices} payments={payments} creditNotes={creditNotes} isLoading={isLoading} />}
+                    {activeTab === 'transactions' && <TransactionHistoryPage invoices={invoices} payments={payments} creditNotes={creditNotes} isLoading={isLoading} />}
+                    {activeTab === 'profit-loss' && <ProfitLossPage />}
+                    {activeTab === 'balance-sheet' && <BalanceSheetPage />}
+                    {activeTab === 'night-audit' && <NightAuditPanel />}
+
+                    {activeTab === 'invoices' && (
+                        <InvoicesTab
+                            invoices={invoices}
+                            isLoading={isLoading}
+                            onVoid={setVoidInvoice}
+                        />
+                    )}
+
+                    {activeTab === 'outstanding' && (
+                        <CreditSettlementTab invoices={invoices as any} onRecordPayment={recordPayment} />
+                    )}
+
+                    {activeTab === 'payments' && (
+                        <PaymentsTab
+                            payments={payments}
+                            isLoading={isLoading}
+                            onVoid={handleVoidPayment}
+                            onRecordPayment={() => setIsPaymentModalOpen(true)}
+                        />
+                    )}
+
+                    {activeTab === 'credit-notes' && (
+                        <CreditNotesTab creditNotes={creditNotes} isLoading={isLoading} />
+                    )}
+
+                    {activeTab === 'shifts' && (
+                        <ShiftsTab
                             currentShift={currentShift}
+                            isLoading={isLoading}
                             onStart={startShift}
                             onEnd={endShift}
-                            isLoading={isLoading}
                         />
-                    )
-                )}
+                    )}
 
-                {activeTab === 'night-audit' && (
-                    <NightAuditPanel />
-                )}
-
-                {activeTab === 'exports' && (
-                    <ExportsPanel
-                        onExportTally={exportTally}
-                        onExportAnnex5={exportAnnex5}
-                        onRetryFailed={retryFailedCbms}
-                    />
-                )}
+                    {activeTab === 'exports' && (
+                        <ExportsTab
+                            onExportTally={exportTally}
+                            onExportAnnex5={exportAnnex5}
+                        />
+                    )}
+                </div>
             </div>
 
             {/* Record Payment Modal */}
@@ -790,6 +307,26 @@ export default function FinancePage() {
                     </Button>
                     <Button onClick={handleVoidInvoice} disabled={!voidReason.trim()} style={{ flex: 1 }}>
                         Void Invoice
+                    </Button>
+                </div>
+            </Modal>
+
+            {/* Void Payment Modal */}
+            <Modal isOpen={!!voidPaymentTarget} onClose={() => setVoidPaymentTarget(null)} title="Void Payment">
+                <div style={{ marginBottom: 'var(--space-4)' }}>
+                    <p style={{ fontSize: '14px', color: 'var(--notion-text-secondary)' }}>
+                        Void this <strong>{(voidPaymentTarget?.paymentMethod || '').replace('_', ' ')}</strong> payment of <strong>NPR {(parseFloat(voidPaymentTarget?.amount || '0') || 0).toLocaleString()}</strong>?
+                    </p>
+                    <p style={{ fontSize: '13px', color: 'var(--notion-red)', marginTop: '8px' }}>
+                        This action cannot be undone.
+                    </p>
+                </div>
+                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                    <Button variant="secondary" onClick={() => setVoidPaymentTarget(null)} style={{ flex: 1 }}>
+                        Cancel
+                    </Button>
+                    <Button onClick={confirmVoidPayment} style={{ flex: 1, backgroundColor: 'var(--notion-red)', color: 'var(--foreground-inverse)' }}>
+                        Void Payment
                     </Button>
                 </div>
             </Modal>

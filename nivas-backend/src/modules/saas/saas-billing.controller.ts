@@ -64,8 +64,13 @@ export const saasBillingController = new Elysia({ prefix: '/saas-billing' })
         const result = await SaasBillingService.recordPayment(body.hotelId, user!.id, body, ip);
 
         return createResponse(
-            result.payment,
-            `Payment of ${body.amount} ${body.currency ?? 'USD'} recorded. License active until ${result.periodEnd.toISOString().split('T')[0]}`
+            {
+                ...result.payment,
+                invoiceNumber: result.invoiceNumber,
+                periodStart: result.periodStart,
+                periodEnd: result.periodEnd
+            },
+            `Payment of ${body.amount} ${body.currency ?? 'NPR'} recorded. Invoice ${result.invoiceNumber}. License active until ${result.periodEnd.toISOString().split('T')[0]}`
         );
     }, {
         isSignedIn: true,
@@ -78,7 +83,7 @@ export const saasBillingController = new Elysia({ prefix: '/saas-billing' })
             transactionId: t.Optional(t.String()),
             invoiceNumber: t.Optional(t.String()),
             packageId: t.Optional(t.Number()),
-            billingCycle: t.Optional(t.Union([t.Literal('MONTHLY'), t.Literal('ANNUAL')]))
+            billingCycle: t.Optional(t.Union([t.Literal('MONTHLY'), t.Literal('ANNUAL'), t.Literal('2_YEAR'), t.Literal('3_YEAR')]))
         }),
         detail: { summary: 'Record subscription payment', tags: ['SaaS'] }
     })

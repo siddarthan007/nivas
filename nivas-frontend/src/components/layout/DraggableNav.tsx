@@ -23,7 +23,11 @@ interface NavItemData {
     href: string;
     label: string;
     Icon: LucideIcon;
+    section?: string;
 }
+
+// Display order for grouped sections; unknown sections render after these.
+const SECTION_ORDER = ['Workspace', 'Front Office', 'Food & Beverage', 'Inventory', 'Finance', 'People', 'More'];
 
 interface DraggableNavProps {
     items: NavItemData[];
@@ -132,39 +136,57 @@ export default function DraggableNav({
                 </div>
             )}
 
-            {/* Regular Items */}
-            <div>
-                {!isCollapsed && (
-                    <div
-                        style={{
-                            padding: "4px 12px",
-                            fontSize: "11px",
-                            fontWeight: "600",
-                            color: "var(--notion-text-muted)",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.04em",
-                        }}
-                    >
-                        Private
-                    </div>
-                )}
-                <SortableContext
-                    items={regularItems.map((item) => item.id)}
-                    strategy={verticalListSortingStrategy}
-                >
-                    {regularItems.map((item) => (
-                        <NavItem
-                            key={item.id}
-                            id={item.id}
-                            href={item.href}
-                            label={item.label}
-                            Icon={item.Icon}
-                            isCollapsed={isCollapsed}
-                            notificationCount={notificationCounts[item.id] || 0}
-                        />
-                    ))}
-                </SortableContext>
-            </div>
+            {/* Regular items, grouped by section (each group is independently
+                drag-sortable; ungrouped items fall under "Workspace"). */}
+            {(() => {
+                const groups = new Map<string, typeof regularItems>();
+                for (const item of regularItems) {
+                    const key = item.section || 'Workspace';
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key)!.push(item);
+                }
+                const orderedSections = [
+                    ...SECTION_ORDER.filter(s => groups.has(s)),
+                    ...Array.from(groups.keys()).filter(s => !SECTION_ORDER.includes(s)),
+                ];
+                return orderedSections.map((section) => {
+                    const groupItems = groups.get(section)!;
+                    return (
+                        <div key={section} style={{ marginBottom: '10px' }}>
+                            {!isCollapsed && section !== 'Workspace' && (
+                                <div
+                                    style={{
+                                        padding: "4px 12px",
+                                        fontSize: "11px",
+                                        fontWeight: "600",
+                                        color: "var(--notion-text-muted)",
+                                        textTransform: "uppercase",
+                                        letterSpacing: "0.04em",
+                                    }}
+                                >
+                                    {section}
+                                </div>
+                            )}
+                            <SortableContext
+                                items={groupItems.map((item) => item.id)}
+                                strategy={verticalListSortingStrategy}
+                            >
+                                {groupItems.map((item) => (
+                                    <NavItem
+                                        key={item.id}
+                                        id={item.id}
+                                        href={item.href}
+                                        label={item.label}
+                                        Icon={item.Icon}
+                                        isCollapsed={isCollapsed}
+                                        notificationCount={notificationCounts[item.id] || 0}
+                                    />
+                                ))}
+                            </SortableContext>
+                        </div>
+                    );
+                });
+            })()}
         </DndContext>
     );
 }

@@ -41,4 +41,60 @@ export const attendanceController = new Elysia({ prefix: '/attendance' })
             date: t.Optional(t.String())
         }),
         detail: { summary: 'Get Attendance', tags: ['IAM'] }
+    })
+    .get('/history', async ({ query, user }) => {
+        if (!user || !user.hotelId) throw new ValidationError('User identification failed');
+        const data = await AttendanceService.getAttendanceHistory(
+            user.hotelId,
+            query.startDate || undefined,
+            query.endDate || undefined,
+            query.userId || undefined
+        );
+        return createResponse(data, 'Attendance history fetched');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.ANALYTICS.VIEW_STAFF_PERFORMANCE,
+        query: t.Object({
+            startDate: t.Optional(t.String()),
+            endDate: t.Optional(t.String()),
+            userId: t.Optional(t.String())
+        }),
+        detail: { summary: 'Get attendance history with filters', tags: ['IAM'] }
+    })
+    .get('/staff/:userId/summary', async ({ params, query, user }) => {
+        if (!user || !user.hotelId) throw new ValidationError('User identification failed');
+        const now = new Date();
+        const year = query.year ? parseInt(query.year) : now.getFullYear();
+        const month = query.month ? parseInt(query.month) : now.getMonth() + 1;
+        const data = await AttendanceService.getStaffMonthlySummary(user.hotelId, params.userId, year, month);
+        return createResponse(data, 'Staff monthly summary fetched');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.ANALYTICS.VIEW_STAFF_PERFORMANCE,
+        query: t.Object({
+            year: t.Optional(t.String()),
+            month: t.Optional(t.String())
+        }),
+        detail: { summary: 'Get staff monthly attendance summary', tags: ['IAM'] }
+    })
+    .post('/mark', async ({ body, user }) => {
+        if (!user || !user.hotelId) throw new ValidationError('User identification failed');
+        const entry = await AttendanceService.markAttendance(
+            user.hotelId,
+            body.userId,
+            body.date,
+            body.status,
+            body.notes || undefined
+        );
+        return createResponse(entry, 'Attendance marked successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.USERS.UPDATE,
+        body: t.Object({
+            userId: t.String(),
+            date: t.String(),
+            status: t.Union([t.Literal('PRESENT'), t.Literal('ABSENT'), t.Literal('LATE')]),
+            notes: t.Optional(t.String())
+        }),
+        detail: { summary: 'Manually mark attendance for a staff member', tags: ['IAM'] }
     });

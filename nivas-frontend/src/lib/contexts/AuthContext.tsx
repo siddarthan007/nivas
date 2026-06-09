@@ -10,7 +10,11 @@ export interface User {
     id: string;
     name: string;
     email?: string;
-    role?: string;
+    role?: {
+        id: number;
+        name: string;
+        level: number;
+    };
     hotelId?: number | null;
     userType: UserType;
     permissions: string[];
@@ -21,7 +25,11 @@ interface LoginResponse {
     user: {
         id: string;
         name: string;
-        role?: string;
+        role?: {
+            id: number;
+            name: string;
+            level: number;
+        };
     };
 }
 
@@ -41,6 +49,7 @@ interface ProfileResponse {
     role?: {
         id: number;
         name: string;
+        level: number;
         permissions: string[];
     };
 }
@@ -49,6 +58,7 @@ interface ImpersonationState {
     isImpersonating: boolean;
     hotelName: string;
     hotelId: number | null;
+    impersonationId?: string;
 }
 
 interface AuthContextValue {
@@ -71,7 +81,11 @@ function buildUserFromProfile(data: ProfileResponse): User {
         id: data.id,
         name: data.fullName,
         email: data.email,
-        role: data.role?.name,
+        role: data.role ? {
+            id: data.role.id,
+            name: data.role.name,
+            level: data.role.level
+        } : undefined,
         hotelId: data.hotelId,
         userType: data.userType,
         permissions: data.role?.permissions || [],
@@ -87,6 +101,18 @@ function getCookie(name: string): string | null {
 function deleteCookie(name: string): void {
     if (typeof document === 'undefined') return;
     document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+}
+
+function clearAllImpersonationState(): void {
+    localStorage.removeItem('impersonation_mode');
+    localStorage.removeItem('impersonation_hotel');
+    localStorage.removeItem('impersonation_hotel_id');
+    localStorage.removeItem('impersonation_id');
+    deleteCookie('impersonation_active');
+    deleteCookie('impersonation_hotel');
+    deleteCookie('impersonation_token');
+    deleteCookie('impersonation_id');
+    deleteCookie('restored_token');
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -114,22 +140,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const initAuth = async () => {
             let isImpersonating = false;
             let impersonationHotelName = '';
+            let impersonationId: string | undefined;
 
+            // Returning from impersonation: restore admin token, purge all impersonation state
             const restoredToken = getCookie('restored_token');
             if (restoredToken) {
                 tokenStorage.setToken(restoredToken);
-                deleteCookie('restored_token');
-
-                localStorage.removeItem('impersonation_mode');
-                localStorage.removeItem('impersonation_hotel');
-                localStorage.removeItem('impersonation_hotel_id');
-                deleteCookie('impersonation_active');
-                deleteCookie('impersonation_hotel');
-                deleteCookie('impersonation_token');
-
+                clearAllImpersonationState();
                 isImpersonating = false;
             }
 
+            // Fresh impersonation start from cookie (server-set redirect)
             const impersonationToken = getCookie('impersonation_token');
             if (impersonationToken) {
                 tokenStorage.setToken(impersonationToken);
@@ -137,14 +158,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 isImpersonating = true;
 
                 const hotelNameCookie = getCookie('impersonation_hotel');
-                impersonationHotelName = hotelNameCookie
-                    ? decodeURIComponent(hotelNameCookie)
-                    : 'Hotel';
+                impersonationHotelName = hotelNameCookie ? decodeURIComponent(hotelNameCookie) : 'Hotel';
+                impersonationId = getCookie('impersonation_id') || undefined;
 
                 localStorage.setItem('impersonation_mode', 'true');
                 localStorage.setItem('impersonation_hotel', impersonationHotelName);
+                if (impersonationId) localStorage.setItem('impersonation_id', impersonationId);
             }
 
+            // Recover from localStorage (page refresh during impersonation)
             if (!isImpersonating && !restoredToken) {
                 const modeFromStorage = localStorage.getItem('impersonation_mode');
                 const modeFromCookie = getCookie('impersonation_active');
@@ -156,6 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         (hotelNameCookie ? decodeURIComponent(hotelNameCookie) : null)
                         || localStorage.getItem('impersonation_hotel')
                         || 'Hotel';
+                    impersonationId = localStorage.getItem('impersonation_id') || undefined;
                 }
             }
 
@@ -165,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     isImpersonating: true,
                     hotelName: impersonationHotelName,
                     hotelId: hotelIdStr ? parseInt(hotelIdStr, 10) : null,
+                    impersonationId,
                 });
             } else {
                 setImpersonation({ isImpersonating: false, hotelName: '', hotelId: null });
@@ -173,10 +197,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const token = tokenStorage.getToken();
             if (token) {
                 try {
-                    await refreshProfile();
+                    const freshUser = await refreshProfile();
+                    if (freshUser) {
+                        // SECURITY: Validate impersonation state against actual user identity
+                        const storedMode = localStorage.getItem('impersonation_mode');
+                        if (storedMode === 'true') {
+                            const storedHotelId = localStorage.getItem('impersonation_hotel_id');
+                            const storedId = localStorage.getItem('impersonation_id');
+
+                            // Edge case 1: Super Admin logged in directly but impersonation flag is stale
+                            if (freshUser.userType === 'SUPER_ADMIN') {
+                                clearAllImpersonationState();
+                                setImpersonation({ isImpersonating: false, hotelName: '', hotelId: null });
+                            }
+                            // Edge case 2: Hotel user logged in but hotelId doesn't match
+                            else if (storedHotelId && freshUser.hotelId !== parseInt(storedHotelId, 10)) {
+                                clearAllImpersonationState();
+                                setImpersonation({ isImpersonating: false, hotelName: '', hotelId: null });
+                            }
+                            // Edge case 3: No token signature match (token changed since impersonation)
+                            else if (storedId) {
+                                try {
+                                    const res = await api.get<{ valid: boolean }>('/super-admin/validate-impersonation');
+                                    if (!res.data?.valid) {
+                                        clearAllImpersonationState();
+                                        setImpersonation({ isImpersonating: false, hotelName: '', hotelId: null });
+                                    }
+                                } catch {
+                                    // Network failure during validation: keep state but it will be re-checked on next profile refresh
+                                }
+                            }
+                        }
+                    }
                 } catch {
                     tokenStorage.removeToken();
+                    clearAllImpersonationState();
+                    setImpersonation({ isImpersonating: false, hotelName: '', hotelId: null });
                 }
+            } else {
+                // No token but impersonation flags exist -> clear stale state
+                clearAllImpersonationState();
+                setImpersonation({ isImpersonating: false, hotelName: '', hotelId: null });
             }
 
             setIsLoading(false);
@@ -199,9 +260,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }, 10 * 60 * 1000);
 
         return () => clearInterval(interval);
-    }, [refreshProfile, user]);
+        // Depend only on whether a user is logged in (by id) — NOT the whole `user`
+        // object. refreshProfile() updates `user`, so depending on `user` tore down
+        // and restarted the timer every refresh, so the 10-min tick never fired.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]);
 
     const login = useCallback(async (email: string, password: string) => {
+        // SECURITY: Any fresh login must purge impersonation state to prevent stale ribbon
+        clearAllImpersonationState();
+        setImpersonation({ isImpersonating: false, hotelName: '', hotelId: null });
+
         try {
             const response = await api.post<LoginResponse | TwoFAResponse>('/iam/login', {
                 email,
@@ -219,6 +288,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const loginData = response.data as LoginResponse;
             if (loginData?.token) {
                 tokenStorage.setToken(loginData.token);
+                if ((loginData as any).refreshToken) tokenStorage.setRefreshToken((loginData as any).refreshToken);
                 await refreshProfile();
                 return { success: true };
             }
@@ -233,6 +303,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, [refreshProfile]);
 
     const verifyOTP = useCallback(async (userId: string, otp: string) => {
+        // SECURITY: Any fresh auth must purge impersonation state
+        clearAllImpersonationState();
+        setImpersonation({ isImpersonating: false, hotelName: '', hotelId: null });
+
         try {
             const response = await api.post<LoginResponse>('/iam/verify-otp', {
                 userId,
@@ -241,6 +315,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             if (response.data?.token) {
                 tokenStorage.setToken(response.data.token);
+                if ((response.data as any).refreshToken) tokenStorage.setRefreshToken((response.data as any).refreshToken);
                 await refreshProfile();
                 return { success: true };
             }
@@ -256,40 +331,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const endImpersonation = useCallback(async () => {
         try {
-            await api.post('/super-admin/end-impersonate');
+            const res = await api.post<{ restored: boolean; message?: string }>('/super-admin/end-impersonate');
 
-            localStorage.removeItem('impersonation_mode');
-            localStorage.removeItem('impersonation_hotel');
-            localStorage.removeItem('impersonation_hotel_id');
+            clearAllImpersonationState();
 
-            deleteCookie('impersonation_active');
-            deleteCookie('impersonation_hotel');
-            deleteCookie('impersonation_token');
-
-            window.location.href = '/dashboard/tenants';
-        } catch {
+            if (res.data?.restored) {
+                // Admin session restored successfully
+                window.location.href = '/admin/tenants';
+            } else {
+                // Backup token missing/invalid — force re-authentication as admin
+                tokenStorage.removeToken();
+                window.location.href = '/login?reason=impersonation_expired';
+            }
+        } catch (err) {
+            // If backend rejects (e.g., not in impersonation session, or backup invalid), force logout
             tokenStorage.removeToken();
-            localStorage.removeItem('impersonation_mode');
-            localStorage.removeItem('impersonation_hotel');
-            localStorage.removeItem('impersonation_hotel_id');
-            deleteCookie('impersonation_active');
-            deleteCookie('impersonation_hotel');
-            deleteCookie('impersonation_token');
-            deleteCookie('restored_token');
-            window.location.href = '/login';
+            clearAllImpersonationState();
+            const isForbidden = err instanceof ApiError && err.status === 403;
+            window.location.href = isForbidden ? '/login?reason=impersonation_forbidden' : '/login?reason=impersonation_error';
         }
     }, []);
 
     const logout = useCallback(() => {
         tokenStorage.removeToken();
         clearPlanCache();
-        localStorage.removeItem('impersonation_mode');
-        localStorage.removeItem('impersonation_hotel');
-        localStorage.removeItem('impersonation_hotel_id');
-        deleteCookie('impersonation_active');
-        deleteCookie('impersonation_hotel');
-        deleteCookie('impersonation_token');
-        deleteCookie('restored_token');
+        clearAllImpersonationState();
         setUser(null);
         setImpersonation({ isImpersonating: false, hotelName: '', hotelId: null });
         window.location.href = '/login';

@@ -1,13 +1,11 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import DashboardLayout from '@/components/layout/DashboardLayout';
-import PageContainer from '@/components/layout/PageContainer';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
-import { useProcurement, type PurchaseOrder, type CreatePOPayload, type PurchaseOrderStatus } from '@/lib/hooks/useProcurement';
+import { useProcurement, type PurchaseOrder, type CreatePOPayload, type PurchaseOrderStatus, type Vendor } from '@/lib/hooks/useProcurement';
 import { useInventory } from '@/lib/hooks/useInventory';
 import type { InventoryItem } from '@/lib/types/api.types';
 import {
@@ -29,8 +27,11 @@ import {
     Trash2,
     ThumbsUp,
     ThumbsDown,
+    Download,
 } from 'lucide-react';
+import { exportObjectsToCsv } from '@/lib/utils/export';
 
+import DateField from "@/components/ui/DateField";
 const formatCurrency = (amount: number | null | undefined) => `Rs ${(amount || 0).toLocaleString()}`;
 const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return '-';
@@ -93,7 +94,6 @@ function PORow({ po, onReceive, onCancel, onApprove, onReject, isExpanded, onTog
                     </div>
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: '14px' }}>{po.supplier}</td>
-                <td style={{ padding: '12px 16px', fontSize: '14px' }}>{po.items.length} items</td>
                 <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: '500' }}>{formatCurrency(po.totalAmount)}</td>
                 <td style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{formatDate(po.createdAt)}</td>
                 <td style={{ padding: '12px 16px' }}>
@@ -126,7 +126,7 @@ function PORow({ po, onReceive, onCancel, onApprove, onReject, isExpanded, onTog
             </tr>
             {isExpanded && (
                 <tr>
-                    <td colSpan={7} style={{ backgroundColor: 'var(--notion-bg-secondary)', padding: '16px' }}>
+                    <td colSpan={6} style={{ backgroundColor: 'var(--notion-bg-secondary)', padding: '16px' }}>
                         <div style={{ fontSize: '13px', fontWeight: '600', marginBottom: '8px' }}>Order Items</div>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
@@ -170,18 +170,231 @@ function TableSkeleton() {
 
 interface POLineItem {
     itemId: number | '';
+    itemName?: string;
     quantity: number;
     unitCost: number;
 }
 
-function CreatePOModal({ isOpen, onClose, onSubmit, inventoryItems }: {
+function SearchableItemSelect({ items, selectedId, onSelect, placeholder }: {
+    items: InventoryItem[];
+    selectedId: number | '';
+    onSelect: (id: number, item: InventoryItem) => void;
+    placeholder?: string;
+}) {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState('');
+    const containerRef = useRef<HTMLDivElement>(null);
+    const selected = items.find(i => i.id === selectedId);
+
+    useEffect(() => {
+        const handleClick = (e: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handleClick);
+        return () => document.removeEventListener('mousedown', handleClick);
+    }, []);
+
+    const filtered = useMemo(() => {
+        if (!query.trim()) return items.slice(0, 50);
+        const q = query.toLowerCase();
+        return items.filter(i => i.name.toLowerCase().includes(q)).slice(0, 50);
+    }, [items, query]);
+
+    return (
+        <div ref={containerRef} style={{ position: 'relative', flex: 2 }}>
+            <div
+                onClick={() => setOpen(!open)}
+                style={{
+                    padding: '8px 12px',
+                    backgroundColor: 'var(--notion-bg)',
+                    border: '1px solid var(--notion-border)',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '14px',
+                    color: selected ? 'var(--notion-text)' : 'var(--notion-text-muted)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                }}
+            >
+                <span>{selected ? selected.name : (placeholder || 'Select item')}</span>
+                <ChevronDown size={14} style={{ color: 'var(--notion-text-secondary)' }} />
+            </div>
+            {open && (
+                <div style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 4px)',
+                    left: 0,
+                    right: 0,
+                    backgroundColor: 'var(--notion-bg)',
+                    border: '1px solid var(--notion-border)',
+                    borderRadius: 'var(--radius-md)',
+                    boxShadow: 'var(--shadow-lg)',
+                    zIndex: 1000,
+                    maxHeight: '260px',
+                    overflowY: 'auto',
+                }}>
+                    <div style={{ padding: '8px', borderBottom: '1px solid var(--notion-border)' }}>
+                        <Input
+                            autoFocus
+                            value={query}
+                            onChange={e => setQuery(e.target.value)}
+                            placeholder="Search items..."
+                            icon={<Search size={14} />}
+                        />
+                    </div>
+                    {filtered.length === 0 && (
+                        <div style={{ padding: '12px', fontSize: '13px', color: 'var(--notion-text-secondary)', textAlign: 'center' }}>No items found</div>
+                    )}
+                    {filtered.map(item => (
+                        <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => { onSelect(item.id, item); setOpen(false); setQuery(''); }}
+                            style={{
+                                width: '100%',
+                                textAlign: 'left',
+                                padding: '8px 12px',
+                                background: selectedId === item.id ? 'var(--notion-blue-bg)' : 'none',
+                                border: 'none',
+                                borderBottom: '1px solid var(--notion-border)',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                color: 'var(--notion-text)',
+                            }}
+                        >
+                            <div style={{ fontWeight: 500 }}>{item.name}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)' }}>Stock: {item.currentStock ?? 0} | Cost: NPR {item.costPrice ?? 0}</div>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// Vendor picker: select a registered vendor, reuse the typed text as an ad-hoc
+// supplier, or create a new vendor inline — so POs link to consistent suppliers.
+function VendorCombobox({ vendors, value, selectedVendorId, onChange, onCreateVendor }: {
+    vendors: Vendor[];
+    value: string;
+    selectedVendorId?: number;
+    onChange: (name: string, vendorId?: number) => void;
+    onCreateVendor: (name: string) => Promise<Vendor | null>;
+}) {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState('');
+    const [creating, setCreating] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClick = (e: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handleClick);
+        return () => document.removeEventListener('mousedown', handleClick);
+    }, []);
+
+    const q = query.trim().toLowerCase();
+    const filtered = useMemo(
+        () => (!q ? vendors.slice(0, 50) : vendors.filter(v => v.name.toLowerCase().includes(q)).slice(0, 50)),
+        [vendors, q]
+    );
+    const exactMatch = vendors.some(v => v.name.trim().toLowerCase() === q);
+
+    const handleCreate = async () => {
+        const name = query.trim();
+        if (!name) return;
+        setCreating(true);
+        const vendor = await onCreateVendor(name);
+        setCreating(false);
+        if (vendor) {
+            onChange(vendor.name, vendor.id);
+            setOpen(false);
+            setQuery('');
+        }
+    };
+
+    return (
+        <div ref={containerRef} style={{ position: 'relative' }}>
+            <div
+                onClick={() => setOpen(!open)}
+                style={{
+                    padding: '8px 12px', backgroundColor: 'var(--notion-bg)',
+                    border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-sm)',
+                    fontSize: '14px', color: value ? 'var(--notion-text)' : 'var(--notion-text-muted)',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                }}
+            >
+                <span>{value || 'Select or add a vendor'}{selectedVendorId ? '' : value ? ' (ad-hoc)' : ''}</span>
+                <ChevronDown size={14} style={{ color: 'var(--notion-text-secondary)' }} />
+            </div>
+            {open && (
+                <div style={{
+                    position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
+                    backgroundColor: 'var(--notion-bg)', border: '1px solid var(--notion-border)',
+                    borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1000,
+                    maxHeight: '280px', overflowY: 'auto',
+                }}>
+                    <div style={{ padding: '8px', borderBottom: '1px solid var(--notion-border)' }}>
+                        <Input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Search or type a vendor name..." icon={<Search size={14} />} />
+                    </div>
+                    {filtered.map(v => (
+                        <button
+                            key={v.id}
+                            type="button"
+                            onClick={() => { onChange(v.name, v.id); setOpen(false); setQuery(''); }}
+                            style={{
+                                width: '100%', textAlign: 'left', padding: '8px 12px',
+                                background: selectedVendorId === v.id ? 'var(--notion-blue-bg)' : 'none',
+                                border: 'none', borderBottom: '1px solid var(--notion-border)',
+                                cursor: 'pointer', fontSize: '13px', color: 'var(--notion-text)',
+                            }}
+                        >
+                            <div style={{ fontWeight: 500 }}>{v.name}</div>
+                            {v.paymentTerms && <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)' }}>Terms: {v.paymentTerms}</div>}
+                        </button>
+                    ))}
+                    {query.trim() && !exactMatch && (
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <button
+                                type="button"
+                                onClick={() => { onChange(query.trim(), undefined); setOpen(false); }}
+                                style={{ width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', borderBottom: '1px solid var(--notion-border)', cursor: 'pointer', fontSize: '13px', color: 'var(--notion-text)' }}
+                            >
+                                Use “{query.trim()}” as supplier
+                            </button>
+                            <button
+                                type="button"
+                                disabled={creating}
+                                onClick={handleCreate}
+                                style={{ width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: 'var(--notion-blue)', display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                                <Plus size={13} /> {creating ? 'Adding…' : `Add new vendor “${query.trim()}”`}
+                            </button>
+                        </div>
+                    )}
+                    {filtered.length === 0 && !query.trim() && (
+                        <div style={{ padding: '12px', fontSize: '13px', color: 'var(--notion-text-secondary)', textAlign: 'center' }}>No vendors yet — type a name to add one</div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function CreatePOModal({ isOpen, onClose, onSubmit, inventoryItems, vendors, onCreateVendor }: {
     isOpen: boolean;
     onClose: () => void;
     onSubmit: (payload: CreatePOPayload) => Promise<boolean>;
     inventoryItems: InventoryItem[];
+    vendors: Vendor[];
+    onCreateVendor: (name: string) => Promise<Vendor | null>;
 }) {
     const [supplier, setSupplier] = useState('');
+    const [vendorId, setVendorId] = useState<number | undefined>(undefined);
     const [notes, setNotes] = useState('');
+    const [expectedDate, setExpectedDate] = useState('');
     const [items, setItems] = useState<POLineItem[]>([{ itemId: '', quantity: 1, unitCost: 0 }]);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -192,12 +405,9 @@ function CreatePOModal({ isOpen, onClose, onSubmit, inventoryItems }: {
         setItems(current => current.filter((_, itemIndex) => itemIndex !== index));
     };
 
-    const handleSelectItem = (index: number, itemId: number | '') => {
-        const selectedItem = inventoryItems.find(item => item.id === itemId);
-        setItems(current => current.map((item, itemIndex) => (
-            itemIndex === index
-                ? { ...item, itemId, unitCost: selectedItem?.costPrice || item.unitCost }
-                : item
+    const handleSelectItem = (index: number, itemId: number, item: InventoryItem) => {
+        setItems(current => current.map((it, i) => (
+            i === index ? { ...it, itemId, itemName: item.name, unitCost: item.costPrice || it.unitCost } : it
         )));
     };
 
@@ -214,17 +424,21 @@ function CreatePOModal({ isOpen, onClose, onSubmit, inventoryItems }: {
         setIsSubmitting(true);
         const success = await onSubmit({
             supplierName: supplier.trim(),
+            vendorId,
             items: items.map(item => ({
                 itemId: Number(item.itemId),
                 quantity: item.quantity,
                 unitCost: item.unitCost,
             })),
             notes: notes.trim() || undefined,
+            expectedDelivery: expectedDate || undefined,
         });
         setIsSubmitting(false);
         if (success) {
             setSupplier('');
+            setVendorId(undefined);
             setNotes('');
+            setExpectedDate('');
             setItems([{ itemId: '', quantity: 1, unitCost: 0 }]);
             onClose();
         }
@@ -234,13 +448,25 @@ function CreatePOModal({ isOpen, onClose, onSubmit, inventoryItems }: {
         <Modal isOpen={isOpen} onClose={onClose} title="Create Purchase Order" size="lg">
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                 <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Supplier Name *</label>
-                    <Input value={supplier} onChange={event => setSupplier(event.target.value)} placeholder="Enter supplier name" required />
+                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Supplier / Vendor *</label>
+                    <VendorCombobox
+                        vendors={vendors}
+                        value={supplier}
+                        selectedVendorId={vendorId}
+                        onChange={(name, id) => { setSupplier(name); setVendorId(id); }}
+                        onCreateVendor={onCreateVendor}
+                    />
                 </div>
 
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Notes</label>
-                    <Input value={notes} onChange={event => setNotes(event.target.value)} placeholder="Optional notes for the order" />
+                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                    <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Expected Delivery</label>
+                        <DateField value={expectedDate} onChange={setExpectedDate} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Notes</label>
+                        <Input value={notes} onChange={event => setNotes(event.target.value)} placeholder="Optional notes" />
+                    </div>
                 </div>
 
                 <div>
@@ -252,16 +478,11 @@ function CreatePOModal({ isOpen, onClose, onSubmit, inventoryItems }: {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                         {items.map((item, index) => (
                             <div key={index} style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', padding: 'var(--space-2)', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--notion-border)' }}>
-                                <Select
-                                    value={item.itemId}
-                                    onChange={event => handleSelectItem(index, event.target.value ? parseInt(event.target.value, 10) : '')}
-                                    required
-                                    fullWidth
-                                    style={{ flex: 2 }}
-                                    options={[
-                                        { value: '', label: 'Select inventory item' },
-                                        ...inventoryItems.map(inventoryItem => ({ value: inventoryItem.id, label: inventoryItem.name })),
-                                    ]}
+                                <SearchableItemSelect
+                                    items={inventoryItems}
+                                    selectedId={item.itemId}
+                                    onSelect={(id, itm) => handleSelectItem(index, id, itm)}
+                                    placeholder="Select inventory item"
                                 />
                                 <Input type="number" min={1} value={item.quantity} onChange={event => handleUpdateItem(index, 'quantity', parseInt(event.target.value, 10) || 1)} placeholder="Qty" style={{ flex: 0.7 }} required />
                                 <Input type="number" min={0} step="0.01" value={item.unitCost} onChange={event => handleUpdateItem(index, 'unitCost', parseFloat(event.target.value) || 0)} placeholder="Unit cost" style={{ flex: 1 }} required />
@@ -288,20 +509,43 @@ function CreatePOModal({ isOpen, onClose, onSubmit, inventoryItems }: {
 }
 
 export default function ProcurementPage() {
-    const { purchaseOrders, stats, isLoading, error, refresh, createPO, approvePO, rejectPO, receivePO, cancelPO } = useProcurement();
+    const { purchaseOrders, vendors, stats, isLoading, error, refresh, createPO, createVendor, approvePO, rejectPO, receivePO, cancelPO } = useProcurement();
     const { items: inventoryItems } = useInventory();
 
     const [searchQuery, setSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState<'ALL' | PurchaseOrderStatus>('ALL');
+    const [sortField, setSortField] = useState<'poNumber' | 'supplier' | 'totalAmount' | 'createdAt' | 'status'>('createdAt');
+    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
     const [expandedId, setExpandedId] = useState<number | null>(null);
     const [processingId, setProcessingId] = useState<number | null>(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-    const filteredPOs = useMemo(() => purchaseOrders.filter(po => {
-        const matchesSearch = po.poNumber.toLowerCase().includes(searchQuery.toLowerCase()) || po.supplier.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesStatus = filterStatus === 'ALL' || po.status === filterStatus;
-        return matchesSearch && matchesStatus;
-    }), [purchaseOrders, searchQuery, filterStatus]);
+    const handleSort = (field: typeof sortField) => {
+        if (sortField === field) {
+            setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortDir('asc');
+        }
+    };
+
+    const filteredPOs = useMemo(() => {
+        let data = purchaseOrders.filter(po => {
+            const matchesSearch = po.poNumber.toLowerCase().includes(searchQuery.toLowerCase()) || po.supplier.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchesStatus = filterStatus === 'ALL' || po.status === filterStatus;
+            return matchesSearch && matchesStatus;
+        });
+        data.sort((a, b) => {
+            let cmp = 0;
+            if (sortField === 'poNumber') cmp = a.poNumber.localeCompare(b.poNumber);
+            else if (sortField === 'supplier') cmp = a.supplier.localeCompare(b.supplier);
+            else if (sortField === 'totalAmount') cmp = a.totalAmount - b.totalAmount;
+            else if (sortField === 'status') cmp = a.status.localeCompare(b.status);
+            else cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+            return sortDir === 'asc' ? cmp : -cmp;
+        });
+        return data;
+    }, [purchaseOrders, searchQuery, filterStatus, sortField, sortDir]);
 
     const runAction = async (poId: number, action: (id: number) => Promise<boolean>) => {
         setProcessingId(poId);
@@ -309,9 +553,20 @@ export default function ProcurementPage() {
         setProcessingId(null);
     };
 
+    const handleExport = () => {
+        if (filteredPOs.length === 0) return;
+        exportObjectsToCsv('purchase-orders.csv', [
+            { header: 'PO Number', value: po => po.poNumber },
+            { header: 'Supplier', value: po => po.supplier },
+            { header: 'Status', value: po => po.status },
+            { header: 'Items', value: po => po.items.length },
+            { header: 'Total', value: po => po.totalAmount.toFixed(2) },
+            { header: 'Created', value: po => new Date(po.createdAt).toLocaleDateString() },
+        ], filteredPOs);
+    };
+
     return (
-        <DashboardLayout>
-            <PageContainer>
+        <>
                 <div style={{ padding: 'var(--space-6)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-6)', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
                         <div>
@@ -323,6 +578,7 @@ export default function ProcurementPage() {
                         </div>
                         <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
                             <Button variant="secondary" onClick={refresh} disabled={isLoading} icon={isLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}>Refresh</Button>
+                            <Button variant="secondary" onClick={handleExport} disabled={filteredPOs.length === 0} icon={<Download size={16} />}>Export</Button>
                             <Button variant="primary" icon={<Plus size={16} />} onClick={() => setIsCreateModalOpen(true)} disabled={inventoryItems.length === 0}>New PO</Button>
                         </div>
                     </div>
@@ -370,21 +626,44 @@ export default function ProcurementPage() {
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
                                 <tr style={{ backgroundColor: 'var(--notion-bg-secondary)' }}>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>PO #</th>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Supplier</th>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Items</th>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Total</th>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Created</th>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Status</th>
+                                    {([
+                                        { key: 'poNumber', label: 'PO #' },
+                                        { key: 'supplier', label: 'Supplier' },
+                                        { key: 'totalAmount', label: 'Total' },
+                                        { key: 'createdAt', label: 'Created' },
+                                        { key: 'status', label: 'Status' },
+                                    ] as { key: typeof sortField; label: string }[]).map(col => (
+                                        <th
+                                            key={col.key}
+                                            onClick={() => handleSort(col.key)}
+                                            style={{
+                                                padding: '12px 16px',
+                                                textAlign: 'left',
+                                                fontSize: '13px',
+                                                fontWeight: '600',
+                                                color: 'var(--notion-text-secondary)',
+                                                cursor: 'pointer',
+                                                userSelect: 'none',
+                                                whiteSpace: 'nowrap',
+                                            }}
+                                        >
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                {col.label}
+                                                {sortField === col.key && (
+                                                    sortDir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                                                )}
+                                            </span>
+                                        </th>
+                                    ))}
                                     <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {isLoading ? (
-                                    <tr><td colSpan={7}><TableSkeleton /></td></tr>
+                                    <tr><td colSpan={6}><TableSkeleton /></td></tr>
                                 ) : filteredPOs.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
+                                        <td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
                                             <Package size={32} style={{ marginBottom: '8px', opacity: 0.5 }} />
                                             <div>No purchase orders found</div>
                                         </td>
@@ -410,9 +689,7 @@ export default function ProcurementPage() {
                     {processingId !== null && <div style={{ marginTop: '12px', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Processing PO #{processingId}...</div>}
                     {inventoryItems.length === 0 && <div style={{ marginTop: '12px', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Add inventory items before creating a purchase order.</div>}
                 </div>
-            </PageContainer>
-
-            <CreatePOModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} onSubmit={createPO} inventoryItems={inventoryItems} />
-        </DashboardLayout>
+            <CreatePOModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} onSubmit={createPO} inventoryItems={inventoryItems} vendors={vendors} onCreateVendor={createVendor} />
+        </>
     );
 }

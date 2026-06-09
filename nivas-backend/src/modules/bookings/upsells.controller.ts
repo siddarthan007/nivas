@@ -74,7 +74,8 @@ export const upsellController = new Elysia({ prefix: '/upsells' })
 
         if (!booking) throw new NotFoundError('Booking');
 
-        const currentRoomType = booking.room.type;
+        const currentRoomType = (booking as any).room?.type;
+        if (!currentRoomType) return createResponse([], 'No room assigned — no upgrades available');
 
         const upgradeRules = await db.query.upsellRules.findMany({
             where: and(
@@ -150,9 +151,14 @@ export const upsellController = new Elysia({ prefix: '/upsells' })
         detail: { summary: 'Get check-in upsell options', tags: ['Upsells'] }
     })
     .patch('/:id', async ({ params, body, user }) => {
+        const allowed = ['name', 'triggerType', 'fromRoomType', 'toRoomType', 'serviceType', 'displayMessage', 'priority', 'isActive'];
+        const updateData: any = {};
+        for (const key of allowed) {
+            if ((body as any)[key] !== undefined) updateData[key] = (body as any)[key];
+        }
         const [updated] = await db.update(upsellRules)
             .set({
-                ...body,
+                ...updateData,
                 upgradePrice: body.upgradePrice?.toString(),
                 upgradePercentage: body.upgradePercentage?.toString(),
                 servicePrice: body.servicePrice?.toString()

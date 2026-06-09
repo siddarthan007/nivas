@@ -186,11 +186,51 @@ export function useHotelPlan() {
     }, [plan.features]);
 
     const isRoleAllowed = useCallback((roleName: string): boolean => {
-        // If no allowed roles set, allow all
+        // If no allowed roles set, allow all (backwards compat / default behavior)
         if (plan.allowedRoles.length === 0) return true;
-        // Owner is always allowed
-        if (roleName === 'Owner') return true;
-        return plan.allowedRoles.includes(roleName);
+        // Core roles are always allowed for any hotel
+        const normalizedCore = roleName.trim().toLowerCase();
+        if (normalizedCore === 'owner' || normalizedCore === 'manager') return true;
+        // Comprehensive plans (8+ roles) effectively allow everything
+        if (plan.allowedRoles.length >= 8) return true;
+
+        const normalized = roleName.trim().toLowerCase();
+
+        // Exact match
+        if (plan.allowedRoles.some(r => r.trim().toLowerCase() === normalized)) {
+            return true;
+        }
+
+        // Alias / fuzzy matching for common role name mismatches between plan UI and DB
+        const roleAliases: Record<string, string[]> = {
+            'manager': ['general manager', 'manager', 'gm'],
+            'front desk': ['front desk manager', 'receptionist', 'front desk', 'front office'],
+            'receptionist': ['front desk manager', 'receptionist', 'front desk', 'front office'],
+            'housekeeper': ['housekeeper', 'housekeeping', 'housekeeping supervisor'],
+            'housekeeping supervisor': ['housekeeper', 'housekeeping', 'housekeeping supervisor'],
+            'waiter': ['waiter', 'server', 'f&b', 'food and beverage'],
+            'chef': ['chef', 'kitchen manager', 'head chef', 'sous chef', 'f&b manager'],
+            'kitchen manager': ['chef', 'kitchen manager', 'head chef', 'f&b manager'],
+            'f&b manager': ['chef', 'kitchen manager', 'f&b manager', 'food and beverage manager'],
+            'accountant': ['accountant', 'accounts'],
+            'maintenance': ['maintenance', 'engineer', ' technician'],
+            'night auditor': ['night auditor', 'night audit', 'auditor'],
+            'concierge': ['concierge', 'guest relations'],
+            'revenue manager': ['revenue manager', 'revenue'],
+        };
+
+        const aliases = roleAliases[normalized];
+        if (aliases) {
+            return plan.allowedRoles.some(ar =>
+                aliases.some(alias => ar.trim().toLowerCase().includes(alias))
+            );
+        }
+
+        // Reverse check: if any allowed role is a substring of this role name
+        return plan.allowedRoles.some(ar => {
+            const a = ar.trim().toLowerCase();
+            return normalized.includes(a) || a.includes(normalized);
+        });
     }, [plan.allowedRoles]);
 
     return {

@@ -2,6 +2,7 @@ import { db } from '../../db';
 import { menuItems } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { NotFoundError } from '../../utils/errors';
+import { StorageService } from '../storage/storage.service';
 
 export const MenuService = {
     async createItem(hotelId: number, data: { name: string; description?: string; price: number; category?: string; imageUrl?: string; isAvailable?: boolean }) {
@@ -41,10 +42,19 @@ export const MenuService = {
     },
 
     async updateItem(hotelId: number, itemId: number, data: any) {
+        const allowed: Record<string, boolean> = {
+            name: true, description: true, price: true,
+            category: true, imageUrl: true, isAvailable: true, categoryId: true
+        };
+        const updateData: any = {};
+        for (const key of Object.keys(data)) {
+            if (allowed[key]) updateData[key] = data[key];
+        }
+
         const [updated] = await db.update(menuItems)
             .set({
-                ...data,
-                price: data.price ? data.price.toString() : undefined,
+                ...updateData,
+                price: updateData.price ? updateData.price.toString() : undefined,
                 updatedAt: new Date()
             })
             .where(and(
@@ -66,6 +76,8 @@ export const MenuService = {
             .returning();
 
         if (!deleted) throw new NotFoundError('Menu item');
+        // Hard-deleted → remove its image from object storage (best-effort).
+        await StorageService.deleteByUrl(deleted.imageUrl);
         return deleted;
     }
 };

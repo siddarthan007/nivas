@@ -10,7 +10,7 @@ import { LoginAnimation } from '@/components/auth/LoginAnimation';
 import { Mail, Lock, Hotel } from 'lucide-react';
 
 export default function LoginPage() {
-    const { login, verifyOTP, isAuthenticated } = useAuth();
+    const { login, verifyOTP, isAuthenticated, user } = useAuth();
     const router = useRouter();
 
     const [email, setEmail] = useState('');
@@ -26,10 +26,10 @@ export default function LoginPage() {
 
     // Redirect if already authenticated
     useEffect(() => {
-        if (isAuthenticated) {
-            router.push('/dashboard');
+        if (isAuthenticated && user) {
+            router.push(user.userType === 'SUPER_ADMIN' ? '/admin' : '/hotel');
         }
-    }, [isAuthenticated, router]);
+    }, [isAuthenticated, user, router]);
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
@@ -43,8 +43,7 @@ export default function LoginPage() {
                 setPendingUserId(result.userId);
                 setShowOTP(true);
             } else if (result.success) {
-                // Regular login success
-                router.push('/dashboard');
+                // Regular login success, useEffect will handle redirect
             } else {
                 setError(result.error || 'Login failed');
             }
@@ -65,7 +64,7 @@ export default function LoginPage() {
 
             if (result.success) {
                 setShowOTP(false);
-                router.push('/dashboard');
+                // useEffect will handle redirect
             } else {
                 setOtpError(result.error || 'Invalid code');
             }
@@ -87,7 +86,8 @@ export default function LoginPage() {
                 flex: 1,
                 display: 'none',
                 position: 'relative',
-                overflow: 'hidden'
+                overflow: 'hidden',
+                borderRight: '1px solid var(--notion-border)',
             }} className="login-animation-panel">
                 <LoginAnimation />
 
@@ -96,22 +96,41 @@ export default function LoginPage() {
                     position: 'absolute',
                     bottom: 'var(--space-8)',
                     left: 'var(--space-8)',
-                    zIndex: 10
+                    zIndex: 10,
                 }}>
-                    <h2 style={{
-                        fontSize: '24px',
-                        fontWeight: '700',
-                        color: '#1E293B',
-                        marginBottom: 'var(--space-2)'
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 'var(--space-3)',
+                        marginBottom: 'var(--space-4)',
                     }}>
-                        Nivas PMS
-                    </h2>
+                        <div style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: 'var(--radius-md)',
+                            backgroundColor: 'var(--notion-blue)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                        }}>
+                            <Hotel size={20} color="white" />
+                        </div>
+                        <h2 style={{
+                            fontSize: '22px',
+                            fontWeight: '700',
+                            color: 'var(--notion-text)',
+                            letterSpacing: '-0.01em',
+                        }}>
+                            Nivas PMS
+                        </h2>
+                    </div>
                     <p style={{
                         fontSize: '14px',
-                        color: '#64748B',
-                        maxWidth: '280px'
+                        color: 'var(--notion-text-secondary)',
+                        maxWidth: '300px',
+                        lineHeight: 1.5,
                     }}>
-                        Property Management System for modern hotels
+                        Modern property management system for hotels, resorts, and hospitality businesses.
                     </p>
                 </div>
             </div>

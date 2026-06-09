@@ -8,8 +8,10 @@ import { ValidationError } from '../../utils/errors';
 export const uploadController = new Elysia({ prefix: '/storage' })
     .use(authMiddleware)
     .post('/upload', async ({ body, user }) => {
-        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
-        const result = await StorageService.uploadFile(body.file, user.hotelId);
+        // Super-admin (no hotelId) uploads platform assets (e.g. tenant logos) →
+        // bucket them under prefix 0. Hotel staff use their own hotelId prefix.
+        const prefix = user?.hotelId ?? 0;
+        const result = await StorageService.uploadFile(body.file, prefix);
         return createResponse(result, 'File uploaded successfully');
     }, {
         isSignedIn: true,

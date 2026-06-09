@@ -59,6 +59,17 @@ export const folioController = new Elysia({ prefix: '/billing' })
             tags: ['Finance']
         }
     })
+    .post('/folio-charges/:id/move', async ({ params, body, user, request }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const ip = request.headers.get('x-forwarded-for') || undefined;
+        const moved = await FolioService.moveCharge(user.hotelId, user.id, parseInt(params.id), body.targetBookingId, ip);
+        return createResponse(moved, 'Charge moved to the selected booking');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.FINANCE.RECORD_PAYMENT,
+        body: t.Object({ targetBookingId: t.String() }),
+        detail: { summary: 'Move a folio charge to another booking (split bill / room transfer)', tags: ['Finance'] }
+    })
     .delete('/folio-charges/:id', async ({ params, user, request }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
 
@@ -70,6 +81,20 @@ export const folioController = new Elysia({ prefix: '/billing' })
         hasPermission: PERMISSIONS.FINANCE.VOID_INVOICE,
         detail: {
             summary: 'Void a folio charge',
+            tags: ['Finance']
+        }
+    })
+    .get('/customer/:guestId/folio', async ({ params, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+
+        const folio = await FolioService.getCustomerFolio(user.hotelId, params.guestId);
+        return createResponse(folio, 'Customer folio fetched successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.FINANCE.VIEW_RECORDS,
+        params: t.Object({ guestId: t.String() }),
+        detail: {
+            summary: 'Get unified folio for a specific customer',
             tags: ['Finance']
         }
     });

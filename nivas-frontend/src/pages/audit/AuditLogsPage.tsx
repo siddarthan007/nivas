@@ -7,6 +7,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
+import DateField from "@/components/ui/DateField";
 import {
     FileText,
     Download,
@@ -69,6 +70,8 @@ export default function AuditLogsPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedAction, setSelectedAction] = useState('');
     const [selectedEntity, setSelectedEntity] = useState('');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
     const [showFilters, setShowFilters] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isDeleting, setIsDeleting] = useState(false);
@@ -93,10 +96,16 @@ export default function AuditLogsPage() {
         // Hide impersonation audit logs from hotel owners and staff
         if (!isSuperAdmin && (log.action || '').toLowerCase().includes('impersonat')) return false;
 
+        // Date-range filter (inclusive) on the log timestamp.
+        const ts = (log as any).createdAt || (log as any).timestamp;
+        if (dateFrom && ts && new Date(ts) < new Date(`${dateFrom}T00:00:00`)) return false;
+        if (dateTo && ts && new Date(ts) > new Date(`${dateTo}T23:59:59`)) return false;
+
+        const q = searchQuery.toLowerCase();
         return (
-            (log.userName?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-            (log.action?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-            (log.entityType?.toLowerCase() || '').includes(searchQuery.toLowerCase())
+            (log.userName?.toLowerCase() || '').includes(q) ||
+            (log.action?.toLowerCase() || '').includes(q) ||
+            (log.entityType?.toLowerCase() || '').includes(q)
         );
     });
 
@@ -237,7 +246,9 @@ export default function AuditLogsPage() {
                                     onChange={e => setSelectedAction(e.target.value)}
                                     options={[
                                         { value: '', label: 'All Actions' },
-                                        ...actionTypes.map(action => ({ value: action, label: action })),
+                                        ...actionTypes
+                                            .filter(action => isSuperAdmin || !action.toLowerCase().includes('impersonat'))
+                                            .map(action => ({ value: action, label: action })),
                                     ]}
                                 />
 
@@ -250,9 +261,17 @@ export default function AuditLogsPage() {
                                     ]}
                                 />
 
+                                <div style={{ width: 150 }}><DateField value={dateFrom} onChange={setDateFrom} placeholder="From date" /></div>
+                                <div style={{ width: 150 }}><DateField value={dateTo} onChange={setDateTo} placeholder="To date" /></div>
+
                                 <Button size="sm" onClick={handleApplyFilters}>
                                     Apply Filters
                                 </Button>
+                                {(dateFrom || dateTo || selectedAction || selectedEntity) && (
+                                    <Button size="sm" variant="ghost" onClick={() => { setDateFrom(''); setDateTo(''); setSelectedAction(''); setSelectedEntity(''); }}>
+                                        Clear
+                                    </Button>
+                                )}
                             </div>
                         )}
 
@@ -464,7 +483,7 @@ export default function AuditLogsPage() {
                         left: 0,
                         right: 0,
                         bottom: 0,
-                        backgroundColor: 'rgba(0,0,0,0.5)',
+                        backgroundColor: 'var(--notion-overlay)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -511,7 +530,7 @@ export default function AuditLogsPage() {
                                     disabled={isDeleting}
                                     style={{
                                         backgroundColor: 'var(--notion-red)',
-                                        color: 'white',
+                                        color: 'var(--foreground-inverse)',
                                     }}
                                 >
                                     {isDeleting ? 'Deleting...' : 'Delete Permanently'}

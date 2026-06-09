@@ -8,6 +8,7 @@ import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
+import SearchableSelect from '@/components/ui/SearchableSelect';
 import EmptyState from '@/components/ui/EmptyState';
 import { Skeleton, SkeletonCard } from '@/components/ui/Skeleton';
 import {
@@ -29,12 +30,12 @@ const STATUS_COLORS: Record<HousekeepingStatus, { bg: string; text: string; labe
     PENDING: { bg: 'var(--notion-yellow-bg)', text: 'var(--notion-orange)', label: 'Pending' },
     IN_PROGRESS: { bg: 'var(--notion-blue-bg)', text: 'var(--notion-blue)', label: 'In Progress' },
     COMPLETED: { bg: 'var(--notion-green-bg)', text: 'var(--notion-green)', label: 'Completed' },
-    DONE: { bg: 'rgba(120,120,120,0.2)', text: '#666', label: 'Done' },
+    DONE: { bg: 'var(--notion-bg-hover)', text: 'var(--notion-text-secondary)', label: 'Done' },
 };
 
 // Priority colors
 const PRIORITY_COLORS: Record<HousekeepingPriority, { bg: string; text: string }> = {
-    LOW: { bg: 'rgba(120,120,120,0.2)', text: '#666' },
+    LOW: { bg: 'var(--notion-bg-hover)', text: 'var(--notion-text-secondary)' },
     NORMAL: { bg: 'var(--notion-blue-bg)', text: 'var(--notion-blue)' },
     HIGH: { bg: 'var(--notion-yellow-bg)', text: 'var(--notion-orange)' },
     URGENT: { bg: 'var(--notion-red-bg)', text: 'var(--notion-red)' },
@@ -218,7 +219,8 @@ function KanbanColumn({
     color,
     onStart,
     onComplete,
-    onDelete
+    onDelete,
+    collapsible = false,
 }: {
     title: string;
     tasks: HousekeepingTask[];
@@ -226,7 +228,13 @@ function KanbanColumn({
     onStart: (id: number) => void;
     onComplete: (id: number) => void;
     onDelete: (task: HousekeepingTask) => void;
+    collapsible?: boolean;
 }) {
+    const [expanded, setExpanded] = useState(false);
+    const VISIBLE = 3;
+    const stackMode = collapsible && !expanded && tasks.length > VISIBLE;
+    const visible = stackMode ? tasks.slice(0, VISIBLE) : tasks;
+    const stackedCount = tasks.length - VISIBLE;
     return (
         <div style={{
             flex: 1,
@@ -282,15 +290,43 @@ function KanbanColumn({
                         No tasks
                     </div>
                 ) : (
-                    tasks.map(task => (
-                        <TaskCard
-                            key={task.id}
-                            task={task}
-                            onStart={() => onStart(task.id)}
-                            onComplete={() => onComplete(task.id)}
-                            onDelete={() => onDelete(task)}
-                        />
-                    ))
+                    <>
+                        {visible.map(task => (
+                            <TaskCard
+                                key={task.id}
+                                task={task}
+                                onStart={() => onStart(task.id)}
+                                onComplete={() => onComplete(task.id)}
+                                onDelete={() => onDelete(task)}
+                            />
+                        ))}
+                        {stackMode && (
+                            <button
+                                onClick={() => setExpanded(true)} title="Show all completed"
+                                style={{ position: 'relative', height: 64, marginTop: 8, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, width: '100%' }}
+                                onMouseEnter={e => { e.currentTarget.querySelectorAll('.stack-card').forEach((el, i) => ((el as HTMLElement).style.transform = `translateY(${i * -10}px) rotate(${(i - 1) * 1.5}deg)`)); }}
+                                onMouseLeave={e => { e.currentTarget.querySelectorAll('.stack-card').forEach((el, i) => ((el as HTMLElement).style.transform = `translateY(${i * 4}px) scale(${1 - i * 0.04})`)); }}
+                            >
+                                {[0, 1, 2].map(i => (
+                                    <div key={i} className="stack-card" style={{
+                                        position: 'absolute', left: 0, right: 0, top: 0, height: 44,
+                                        background: 'var(--notion-bg-secondary)', border: '1px solid var(--notion-border)',
+                                        borderRadius: 'var(--radius-md)', borderLeft: `4px solid ${color}`,
+                                        transform: `translateY(${i * 4}px) scale(${1 - i * 0.04})`,
+                                        transition: 'transform 180ms ease', zIndex: 3 - i, boxShadow: '0 2px 6px rgba(0,0,0,0.12)',
+                                    }} />
+                                ))}
+                                <span style={{ position: 'absolute', inset: 0, zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: 'var(--notion-text)' }}>
+                                    +{stackedCount} more completed — view
+                                </span>
+                            </button>
+                        )}
+                        {collapsible && expanded && tasks.length > VISIBLE && (
+                            <button onClick={() => setExpanded(false)} style={{ marginTop: 4, padding: '6px', border: '1px dashed var(--notion-border)', borderRadius: 'var(--radius-md)', background: 'transparent', color: 'var(--notion-text-secondary)', cursor: 'pointer', fontSize: 12 }}>
+                                Collapse completed
+                            </button>
+                        )}
+                    </>
                 )}
             </div>
         </div>
@@ -307,7 +343,7 @@ function TaskFormModal({
     isOpen: boolean;
     onClose: () => void;
     onSubmit: (data: CreateHousekeepingPayload) => Promise<void>;
-    rooms: { id: number; number: number }[];
+    rooms: { id: number; number: number; currentBooking?: { id: string; guestName: string } | null }[];
 }) {
     const [formData, setFormData] = useState<CreateHousekeepingPayload>({
         roomId: 0,
@@ -315,6 +351,20 @@ function TaskFormModal({
         priority: 'NORMAL',
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const selectedRoom = rooms.find(r => r.id === formData.roomId);
+    const linkedBooking = selectedRoom?.currentBooking;
+
+    const handleRoomChange = (val: string | number) => {
+        const roomId = Number(val);
+        if (!roomId) return;
+        const room = rooms.find(r => r.id === roomId);
+        setFormData({
+            ...formData,
+            roomId,
+            bookingId: room?.currentBooking?.id || undefined,
+        });
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -330,18 +380,37 @@ function TaskFormModal({
         <Modal isOpen={isOpen} onClose={onClose} title="New Task">
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                 <div>
-                    <Select
+                    <SearchableSelect
                         label="Room *"
-                        value={formData.roomId}
-                        onChange={e => setFormData({ ...formData, roomId: parseInt(e.target.value) })}
-                        required
+                        value={formData.roomId || null}
+                        onChange={handleRoomChange}
                         fullWidth
-                        options={[
-                            { value: 0, label: 'Select Room' },
-                            ...rooms.map(room => ({ value: room.id, label: `Room ${room.number}` })),
-                        ]}
+                        placeholder="Select Room"
+                        searchPlaceholder="Search rooms..."
+                        options={rooms.map(room => ({
+                            value: room.id,
+                            label: `Room ${room.number}`,
+                            subtitle: room.currentBooking ? `Occupied — ${room.currentBooking.guestName}` : 'Vacant'
+                        }))}
                     />
                 </div>
+
+                {linkedBooking && (
+                    <div style={{
+                        padding: 'var(--space-3)',
+                        backgroundColor: 'var(--notion-blue-bg)',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--notion-border)',
+                    }}>
+                        <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Linked Booking</div>
+                        <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--notion-text)' }}>
+                            {linkedBooking.guestName}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)', fontFamily: 'monospace' }}>
+                            Booking: {linkedBooking.id}
+                        </div>
+                    </div>
+                )}
 
                 <div>
                     <Select
@@ -360,18 +429,6 @@ function TaskFormModal({
                         onChange={e => setFormData({ ...formData, priority: e.target.value as HousekeepingPriority })}
                         fullWidth
                         options={PRIORITIES.map(priority => ({ value: priority, label: priority }))}
-                    />
-                </div>
-
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Booking ID (optional)
-                    </label>
-                    <Input
-                        type="text"
-                        value={formData.bookingId || ''}
-                        onChange={e => setFormData({ ...formData, bookingId: e.target.value })}
-                        placeholder="Link to an active booking"
                     />
                 </div>
 
@@ -409,7 +466,7 @@ export default function HousekeepingPage() {
         await createTask(data);
     };
 
-    const roomsList = rooms.map(r => ({ id: r.id, number: r.number }));
+    const roomsList = rooms.map(r => ({ id: r.id, number: r.number, currentBooking: r.currentBooking }));
 
     return (
         <DashboardLayout>
@@ -531,6 +588,7 @@ export default function HousekeepingPage() {
                                 title="Completed"
                                 tasks={completedTasks}
                                 color="var(--notion-green)"
+                                collapsible
                                 onStart={startTask}
                                 onComplete={completeTask}
                                 onDelete={(task) => setDeleteTarget(task)}

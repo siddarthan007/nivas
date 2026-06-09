@@ -4,24 +4,56 @@ import { eq, and, desc, ilike, or, inArray, gte, lte, type SQL } from 'drizzle-o
 import { NotFoundError, ValidationError } from '../../utils/errors';
 
 export const GuestService = {
-    async createGuest(hotelId: number, data: { fullName: string; phone?: string; email?: string; idType?: string; idNumber?: string; address?: string; notes?: string; nationality?: string }) {
-        const [newGuest] = await db.insert(guests).values({
+    async createGuest(hotelId: number, data: {
+        firstName?: string;
+        lastName?: string;
+        fullName: string;
+        uniqueId?: string;
+        phone?: string;
+        email?: string;
+        fatherName?: string;
+        dob?: string;
+        occupation?: string;
+        nationality?: string;
+        address?: string;
+        city?: string;
+        country?: string;
+        idType?: string;
+        idNumber?: string;
+        panNumber?: string;
+        openingDueAmount?: string;
+        photoUrl?: string;
+        signatureUrl?: string;
+        customerType?: 'HOTEL_GUEST' | 'RESTAURANT_CUSTOMER' | 'BOTH';
+        notes?: string;
+    }) {
+        const insertData = {
             hotelId,
-            ...data
-        }).returning();
+            ...data,
+            openingDueAmount: data.openingDueAmount ?? '0',
+        };
+        const [newGuest] = await db.insert(guests).values(insertData as any).returning();
         return newGuest;
     },
 
-    async findGuests(hotelId: number, filters: { query?: string; isVip?: boolean; isBanned?: boolean; nationality?: string; roomNumber?: string; dateOfStay?: string }) {
+    async findGuests(hotelId: number, filters: { query?: string; isVip?: boolean; isBanned?: boolean; nationality?: string; roomNumber?: string; dateOfStay?: string; customerType?: string }) {
         const conditions: SQL[] = [eq(guests.hotelId, hotelId)];
+
+        if (filters.customerType) {
+            conditions.push(eq(guests.customerType, filters.customerType as any));
+        }
 
         if (filters.query) {
             const search = `%${filters.query}%`;
             conditions.push(or(
                 ilike(guests.fullName, search),
+                ilike(guests.firstName, search),
+                ilike(guests.lastName, search),
+                ilike(guests.uniqueId, search),
                 ilike(guests.phone, search),
                 ilike(guests.email, search),
-                ilike(guests.idNumber, search)
+                ilike(guests.idNumber, search),
+                ilike(guests.panNumber, search)
             )!);
         }
 
@@ -93,42 +125,92 @@ export const GuestService = {
             where: and(eq(bookings.guestId, guestId), eq(bookings.hotelId, hotelId)),
             columns: { id: true }
         });
-
         const bookingIds = guestBookings.map(b => b.id);
+
+        // Get all orders directly linked to this guest (restaurant-only customers)
+        const guestOrders = await db.query.orders.findMany({
+            where: and(eq(orders.guestId, guestId), eq(orders.hotelId, hotelId)),
+            columns: { id: true }
+        });
+        const orderIds = guestOrders.map(o => o.id);
 
         let guestInvoices: any[] = [];
         let guestPayments: any[] = [];
 
         if (bookingIds.length > 0) {
             // Fetch Invoices linked to bookings
-            guestInvoices = await db.query.invoices.findMany({
+            const bookingInvoices = await db.query.invoices.findMany({
                 where: and(
                     eq(invoices.hotelId, hotelId),
                     inArray(invoices.bookingId, bookingIds)
                 ),
                 orderBy: desc(invoices.createdAt)
             });
+            guestInvoices.push(...bookingInvoices);
 
             // Fetch Payments linked to bookings
-            guestPayments = await db.query.payments.findMany({
+            const bookingPayments = await db.query.payments.findMany({
                 where: and(
                     eq(payments.hotelId, hotelId),
                     inArray(payments.bookingId, bookingIds)
                 ),
                 orderBy: desc(payments.createdAt)
             });
+            guestPayments.push(...bookingPayments);
         }
 
-        // Calculate totals
+        // Fetch all orders linked to this guest (directly or via bookings)
+        let allOrderIds = [...new Set([...orderIds])];
+        if (bookingIds.length > 0) {
+            const bookingOrders = await db.query.orders.findMany({
+                where: and(
+                    eq(orders.hotelId, hotelId),
+                    inArray(orders.bookingId, bookingIds)
+                ),
+                columns: { id: true }
+            });
+            allOrderIds = [...new Set([...allOrderIds, ...bookingOrders.map(o => o.id)])];
+        }
+
+        let guestOrdersList: any[] = [];
+        if (allOrderIds.length > 0) {
+            guestOrdersList = await db.query.orders.findMany({
+                where: and(
+                    eq(orders.hotelId, hotelId),
+                    inArray(orders.id, allOrderIds)
+                ),
+                orderBy: desc(orders.createdAt)
+            });
+
+            // Fetch Payments linked to orders (restaurant orders)
+            const orderPayments = await db.query.payments.findMany({
+                where: and(
+                    eq(payments.hotelId, hotelId),
+                    inArray(payments.orderId, allOrderIds)
+                ),
+                orderBy: desc(payments.createdAt)
+            });
+            // Avoid duplicates if payment is linked to both booking and order
+            const existingPaymentIds = new Set(guestPayments.map(p => p.id));
+            guestPayments.push(...orderPayments.filter(p => !existingPaymentIds.has(p.id)));
+        }
+
+        // Calculate totals: invoices + ONLY un-invoiced orders. An order whose
+        // booking already has an invoice was consolidated into that invoice at
+        // checkout — counting both double-charges the guest.
+        const invoicedBookingIds = new Set(guestInvoices.map((i: any) => i.bookingId).filter(Boolean));
+        const uninvoicedOrders = guestOrdersList.filter((o: any) => !o.bookingId || !invoicedBookingIds.has(o.bookingId));
         const totalInvoiced = guestInvoices.reduce((sum, inv) => sum + Number(inv.grandTotal || 0), 0);
+        const totalOrders = uninvoicedOrders.reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
         const totalPaid = guestPayments.reduce((sum, pay) => sum + Number(pay.amount || 0), 0);
-        const balance = totalInvoiced - totalPaid;
+        const balance = (totalInvoiced + totalOrders) - totalPaid;
 
         return {
             invoices: guestInvoices,
             payments: guestPayments,
+            orders: guestOrdersList,
             stats: {
-                totalInvoiced,
+                totalInvoiced: totalInvoiced + totalOrders,
                 totalPaid,
                 balance
             }
@@ -151,6 +233,17 @@ export const GuestService = {
                             orderBy: desc(orders.createdAt)
                         }
                     }
+                },
+                orders: {
+                    limit: 10,
+                    orderBy: desc(orders.createdAt),
+                    with: {
+                        items: {
+                            with: {
+                                menuItem: true
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -160,8 +253,21 @@ export const GuestService = {
     },
 
     async updateGuest(hotelId: number, guestId: string, data: Partial<typeof guests.$inferInsert>) {
+        const allowed = [
+            'firstName', 'lastName', 'fullName', 'uniqueId', 'phone', 'email',
+            'fatherName', 'dob', 'occupation', 'nationality',
+            'address', 'city', 'country',
+            'idType', 'idNumber', 'panNumber',
+            'openingDueAmount', 'photoUrl', 'signatureUrl', 'customerType',
+            'notes', 'isVip', 'isBanned'
+        ];
+        const updateData: any = {};
+        const raw = data as any;
+        for (const key of allowed) {
+            if (raw[key] !== undefined) updateData[key] = raw[key];
+        }
         const [updated] = await db.update(guests)
-            .set({ ...data, updatedAt: new Date() })
+            .set({ ...updateData, updatedAt: new Date() })
             .where(and(
                 eq(guests.id, guestId),
                 eq(guests.hotelId, hotelId)
@@ -178,7 +284,7 @@ export const GuestService = {
             where: and(
                 eq(bookings.guestId, guestId),
                 eq(bookings.hotelId, hotelId),
-                inArray(bookings.status, ['CONFIRMED', 'CHECKED_IN'] as any)
+                inArray(bookings.status, ['CONFIRMED', 'CHECKED_IN'])
             )
         });
 

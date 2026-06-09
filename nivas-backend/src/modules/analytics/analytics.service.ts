@@ -1,6 +1,6 @@
 import { db } from '../../db';
-import { bookings, orders, rooms, payments, housekeepingTasks, hotels, users, shifts, nightAudits } from '../../db/schema';
-import { eq, and, sql, gte, lte, count, sum, lt, desc } from 'drizzle-orm';
+import { bookings, orders, rooms, payments, housekeepingTasks, hotels, users, shifts, nightAudits, invoices, menuItems, purchaseOrders, guests } from '../../db/schema';
+import { eq, and, sql, gte, lte, count, sum, lt, desc, isNotNull } from 'drizzle-orm';
 
 export const AnalyticsService = {
     async getRealtimeDashboard(hotelId: number) {
@@ -9,70 +9,85 @@ export const AnalyticsService = {
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
 
-        const [activeBookings] = await db.select({ value: count() })
-            .from(bookings)
-            .where(and(
-                eq(bookings.hotelId, hotelId),
-                eq(bookings.status, 'CHECKED_IN')
-            ));
+        // These 17 metrics are independent — run them concurrently (one round of
+        // parallel queries) instead of 17 sequential round-trips.
+        const [
+            [activeBookings],
+            [pendingOrders],
+            [todayRevenue],
+            roomStatusBreakdown,
+            [totalRooms],
+            [pendingHousekeeping],
+            [todayCheckIns],
+            [todayCheckOuts],
+            [todayUnpaid],
+            [todayDiscount],
+            [totalDue],
+            [totalPurchase],
+            [totalOrders],
+            [qrOrders],
+            [totalMenuItems],
+            [totalEmployees],
+            [totalAdvancePayments],
+        ] = await Promise.all([
+            db.select({ value: count() }).from(bookings)
+                .where(and(eq(bookings.hotelId, hotelId), eq(bookings.status, 'CHECKED_IN'))),
+            db.select({ value: count() }).from(orders)
+                .where(and(eq(orders.hotelId, hotelId), eq(orders.status, 'PENDING'))),
+            db.select({ value: sum(payments.amount) }).from(payments)
+                .where(and(eq(payments.hotelId, hotelId), gte(payments.createdAt, today), lt(payments.createdAt, tomorrow))),
+            db.select({ status: rooms.status, count: count() }).from(rooms)
+                .where(eq(rooms.hotelId, hotelId)).groupBy(rooms.status),
+            db.select({ value: count() }).from(rooms).where(eq(rooms.hotelId, hotelId)),
+            db.select({ value: count() }).from(housekeepingTasks)
+                .where(and(eq(housekeepingTasks.hotelId, hotelId), eq(housekeepingTasks.status, 'PENDING'))),
+            db.select({ value: count() }).from(bookings)
+                .where(and(eq(bookings.hotelId, hotelId), gte(bookings.checkIn, today), lt(bookings.checkIn, tomorrow))),
+            db.select({ value: count() }).from(bookings)
+                .where(and(eq(bookings.hotelId, hotelId), gte(bookings.checkOut, today), lt(bookings.checkOut, tomorrow))),
+            db.select({ value: sum(invoices.grandTotal) }).from(invoices)
+                .where(and(eq(invoices.hotelId, hotelId), eq(invoices.paymentStatus, 'UNPAID'), gte(invoices.createdAt, today), lt(invoices.createdAt, tomorrow))),
+            db.select({ value: sum(invoices.discountAmount) }).from(invoices)
+                .where(and(eq(invoices.hotelId, hotelId), gte(invoices.createdAt, today), lt(invoices.createdAt, tomorrow))),
+            db.select({ value: sum(invoices.grandTotal) }).from(invoices)
+                .where(and(eq(invoices.hotelId, hotelId), eq(invoices.paymentStatus, 'UNPAID'))),
+            db.select({ value: sum(purchaseOrders.totalCost) }).from(purchaseOrders)
+                .where(and(eq(purchaseOrders.hotelId, hotelId), gte(purchaseOrders.createdAt, today), lt(purchaseOrders.createdAt, tomorrow))),
+            db.select({ value: count() }).from(orders)
+                .where(and(eq(orders.hotelId, hotelId), gte(orders.createdAt, today), lt(orders.createdAt, tomorrow))),
+            db.select({ value: count() }).from(orders)
+                .where(and(eq(orders.hotelId, hotelId), eq(orders.orderType, 'QR'), gte(orders.createdAt, today), lt(orders.createdAt, tomorrow))),
+            db.select({ value: count() }).from(menuItems).where(eq(menuItems.hotelId, hotelId)),
+            db.select({ value: count() }).from(users)
+                .where(and(eq(users.hotelId, hotelId), eq(users.isActive, true))),
+            db.select({ value: sum(bookings.advancePayment) }).from(bookings)
+                .where(and(eq(bookings.hotelId, hotelId), sql`${bookings.advancePayment} > 0`)),
+        ]);
 
-        const [pendingOrders] = await db.select({ value: count() })
-            .from(orders)
-            .where(and(
-                eq(orders.hotelId, hotelId),
-                eq(orders.status, 'PENDING')
-            ));
-
-        // Today's revenue
-        const [todayRevenue] = await db.select({ value: sum(payments.amount) })
-            .from(payments)
-            .where(and(
-                eq(payments.hotelId, hotelId),
-                gte(payments.createdAt, today),
-                lt(payments.createdAt, tomorrow)
-            ));
-
-        // Room status breakdown
-        const roomStatusBreakdown = await db.select({
-            status: rooms.status,
-            count: count()
-        })
-            .from(rooms)
-            .where(eq(rooms.hotelId, hotelId))
-            .groupBy(rooms.status);
-
-        // Calculate occupancy
-        const [totalRooms] = await db.select({ value: count() })
-            .from(rooms)
-            .where(eq(rooms.hotelId, hotelId));
-
+        // Occupancy from the room-status breakdown
         const occupiedCount = roomStatusBreakdown.find(r => r.status === 'OCCUPIED')?.count ?? 0;
         const occupancyRate = totalRooms?.value ? ((occupiedCount / totalRooms.value) * 100).toFixed(1) : 0;
 
-        // Pending housekeeping tasks
-        const [pendingHousekeeping] = await db.select({ value: count() })
-            .from(housekeepingTasks)
-            .where(and(
-                eq(housekeepingTasks.hotelId, hotelId),
-                eq(housekeepingTasks.status, 'PENDING')
-            ));
+        // Today's profit = revenue - discount - purchase
+        const todayProfit = parseFloat(todayRevenue?.value ?? '0')
+            - parseFloat(todayDiscount?.value ?? '0')
+            - parseFloat(totalPurchase?.value ?? '0');
 
-        // Today's check-ins/check-outs
-        const [todayCheckIns] = await db.select({ value: count() })
-            .from(bookings)
+        // Best hour (last 30 days) from orders
+        const thirtyDaysAgo = new Date(today);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const ordersByHour = await db.select({
+            hour: sql<string>`EXTRACT(HOUR FROM ${orders.createdAt})`,
+            count: count()
+        })
+            .from(orders)
             .where(and(
-                eq(bookings.hotelId, hotelId),
-                gte(bookings.checkIn, today),
-                lt(bookings.checkIn, tomorrow)
-            ));
-
-        const [todayCheckOuts] = await db.select({ value: count() })
-            .from(bookings)
-            .where(and(
-                eq(bookings.hotelId, hotelId),
-                gte(bookings.checkOut, today),
-                lt(bookings.checkOut, tomorrow)
-            ));
+                eq(orders.hotelId, hotelId),
+                gte(orders.createdAt, thirtyDaysAgo)
+            ))
+            .groupBy(sql`EXTRACT(HOUR FROM ${orders.createdAt})`)
+            .orderBy(desc(count()));
+        const bestHour = ordersByHour[0]?.hour != null ? `${ordersByHour[0].hour}:00` : '--';
 
         return {
             realtime: {
@@ -84,7 +99,24 @@ export const AnalyticsService = {
             today: {
                 revenue: parseFloat(todayRevenue?.value ?? '0'),
                 expectedCheckIns: todayCheckIns?.value ?? 0,
-                expectedCheckOuts: todayCheckOuts?.value ?? 0
+                expectedCheckOuts: todayCheckOuts?.value ?? 0,
+                unpaid: parseFloat(todayUnpaid?.value ?? '0'),
+                discount: parseFloat(todayDiscount?.value ?? '0'),
+                totalPurchase: parseFloat(totalPurchase?.value ?? '0'),
+                totalOrders: totalOrders?.value ?? 0,
+                qrOrders: qrOrders?.value ?? 0,
+                todayProfit,
+                bestHour,
+            },
+            financials: {
+                totalDue: parseFloat(totalDue?.value ?? '0'),
+                totalAdvancePayments: parseFloat(totalAdvancePayments?.value ?? '0'),
+            },
+            inventory: {
+                totalMenuItems: totalMenuItems?.value ?? 0,
+            },
+            staff: {
+                totalEmployees: totalEmployees?.value ?? 0,
             },
             rooms: {
                 total: totalRooms?.value ?? 0,
@@ -151,25 +183,132 @@ export const AnalyticsService = {
         const previousTotal = parseFloat(prevPeriodTotal?.value ?? '0');
         const growthRate = previousTotal > 0 ? (((currentTotal - previousTotal) / previousTotal) * 100).toFixed(1) : 0;
 
+        // Daily F&B orders trend
+        const dailyFb = await db.select({
+            date: sql<string>`DATE(${orders.createdAt})`,
+            total: sum(orders.totalAmount),
+            count: count()
+        })
+            .from(orders)
+            .where(and(
+                eq(orders.hotelId, hotelId),
+                gte(orders.createdAt, startDate),
+                eq(orders.status, 'SERVED')
+            ))
+            .groupBy(sql`DATE(${orders.createdAt})`)
+            .orderBy(sql`DATE(${orders.createdAt})`);
+
+        // Split revenue straight from the SAME payments that make up the total:
+        // room/booking payments (bookingId) vs F&B order payments (orderId). The old
+        // night-audit derivation read 0 when an audit hadn't aggregated yet, dumping
+        // everything into "Other".
+        const [roomPay] = await db.select({ v: sum(payments.amount) }).from(payments)
+            .where(and(eq(payments.hotelId, hotelId), gte(payments.createdAt, startDate), isNotNull(payments.bookingId)));
+        const [fbPay] = await db.select({ v: sum(payments.amount) }).from(payments)
+            .where(and(eq(payments.hotelId, hotelId), gte(payments.createdAt, startDate), isNotNull(payments.orderId)));
+        const roomRev = parseFloat(roomPay?.v ?? '0');
+        const fbRev = parseFloat(fbPay?.v ?? '0');
+        const otherRev = Math.max(0, currentTotal - roomRev - fbRev);
+
         return {
-            period: { days, startDate: startDate.toISOString().split('T')[0] },
-            summary: {
-                totalRevenue: currentTotal,
-                previousPeriod: previousTotal,
-                growthRate: parseFloat(growthRate as string),
-                trend: currentTotal >= previousTotal ? 'UP' : 'DOWN'
-            },
-            daily: dailyRevenue.map(d => ({
-                date: d.date,
-                revenue: parseFloat(d.total ?? '0'),
-                transactions: d.count
-            })),
-            byPaymentMethod: revenueByMethod.map(m => ({
-                method: m.method,
-                total: parseFloat(m.total ?? '0'),
-                count: m.count
-            }))
+            totalRevenue: currentTotal,
+            roomRevenue: roomRev,
+            fbRevenue: fbRev,
+            otherRevenue: otherRev,
+            trend: dailyRevenue.map(d => ({ date: d.date, amount: parseFloat(d.total ?? '0') })),
+            fbTrend: dailyFb.map(d => ({ date: d.date, amount: parseFloat(d.total ?? '0'), orders: Number(d.count ?? 0) })),
+            comparison: {
+                current: currentTotal,
+                previous: previousTotal,
+                change: parseFloat(growthRate as string)
+            }
         };
+    },
+
+    /**
+     * Front-desk sales insights for the dashboard: revenue by weekday, busiest
+     * hours, daily visitor (arrival) counts, and today's guest birthdays.
+     */
+    async getSalesInsights(hotelId: number) {
+        const since = (daysBack: number) => {
+            const d = new Date();
+            d.setDate(d.getDate() - daysBack);
+            d.setHours(0, 0, 0, 0);
+            return d;
+        };
+
+        // Revenue by day-of-week over the last 8 weeks (stable weekly pattern).
+        const weekdayRows = await db.select({
+            dow: sql<number>`EXTRACT(DOW FROM ${payments.createdAt})::int`,
+            total: sum(payments.amount),
+        })
+            .from(payments)
+            .where(and(eq(payments.hotelId, hotelId), gte(payments.createdAt, since(56))))
+            .groupBy(sql`EXTRACT(DOW FROM ${payments.createdAt})`);
+
+        const WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const weekdayMap = new Map(weekdayRows.map(r => [Number(r.dow), parseFloat(r.total ?? '0')]));
+        // Present Monday-first to match common front-desk reporting.
+        const order = [1, 2, 3, 4, 5, 6, 0];
+        const weeklyByWeekday = order.map(dow => ({
+            weekday: WEEK[dow]!,
+            amount: weekdayMap.get(dow) ?? 0,
+        }));
+
+        // Busiest hours by F&B order revenue over the last 30 days.
+        const hourRows = await db.select({
+            hour: sql<number>`EXTRACT(HOUR FROM ${orders.createdAt})::int`,
+            total: sum(orders.totalAmount),
+            cnt: count(),
+        })
+            .from(orders)
+            .where(and(eq(orders.hotelId, hotelId), gte(orders.createdAt, since(30))))
+            .groupBy(sql`EXTRACT(HOUR FROM ${orders.createdAt})`);
+
+        const hourMap = new Map(hourRows.map(r => [Number(r.hour), { amount: parseFloat(r.total ?? '0'), orders: Number(r.cnt ?? 0) }]));
+        const bestHours = Array.from({ length: 24 }, (_, h) => ({
+            hour: h,
+            label: `${((h % 12) || 12)}${h < 12 ? 'am' : 'pm'}`,
+            amount: hourMap.get(h)?.amount ?? 0,
+            orders: hourMap.get(h)?.orders ?? 0,
+        }));
+
+        // Visitors: arrivals per day (by check-in date) over the last 30 days.
+        const visitorRows = await db.select({
+            date: sql<string>`DATE(${bookings.checkIn})`,
+            cnt: count(),
+        })
+            .from(bookings)
+            .where(and(eq(bookings.hotelId, hotelId), gte(bookings.checkIn, since(30))))
+            .groupBy(sql`DATE(${bookings.checkIn})`)
+            .orderBy(sql`DATE(${bookings.checkIn})`);
+
+        const visitors = visitorRows.map(r => ({ date: r.date, count: Number(r.cnt ?? 0) }));
+
+        // Today's guest birthdays (month + day match, any year).
+        const birthdayRows = await db.select({
+            id: guests.id,
+            fullName: guests.fullName,
+            phone: guests.phone,
+            isVip: guests.isVip,
+        })
+            .from(guests)
+            .where(and(
+                eq(guests.hotelId, hotelId),
+                sql`${guests.dob} IS NOT NULL`,
+                sql`EXTRACT(MONTH FROM ${guests.dob}) = EXTRACT(MONTH FROM CURRENT_DATE)`,
+                sql`EXTRACT(DAY FROM ${guests.dob}) = EXTRACT(DAY FROM CURRENT_DATE)`
+            ))
+            .limit(50);
+
+        const todaysBirthdays = birthdayRows.map(g => ({
+            id: g.id,
+            fullName: g.fullName,
+            phone: g.phone ?? undefined,
+            isVip: !!g.isVip,
+        }));
+
+        return { weeklyByWeekday, bestHours, visitors, todaysBirthdays };
     },
 
     async getOccupancyAnalytics(hotelId: number, days: number) {
@@ -201,20 +340,14 @@ export const AnalyticsService = {
             : 0;
 
         return {
-            currentOccupancy: roomTypeBreakdown.reduce((acc, r) => {
-                acc[r.type ?? 'UNKNOWN'] = {
-                    total: r.total,
-                    occupied: Number(r.occupied ?? 0),
-                    rate: r.total > 0 ? ((Number(r.occupied ?? 0) / r.total) * 100).toFixed(1) : 0
-                };
-                return acc;
-            }, {} as Record<string, { total: number; occupied: number; rate: string | number }>),
-            averageOccupancy: avgOccupancy.toFixed(1),
-            history: occupancyHistory.map(n => ({
+            averageOccupancy: avgOccupancy,
+            trend: occupancyHistory.map(n => ({
                 date: n.auditDate,
-                occupancy: parseFloat(n.occupancyPercentage ?? '0'),
-                roomRevenue: parseFloat(n.totalRoomRevenue ?? '0'),
-                fnbRevenue: parseFloat(n.totalFnbRevenue ?? '0')
+                occupancy: parseFloat(n.occupancyPercentage ?? '0')
+            })),
+            byRoomType: roomTypeBreakdown.map(r => ({
+                type: r.type ?? 'UNKNOWN',
+                occupancy: r.total > 0 ? (Number(r.occupied ?? 0) / r.total) * 100 : 0
             }))
         };
     },
@@ -354,16 +487,27 @@ export const AnalyticsService = {
         const adr = roomsSold > 0 ? (totalRevenue / roomsSold) : 0;
         const revpar = availableRoomNights > 0 ? (totalRevenue / availableRoomNights) : 0;
 
+        // Approximate average length of stay from bookings
+        const losBookings = await db.query.bookings.findMany({
+            where: and(
+                eq(bookings.hotelId, hotelId),
+                gte(bookings.checkIn, startDate),
+                eq(bookings.status, 'CHECKED_OUT')
+            ),
+            columns: { checkIn: true, checkOut: true }
+        });
+        const avgLos = losBookings.length > 0
+            ? losBookings.reduce((sum, b) => {
+                const nights = Math.max(1, Math.ceil((new Date(b.checkOut).getTime() - new Date(b.checkIn).getTime()) / (1000 * 60 * 60 * 24)));
+                return sum + nights;
+            }, 0) / losBookings.length
+            : 0;
+
         return {
-            timeframe: `${days} Days`,
-            totalRevenue,
-            roomsSold: Math.round(roomsSold),
-            availableRoomNights,
-            metrics: {
-                adr: adr.toFixed(2),
-                revpar: revpar.toFixed(2),
-                occupancy: availableRoomNights > 0 ? ((roomsSold / availableRoomNights) * 100).toFixed(1) : 0
-            }
+            adr,
+            revpar,
+            occupancyRate: availableRoomNights > 0 ? (roomsSold / availableRoomNights) * 100 : 0,
+            averageLos: avgLos
         };
     }
 };

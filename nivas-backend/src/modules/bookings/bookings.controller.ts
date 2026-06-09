@@ -2,6 +2,7 @@ import { Elysia, t } from 'elysia';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { PERMISSIONS } from '../../config/permissions';
 import { BookingsService } from './bookings.service';
+import { CheckoutService } from '../finance/checkout.service';
 import { createResponse } from '../../utils/response.helper';
 import { ValidationError } from '../../utils/errors';
 
@@ -55,6 +56,27 @@ export const bookingsController = new Elysia({ prefix: '/bookings' })
             tags: ['Bookings']
         }
     })
+    .post('/group', async ({ body, user, request }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const ip = request.headers.get('x-forwarded-for') || undefined;
+        const result = await BookingsService.createGroupBooking(user.hotelId, user.id, body, ip);
+        return createResponse(result, `Group booking created (${result.count} rooms)`);
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.BOOKINGS.CREATE,
+        body: t.Object({
+            roomIds: t.Array(t.Number(), { minItems: 1 }),
+            guestName: t.String({ minLength: 1 }),
+            guestPhone: t.String({ minLength: 5 }),
+            guestEmail: t.Optional(t.String()),
+            guestCount: t.Optional(t.Number()),
+            checkIn: t.String(),
+            checkOut: t.String(),
+            corporateAccountId: t.Optional(t.Number()),
+            source: t.Optional(t.String()),
+        }),
+        detail: { summary: 'Create a group / block booking (multiple rooms)', tags: ['Bookings'] }
+    })
     .get('/', async ({ user, query }) => {
         if (!user?.hotelId) {
             throw new ValidationError('Hotel ID is required');
@@ -63,7 +85,7 @@ export const bookingsController = new Elysia({ prefix: '/bookings' })
         const page = Number(query.page) || 1;
         const limit = Number(query.limit) || 20;
 
-        const result = await BookingsService.getBookings(user.hotelId, page, limit);
+        const result = await BookingsService.getBookings(user.hotelId, page, limit, query.segment || 'all', query.search || '');
 
         return createResponse(result.data, 'Bookings fetched successfully', result.meta);
     }, {
@@ -71,7 +93,15 @@ export const bookingsController = new Elysia({ prefix: '/bookings' })
         hasPermission: PERMISSIONS.BOOKINGS.READ,
         query: t.Object({
             page: t.Optional(t.String()),
-            limit: t.Optional(t.String())
+            limit: t.Optional(t.String()),
+            segment: t.Optional(t.Union([
+                t.Literal('all'),
+                t.Literal('arrivals'),
+                t.Literal('reservations'),
+                t.Literal('inhouse'),
+                t.Literal('departures')
+            ])),
+            search: t.Optional(t.String()),
         }),
         detail: {
             summary: 'Get all bookings',
@@ -228,11 +258,12 @@ export const bookingsController = new Elysia({ prefix: '/bookings' })
 
         const ipAddress = request.headers.get('x-forwarded-for') || undefined;
 
-        const result = await BookingsService.checkOut(
+        // Legacy checkout now routes through proper checkout service to ensure invoice + GL
+        const result = await CheckoutService.process(
             user.hotelId,
             user.id,
             params.id,
-            ipAddress
+            { payments: [], payLater: true, creditReason: 'Legacy checkout' }
         );
 
         return createResponse(result, 'Guest checked out successfully');
@@ -240,7 +271,55 @@ export const bookingsController = new Elysia({ prefix: '/bookings' })
         isSignedIn: true,
         hasPermission: PERMISSIONS.GUESTS.CHECK_OUT,
         detail: {
-            summary: 'Check-out a guest',
+            summary: 'Check-out a guest (legacy → routes to full checkout)',
             tags: ['Bookings']
+        }
+    })
+    /**
+     * Preview checkout bill before processing
+     */
+    .get('/:id/checkout-preview', async ({ params, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const preview = await CheckoutService.preview(user.hotelId, params.id);
+        return createResponse(preview, 'Checkout preview generated');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.GUESTS.CHECK_OUT,
+        detail: {
+            summary: 'Preview checkout bill',
+            tags: ['Bookings', 'Finance']
+        }
+    })
+    /**
+     * Process full checkout with payments and credit handling
+     */
+    .post('/:id/checkout', async ({ params, user, body, request }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const ipAddress = request.headers.get('x-forwarded-for') || undefined;
+        const result = await CheckoutService.process(user.hotelId, user.id, params.id, body);
+        return createResponse(result, 'Checkout completed successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.GUESTS.CHECK_OUT,
+        body: t.Object({
+            payments: t.Array(t.Object({
+                method: t.Union([
+                    t.Literal('CASH'), t.Literal('CARD'), t.Literal('ESEWA'),
+                    t.Literal('KHALTI'), t.Literal('CONNECT_IPS'), t.Literal('FONEPAY'),
+                    t.Literal('BANK_TRANSFER'), t.Literal('OTHER'),
+                ]),
+                amount: t.Number({ minimum: 0 }),
+                transactionId: t.Optional(t.String()),
+                notes: t.Optional(t.String()),
+            })),
+            discount: t.Optional(t.Number()),
+            couponId: t.Optional(t.Number()),
+            guestPan: t.Optional(t.String()),
+            payLater: t.Optional(t.Boolean()),
+            creditReason: t.Optional(t.String()),
+        }),
+        detail: {
+            summary: 'Process checkout with payments',
+            tags: ['Bookings', 'Finance']
         }
     });

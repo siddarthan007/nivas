@@ -20,6 +20,20 @@ export const roomsController = new Elysia({ prefix: '/rooms' })
         hasPermission: PERMISSIONS.ROOMS.READ,
         detail: { summary: 'List all rooms', tags: ['Operations'] }
     })
+    .get('/:id', async ({ params, user }) => {
+        if (!user?.hotelId) {
+            throw new ValidationError('Hotel ID is required');
+        }
+
+        const room = await RoomsService.getRoomById(user.hotelId, parseInt(params.id));
+
+        return createResponse(room, 'Room fetched successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.ROOMS.READ,
+        params: t.Object({ id: t.String() }),
+        detail: { summary: 'Get room by ID', tags: ['Operations'] }
+    })
     .post('/', async ({ body, user }) => {
         if (!user?.hotelId) {
             throw new ValidationError('Hotel ID is required');
@@ -35,7 +49,11 @@ export const roomsController = new Elysia({ prefix: '/rooms' })
             number: t.Number(),
             name: t.Optional(t.String()),
             type: t.String({ default: 'STANDARD' }),
-            rate: t.Number({ default: 0 })
+            rate: t.Number({ default: 0 }),
+            floorId: t.Optional(t.Number()),
+            floorNumber: t.Optional(t.Number()),
+            capacity: t.Optional(t.Number()),
+            imageUrl: t.Optional(t.String()),
         }),
         detail: { summary: 'Create a room', tags: ['Operations'] }
     })
@@ -85,7 +103,11 @@ export const roomsController = new Elysia({ prefix: '/rooms' })
             name: t.String(),
             type: t.String(),
             rate: t.Number(),
-            status: t.String()
+            status: t.String(),
+            floorId: t.Number(),
+            floorNumber: t.Number(),
+            capacity: t.Number(),
+            imageUrl: t.String(),
         })),
         detail: { summary: 'Update room details', tags: ['Operations'] }
     })

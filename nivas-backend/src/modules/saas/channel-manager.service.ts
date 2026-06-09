@@ -31,9 +31,14 @@ export const ChannelManagerService = {
     },
 
     async updateChannelSettings(hotelId: number, id: number, data: any) {
+        const allowed = ['channelCode', 'channelName', 'apiKey', 'apiSecret', 'hotelCode', 'syncRates', 'syncAvailability', 'syncReservations', 'minLeadTime', 'isActive'];
+        const updateData: any = {};
+        for (const key of allowed) {
+            if (data[key] !== undefined) updateData[key] = data[key];
+        }
         const [updated] = await db.update(channelManagerSettings)
             .set({
-                ...data,
+                ...updateData,
                 rateMultiplier: data.rateMultiplier?.toString(),
                 updatedAt: new Date()
             })
@@ -80,18 +85,20 @@ export const ChannelManagerService = {
             where: eq(rooms.hotelId, hotelId)
         });
 
+        // No live OTA push is implemented yet — record the batch as PENDING rather
+        // than falsely reporting SUCCESS/delivery.
         const [syncLog] = await db.insert(channelSyncLogs).values({
             hotelId,
             channelSettingId: channel.id,
             syncType: 'AVAILABILITY_PUSH',
             direction: 'OUTBOUND',
-            status: 'SUCCESS',
+            status: 'PENDING',
             recordsProcessed: roomList.length,
-            requestPayload: { rooms: roomList.length, mappings: channel.rateMappings.length }
+            requestPayload: { rooms: roomList.length, mappings: channel.rateMappings.length, note: 'Staged — live channel delivery not yet implemented' }
         }).returning();
 
         await db.update(channelManagerSettings)
-            .set({ lastSyncAt: new Date(), syncStatus: 'ACTIVE' })
+            .set({ lastSyncAt: new Date() })
             .where(eq(channelManagerSettings.id, channel.id));
 
         return {
@@ -115,13 +122,13 @@ export const ChannelManagerService = {
             channelSettingId: channel.id,
             syncType: 'RATE_PUSH',
             direction: 'OUTBOUND',
-            status: 'SUCCESS',
+            status: 'PENDING',
             recordsProcessed: channel.rateMappings.length,
-            requestPayload: { mappings: channel.rateMappings }
+            requestPayload: { mappings: channel.rateMappings, note: 'Staged — live channel delivery not yet implemented' }
         }).returning();
 
         await db.update(channelManagerSettings)
-            .set({ lastSyncAt: new Date(), syncStatus: 'ACTIVE' })
+            .set({ lastSyncAt: new Date() })
             .where(eq(channelManagerSettings.id, channel.id));
 
         return {

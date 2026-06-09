@@ -1,5 +1,5 @@
 import { db } from '../../db';
-import { invoices, purchaseOrders, purchaseOrderItems } from '../../db/schema';
+import { invoices, purchaseOrders, purchaseOrderItems, hotels } from '../../db/schema';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
 
 /**
@@ -117,6 +117,12 @@ export const ReportsService = {
             endDate.setHours(23, 59, 59, 999);
         }
 
+        const hotel = await db.query.hotels.findFirst({
+            where: eq(hotels.id, hotelId),
+            columns: { taxRate: true }
+        });
+        const vatRate = parseFloat(hotel?.taxRate ?? '0.13');
+
         const purchases = await db.query.purchaseOrders.findMany({
             where: and(
                 eq(purchaseOrders.hotelId, hotelId),
@@ -142,12 +148,10 @@ export const ReportsService = {
             const date = po.updatedAt?.toISOString().split('T')[0] || '';
             const total = parseFloat(po.totalCost || '0');
 
-            // Purchase Orders don't have explicit tax columns in schema.
-            // Estimate VAT at 13% (Nepal standard) using VAT-inclusive reverse calculation.
-            const vatRate = 0.13;
-            const taxable = Math.round((total / (1 + vatRate)) * 100) / 100;
-            const vat = Math.round((total - taxable) * 100) / 100;
-            const exempt = 0;
+            // Estimate VAT using hotel-configured tax rate
+            const taxable = vatRate > 0 ? Math.round((total / (1 + vatRate)) * 100) / 100 : total;
+            const vat = vatRate > 0 ? Math.round((total - taxable) * 100) / 100 : 0;
+            const exempt = vatRate > 0 ? 0 : total;
 
             return [
                 date,

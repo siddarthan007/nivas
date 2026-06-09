@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
     useEvents,
     type Venue,
@@ -16,6 +16,9 @@ import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import { SkeletonCard } from '@/components/ui';
 import CustomDatePicker from '@/components/ui/DatePicker';
+import TimePicker from '@/components/ui/TimePicker';
+import DateField from '@/components/ui/DateField';
+import VenueGantt from '@/components/features/events/VenueGantt';
 import {
     Calendar,
     MapPin,
@@ -28,18 +31,26 @@ import {
     AlertCircle,
     Trash2,
     Pencil,
+    History,
+    CalendarRange,
+    Receipt,
+    User,
+    Search,
 } from 'lucide-react';
 import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal';
+import { useCRM } from '@/lib/hooks/useCRM';
 
 const formatInputDate = (date: Date) => date.toISOString().slice(0, 10);
 const formatCurrency = (amount?: number) => `Rs ${(amount || 0).toLocaleString()}`;
 
-type TabId = 'bookings' | 'venues';
+type TabId = 'bookings' | 'calendar' | 'venues' | 'history';
 
 function TabNav({ activeTab, onTabChange }: { activeTab: TabId; onTabChange: (tab: TabId) => void }) {
     const tabs = [
         { id: 'bookings' as const, label: 'Bookings', icon: Calendar },
+        { id: 'calendar' as const, label: 'Calendar', icon: CalendarRange },
         { id: 'venues' as const, label: 'Venues', icon: MapPin },
+        { id: 'history' as const, label: 'History', icon: History },
     ];
 
     return (
@@ -102,6 +113,9 @@ function BookingCard({ booking, onUpdateStatus, onDelete }: {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <Calendar size={12} />
                     {new Date(booking.eventDate).toLocaleDateString()}
+                    {booking.endDate && booking.endDate !== booking.eventDate && (
+                        <span> - {new Date(booking.endDate).toLocaleDateString()}</span>
+                    )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <Clock size={12} />
@@ -111,11 +125,29 @@ function BookingCard({ booking, onUpdateStatus, onDelete }: {
                     <Users size={12} />
                     {booking.expectedGuests} guests
                 </div>
+                {booking.venue && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <MapPin size={12} />
+                        {booking.venue.name}
+                    </div>
+                )}
             </div>
 
             <div style={{ fontSize: '13px', marginBottom: 'var(--space-3)' }}>
                 <div style={{ color: 'var(--notion-text)' }}>{booking.contactName}</div>
                 <div style={{ color: 'var(--notion-text-secondary)' }}>{booking.contactPhone}</div>
+                {booking.guest && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px', color: 'var(--notion-blue)' }}>
+                        <User size={12} />
+                        <a href={`/guests?id=${booking.guest.id}`} style={{ color: 'var(--notion-blue)', textDecoration: 'none' }}>{booking.guest.fullName}</a>
+                    </div>
+                )}
+                {booking.invoice && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px', color: 'var(--notion-green)' }}>
+                        <Receipt size={12} />
+                        Invoice: {booking.invoice.invoiceNumber}
+                    </div>
+                )}
             </div>
 
             {booking.totalAmount !== undefined && (
@@ -164,6 +196,12 @@ function VenueCard({ venue, onToggle, onEdit, onDelete }: {
                 <Users size={14} />
                 Capacity: {venue.capacity}
             </div>
+            {(venue.baseRateHalf || venue.baseRateFull) && (
+                <div style={{ fontSize: '13px', color: 'var(--notion-green)', marginBottom: 'var(--space-2)' }}>
+                    {venue.baseRateHalf && <span>Half-day: {formatCurrency(Number(venue.baseRateHalf))} </span>}
+                    {venue.baseRateFull && <span>Full-day: {formatCurrency(Number(venue.baseRateFull))}</span>}
+                </div>
+            )}
 
             {venue.description && <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-3)' }}>{venue.description}</div>}
 
@@ -212,6 +250,10 @@ function CreateVenueModal({ isOpen, onClose, onSubmit }: {
                 <Input type="number" min={1} value={formData.capacity} onChange={e => setFormData({ ...formData, capacity: parseInt(e.target.value, 10) || 50 })} placeholder="Capacity" />
                 <Input value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} placeholder="Description" />
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                    <Input type="number" min={0} value={formData.baseRateHalf || ''} onChange={e => setFormData({ ...formData, baseRateHalf: parseFloat(e.target.value) || undefined })} placeholder="Half-day Rate (Rs)" style={{ flex: 1 }} />
+                    <Input type="number" min={0} value={formData.baseRateFull || ''} onChange={e => setFormData({ ...formData, baseRateFull: parseFloat(e.target.value) || undefined })} placeholder="Full-day Rate (Rs)" style={{ flex: 1 }} />
+                </div>
+                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</Button>
                     <Button type="submit" disabled={isSubmitting || !formData.name.trim()} style={{ flex: 1 }}>{isSubmitting ? 'Creating...' : 'Create'}</Button>
                 </div>
@@ -236,6 +278,8 @@ function EditVenueModal({ isOpen, onClose, venue, onSubmit }: {
                 capacity: venue.capacity,
                 description: venue.description || '',
                 amenities: venue.amenities || [],
+                baseRateHalf: venue.baseRateHalf ? Number(venue.baseRateHalf) : undefined,
+                baseRateFull: venue.baseRateFull ? Number(venue.baseRateFull) : undefined,
             });
         }
     }, [venue]);
@@ -256,6 +300,10 @@ function EditVenueModal({ isOpen, onClose, venue, onSubmit }: {
                 <Input value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="Venue Name *" required />
                 <Input type="number" min={1} value={formData.capacity || 50} onChange={e => setFormData({ ...formData, capacity: parseInt(e.target.value, 10) || 50 })} placeholder="Capacity" />
                 <Input value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} placeholder="Description" />
+                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                    <Input type="number" min={0} value={formData.baseRateHalf || ''} onChange={e => setFormData({ ...formData, baseRateHalf: parseFloat(e.target.value) || undefined })} placeholder="Half-day Rate (Rs)" style={{ flex: 1 }} />
+                    <Input type="number" min={0} value={formData.baseRateFull || ''} onChange={e => setFormData({ ...formData, baseRateFull: parseFloat(e.target.value) || undefined })} placeholder="Full-day Rate (Rs)" style={{ flex: 1 }} />
+                </div>
                 <Input value={(formData.amenities || []).join(', ')} onChange={e => setFormData({ ...formData, amenities: e.target.value.split(',').map(value => value.trim()).filter(Boolean) })} placeholder="Amenities (comma separated)" />
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</Button>
@@ -272,6 +320,7 @@ function CreateBookingModal({ isOpen, onClose, onSubmit, venues }: {
     onSubmit: (data: CreateBookingPayload) => Promise<boolean>;
     venues: Venue[];
 }) {
+    const { searchGuests, guests: crmGuests } = useCRM();
     const [formData, setFormData] = useState<CreateBookingPayload>({
         banquetId: 0,
         eventName: '',
@@ -282,6 +331,9 @@ function CreateBookingModal({ isOpen, onClose, onSubmit, venues }: {
         contactName: '',
         contactPhone: '',
     });
+    const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([new Date(), null]);
+    const [isMultiDay, setIsMultiDay] = useState(false);
+    const [guestSearch, setGuestSearch] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
@@ -290,16 +342,42 @@ function CreateBookingModal({ isOpen, onClose, onSubmit, venues }: {
         }
     }, [formData.banquetId, venues]);
 
-    const resetForm = () => setFormData({
-        banquetId: venues[0]?.id || 0,
-        eventName: '',
-        eventDate: formatInputDate(new Date()),
-        startTime: '10:00',
-        endTime: '18:00',
-        expectedGuests: 1,
-        contactName: '',
-        contactPhone: '',
-    });
+    const resetForm = () => {
+        setFormData({
+            banquetId: venues[0]?.id || 0,
+            eventName: '',
+            eventDate: formatInputDate(new Date()),
+            startTime: '10:00',
+            endTime: '18:00',
+            expectedGuests: 1,
+            contactName: '',
+            contactPhone: '',
+        });
+        setDateRange([new Date(), null]);
+        setIsMultiDay(false);
+        setGuestSearch('');
+    };
+
+    const handleDateRangeChange = (update: [Date | null, Date | null]) => {
+        setDateRange(update);
+        const [start, end] = update;
+        setFormData(current => ({
+            ...current,
+            eventDate: start ? formatInputDate(start) : current.eventDate,
+            endDate: end ? formatInputDate(end) : undefined,
+        }));
+    };
+
+    const handleGuestSelect = (guest: any) => {
+        const guestName = [guest.firstName, guest.lastName].filter(Boolean).join(' ') || guest.name || '';
+        setFormData(current => ({
+            ...current,
+            guestId: guest.id,
+            contactName: guestName || current.contactName,
+            contactPhone: guest.phone || current.contactPhone,
+        }));
+        setGuestSearch('');
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -312,34 +390,73 @@ function CreateBookingModal({ isOpen, onClose, onSubmit, venues }: {
         }
     };
 
+    const selectedVenue = venues.find(v => v.id === formData.banquetId);
+    const suggestedAmount = selectedVenue?.baseRateFull ? Number(selectedVenue.baseRateFull) : undefined;
+
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Create Booking">
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <Modal isOpen={isOpen} onClose={onClose} title="Create Booking" size="lg" onSubmit={() => { (document.getElementById('event-booking-form') as HTMLFormElement)?.requestSubmit(); }}>
+            <form id="event-booking-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                 <Select
                     value={formData.banquetId}
                     onChange={e => setFormData({ ...formData, banquetId: parseInt(e.target.value, 10) || 0 })}
                     fullWidth
                     options={venues.map(venue => ({ value: venue.id, label: venue.name }))}
                 />
-                <Input value={formData.eventName} onChange={e => setFormData({ ...formData, eventName: e.target.value })} placeholder="Event Name *" required />
-                <Select
-                    value={formData.eventType || ''}
-                    onChange={e => {
-                        const nextValue = e.target.value as CreateBookingPayload['eventType'] | '';
-                        setFormData({ ...formData, eventType: nextValue || undefined });
-                    }}
-                    fullWidth
-                    options={[
-                        { value: '', label: 'Select Event Type' },
-                        { value: 'WEDDING', label: 'Wedding' },
-                        { value: 'CONFERENCE', label: 'Conference' },
-                        { value: 'BIRTHDAY', label: 'Birthday' },
-                        { value: 'CORPORATE', label: 'Corporate' },
-                        { value: 'OTHER', label: 'Other' },
-                    ]}
-                />
-                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                    <div style={{ flex: 1 }}>
+                {selectedVenue && (selectedVenue.baseRateHalf || selectedVenue.baseRateFull) && (
+                    <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
+                        Venue rates: {selectedVenue.baseRateHalf && `Half-day ${formatCurrency(Number(selectedVenue.baseRateHalf))}`} {selectedVenue.baseRateFull && `Full-day ${formatCurrency(Number(selectedVenue.baseRateFull))}`}
+                    </div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                    <Input value={formData.eventName} onChange={e => setFormData({ ...formData, eventName: e.target.value })} placeholder="Event Name *" required />
+                    <Select
+                        value={formData.eventType || ''}
+                        onChange={e => {
+                            const nextValue = e.target.value as CreateBookingPayload['eventType'] | '';
+                            setFormData({ ...formData, eventType: nextValue || undefined });
+                        }}
+                        fullWidth
+                        options={[
+                            { value: '', label: 'Select Event Type' },
+                            { value: 'WEDDING', label: 'Wedding' },
+                            { value: 'CONFERENCE', label: 'Conference' },
+                            { value: 'BIRTHDAY', label: 'Birthday' },
+                            { value: 'CORPORATE', label: 'Corporate' },
+                            { value: 'OTHER', label: 'Other' },
+                        ]}
+                    />
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    <input
+                        type="checkbox"
+                        id="multiDay"
+                        checked={isMultiDay}
+                        onChange={e => {
+                            setIsMultiDay(e.target.checked);
+                            if (!e.target.checked) {
+                                setFormData(current => ({ ...current, endDate: undefined }));
+                                setDateRange([dateRange[0], null]);
+                            }
+                        }}
+                        style={{ accentColor: 'var(--notion-blue)' }}
+                    />
+                    <label htmlFor="multiDay" style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', cursor: 'pointer' }}>Multi-day event</label>
+                </div>
+
+                {/* Date & Time row — consistent 3-column grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)', width: '100%' }}>
+                    {isMultiDay ? (
+                        <CustomDatePicker
+                            label="Event Dates"
+                            selectsRange
+                            startDate={dateRange[0]}
+                            endDate={dateRange[1]}
+                            onChange={handleDateRangeChange as any}
+                            minDate={new Date()}
+                            required
+                        />
+                    ) : (
                         <CustomDatePicker
                             label="Event Date"
                             selected={formData.eventDate ? new Date(formData.eventDate) : null}
@@ -347,13 +464,52 @@ function CreateBookingModal({ isOpen, onClose, onSubmit, venues }: {
                             minDate={new Date()}
                             required
                         />
-                    </div>
-                    <Input type="time" value={formData.startTime} onChange={e => setFormData({ ...formData, startTime: e.target.value })} style={{ flex: 1 }} />
-                    <Input type="time" value={formData.endTime} onChange={e => setFormData({ ...formData, endTime: e.target.value })} style={{ flex: 1 }} />
+                    )}
+                    <TimePicker label="Start Time" value={formData.startTime} onChange={v => setFormData({ ...formData, startTime: v })} />
+                    <TimePicker label="End Time" value={formData.endTime} onChange={v => setFormData({ ...formData, endTime: v })} />
                 </div>
+
+                <div style={{ position: 'relative' }}>
+                    <Input
+                        type="text"
+                        value={guestSearch}
+                        onChange={e => {
+                            setGuestSearch(e.target.value);
+                            if (e.target.value.length > 1) searchGuests(e.target.value);
+                        }}
+                        placeholder="Search customer from CRM..."
+                        icon={<Search size={16} />}
+                    />
+                    {guestSearch && crmGuests.length > 0 && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1000, maxHeight: '200px', overflowY: 'auto' }}>
+                            {crmGuests.map(guest => (
+                                <button
+                                    key={guest.id}
+                                    type="button"
+                                    onClick={() => handleGuestSelect(guest)}
+                                    style={{ width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', borderBottom: '1px solid var(--notion-border)', cursor: 'pointer', fontSize: '13px', color: 'var(--notion-text)' }}
+                                >
+                                    {[guest.firstName, guest.lastName].filter(Boolean).join(' ')} {guest.phone && `(${guest.phone})`}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    {formData.guestId && (
+                        <div style={{ fontSize: '12px', color: 'var(--notion-green)', marginTop: '4px' }}>
+                            Linked to CRM guest
+                        </div>
+                    )}
+                </div>
+
                 <Input value={formData.contactName} onChange={e => setFormData({ ...formData, contactName: e.target.value })} placeholder="Contact Name *" required />
                 <Input value={formData.contactPhone} onChange={e => setFormData({ ...formData, contactPhone: e.target.value })} placeholder="Contact Phone *" required />
                 <Input type="number" min={1} value={formData.expectedGuests} onChange={e => setFormData({ ...formData, expectedGuests: parseInt(e.target.value, 10) || 1 })} placeholder="Expected Guests" required />
+
+                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                    <Input type="number" min={0} value={formData.totalAmount || ''} onChange={e => setFormData({ ...formData, totalAmount: parseFloat(e.target.value) || undefined })} placeholder={`Total Amount${suggestedAmount ? ` (suggested: ${formatCurrency(suggestedAmount)})` : ''}`} style={{ flex: 1 }} />
+                    <Input type="number" min={0} value={formData.advanceAmount || ''} onChange={e => setFormData({ ...formData, advanceAmount: parseFloat(e.target.value) || undefined })} placeholder="Advance Amount" style={{ flex: 1 }} />
+                </div>
+
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</Button>
                     <Button type="submit" disabled={isSubmitting || !formData.banquetId || !formData.eventName.trim() || !formData.contactName.trim() || !formData.contactPhone.trim()} style={{ flex: 1 }}>
@@ -387,10 +543,58 @@ export default function EventsPage() {
     const [deleteVenueTarget, setDeleteVenueTarget] = useState<Venue | null>(null);
     const [deleteBookingTarget, setDeleteBookingTarget] = useState<BanquetBooking | null>(null);
 
+    // Filters
+    const [searchQuery, setSearchQuery] = useState('');
+    const [bookingSort, setBookingSort] = useState<'date' | 'amount' | 'guests'>('date');
+    const [bookingSortDir, setBookingSortDir] = useState<'asc' | 'desc'>('desc');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+    const [venueSearch, setVenueSearch] = useState('');
+    const [venueSort, setVenueSort] = useState<'name' | 'capacity'>('name');
+    const [venueSortDir, setVenueSortDir] = useState<'asc' | 'desc'>('asc');
+
     useEffect(() => {
         fetchVenues();
         fetchBookings();
     }, [fetchVenues, fetchBookings]);
+
+    const filteredBookings = useMemo(() => {
+        let data = [...bookings];
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            data = data.filter(b =>
+                (b.eventName || '').toLowerCase().includes(q) ||
+                (b.contactName || '').toLowerCase().includes(q) ||
+                (b.venue?.name || '').toLowerCase().includes(q) ||
+                (b.eventType || '').toLowerCase().includes(q)
+            );
+        }
+        if (dateFrom) data = data.filter(b => new Date(b.eventDate) >= new Date(dateFrom));
+        if (dateTo) data = data.filter(b => new Date(b.eventDate) <= new Date(dateTo + 'T23:59:59'));
+        data.sort((a, b) => {
+            let cmp = 0;
+            if (bookingSort === 'date') cmp = new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime();
+            else if (bookingSort === 'amount') cmp = (a.totalAmount || 0) - (b.totalAmount || 0);
+            else if (bookingSort === 'guests') cmp = a.expectedGuests - b.expectedGuests;
+            return bookingSortDir === 'asc' ? cmp : -cmp;
+        });
+        return data;
+    }, [bookings, searchQuery, dateFrom, dateTo, bookingSort, bookingSortDir]);
+
+    const filteredVenues = useMemo(() => {
+        let data = [...venues];
+        if (venueSearch.trim()) {
+            const q = venueSearch.toLowerCase();
+            data = data.filter(v => (v.name || '').toLowerCase().includes(q));
+        }
+        data.sort((a, b) => {
+            let cmp = 0;
+            if (venueSort === 'name') cmp = (a.name || '').localeCompare(b.name || '');
+            else if (venueSort === 'capacity') cmp = a.capacity - b.capacity;
+            return venueSortDir === 'asc' ? cmp : -cmp;
+        });
+        return data;
+    }, [venues, venueSearch, venueSort, venueSortDir]);
 
     return (
         <DashboardLayout>
@@ -444,43 +648,176 @@ export default function EventsPage() {
                         ))}
                     </div>
                 ) : activeTab === 'bookings' ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: 'var(--space-4)' }}>
-                        {bookings.length === 0 ? (
-                            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
-                                <Calendar size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
-                                <p>No bookings yet</p>
-                                {venues.length > 0 && <Button onClick={() => setIsBookingModalOpen(true)} style={{ marginTop: 'var(--space-4)' }}>Create First Booking</Button>}
+                    <>
+                        {bookings.length > 0 && (
+                            <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-4)', flexWrap: 'wrap', alignItems: 'center' }}>
+                                <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+                                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--notion-text-muted)' }} />
+                                    <input type="text" placeholder="Search events..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                                        style={{ width: '100%', padding: '7px 10px 7px 32px', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)', backgroundColor: 'var(--notion-bg)', color: 'var(--notion-text)', fontSize: '13px', outline: 'none' }} />
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <Calendar size={14} style={{ color: 'var(--notion-text-muted)' }} />
+                                    <div style={{ width: '150px' }}><DateField value={dateFrom} onChange={setDateFrom} placeholder="From" fullWidth /></div>
+                                    <span style={{ color: 'var(--notion-text-muted)', fontSize: '13px' }}>to</span>
+                                    <div style={{ width: '150px' }}><DateField value={dateTo} onChange={setDateTo} placeholder="To" fullWidth /></div>
+                                </div>
+                                <select value={`${bookingSort}:${bookingSortDir}`} onChange={e => { const [f, d] = e.target.value.split(':'); setBookingSort(f as any); setBookingSortDir(d as any); }}
+                                    style={{ padding: '7px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)', backgroundColor: 'var(--notion-bg)', color: 'var(--notion-text)', fontSize: '13px', cursor: 'pointer' }}>
+                                    <option value="date:desc">Newest First</option>
+                                    <option value="date:asc">Oldest First</option>
+                                    <option value="amount:desc">Highest Amount</option>
+                                    <option value="amount:asc">Lowest Amount</option>
+                                    <option value="guests:desc">Most Guests</option>
+                                    <option value="guests:asc">Least Guests</option>
+                                </select>
+                                <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{filteredBookings.length} results</div>
                             </div>
-                        ) : (
-                            bookings.map(booking => (
-                                <BookingCard
-                                    key={booking.id}
-                                    booking={booking}
-                                    onUpdateStatus={status => updateBookingStatus(booking.id, status)}
-                                    onDelete={() => setDeleteBookingTarget(booking)}
-                                />
-                            ))
                         )}
-                    </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: 'var(--space-4)' }}>
+                            {bookings.length === 0 ? (
+                                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
+                                    <Calendar size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
+                                    <p>No bookings yet</p>
+                                    {venues.length > 0 && <Button onClick={() => setIsBookingModalOpen(true)} style={{ marginTop: 'var(--space-4)' }}>Create First Booking</Button>}
+                                </div>
+                            ) : filteredBookings.length === 0 ? (
+                                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
+                                    <Search size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
+                                    <p>No bookings match your filters</p>
+                                </div>
+                            ) : (
+                                filteredBookings.map(booking => (
+                                    <BookingCard
+                                        key={booking.id}
+                                        booking={booking}
+                                        onUpdateStatus={status => updateBookingStatus(booking.id, status)}
+                                        onDelete={() => setDeleteBookingTarget(booking)}
+                                    />
+                                ))
+                            )}
+                        </div>
+                    </>
+                ) : activeTab === 'calendar' ? (
+                    <VenueGantt venues={venues} bookings={bookings as any} />
+                ) : activeTab === 'venues' ? (
+                    <>
+                        {venues.length > 0 && (
+                            <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-4)', flexWrap: 'wrap', alignItems: 'center' }}>
+                                <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+                                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--notion-text-muted)' }} />
+                                    <input type="text" placeholder="Search venues..." value={venueSearch} onChange={e => setVenueSearch(e.target.value)}
+                                        style={{ width: '100%', padding: '7px 10px 7px 32px', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)', backgroundColor: 'var(--notion-bg)', color: 'var(--notion-text)', fontSize: '13px', outline: 'none' }} />
+                                </div>
+                                <select value={`${venueSort}:${venueSortDir}`} onChange={e => { const [f, d] = e.target.value.split(':'); setVenueSort(f as any); setVenueSortDir(d as any); }}
+                                    style={{ padding: '7px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)', backgroundColor: 'var(--notion-bg)', color: 'var(--notion-text)', fontSize: '13px', cursor: 'pointer' }}>
+                                    <option value="name:asc">Name A-Z</option>
+                                    <option value="name:desc">Name Z-A</option>
+                                    <option value="capacity:desc">Highest Capacity</option>
+                                    <option value="capacity:asc">Lowest Capacity</option>
+                                </select>
+                                <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{filteredVenues.length} results</div>
+                            </div>
+                        )}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
+                            {venues.length === 0 ? (
+                                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
+                                    <MapPin size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
+                                    <p>No venues yet</p>
+                                    <Button onClick={() => setIsVenueModalOpen(true)} style={{ marginTop: 'var(--space-4)' }}>Add First Venue</Button>
+                                </div>
+                            ) : filteredVenues.length === 0 ? (
+                                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
+                                    <Search size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
+                                    <p>No venues match your search</p>
+                                </div>
+                            ) : (
+                                filteredVenues.map(venue => (
+                                    <VenueCard
+                                        key={venue.id}
+                                        venue={venue}
+                                        onToggle={() => updateVenue(venue.id, { isActive: !venue.isActive })}
+                                        onEdit={() => setEditingVenue(venue)}
+                                        onDelete={() => setDeleteVenueTarget(venue)}
+                                    />
+                                ))
+                            )}
+                        </div>
+                    </>
                 ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
-                        {venues.length === 0 ? (
-                            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
-                                <MapPin size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
-                                <p>No venues yet</p>
-                                <Button onClick={() => setIsVenueModalOpen(true)} style={{ marginTop: 'var(--space-4)' }}>Add First Venue</Button>
-                            </div>
-                        ) : (
-                            venues.map(venue => (
-                                <VenueCard
-                                    key={venue.id}
-                                    venue={venue}
-                                    onToggle={() => updateVenue(venue.id, { isActive: !venue.isActive })}
-                                    onEdit={() => setEditingVenue(venue)}
-                                    onDelete={() => setDeleteVenueTarget(venue)}
-                                />
-                            ))
-                        )}
+                    <div>
+                        {(() => {
+                            const completed = bookings.filter(b => b.status === 'COMPLETED');
+                            const cancelled = bookings.filter(b => b.status === 'CANCELLED');
+                            const totalRevenue = completed.reduce((sum, b) => sum + (Number(b.totalAmount) || 0), 0);
+                            const totalAdvance = completed.reduce((sum, b) => sum + (Number(b.advanceAmount) || 0), 0);
+                            return (
+                                <>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
+                                        <div style={{ background: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)' }}>
+                                            <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--notion-text)' }}>{completed.length}</div>
+                                            <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Completed Events</div>
+                                        </div>
+                                        <div style={{ background: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)' }}>
+                                            <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--notion-green)' }}>{formatCurrency(totalRevenue)}</div>
+                                            <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Total Revenue</div>
+                                        </div>
+                                        <div style={{ background: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)' }}>
+                                            <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--notion-blue)' }}>{formatCurrency(totalAdvance)}</div>
+                                            <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Total Advance</div>
+                                        </div>
+                                        <div style={{ background: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)' }}>
+                                            <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--notion-red)' }}>{cancelled.length}</div>
+                                            <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Cancelled</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ background: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
+                                                <thead style={{ backgroundColor: 'var(--notion-bg-secondary)', borderBottom: '1px solid var(--notion-border)', color: 'var(--notion-text-secondary)' }}>
+                                                    <tr>
+                                                        {['Event', 'Date', 'Venue', 'Guests', 'Status', 'Amount', 'Invoice'].map(h => (
+                                                            <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 500 }}>{h}</th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {[...completed, ...cancelled].sort((a, b) => new Date(b.eventDate).getTime() - new Date(a.eventDate).getTime()).map(b => (
+                                                        <tr key={b.id} style={{ borderBottom: '1px solid var(--notion-border)' }}>
+                                                            <td style={{ padding: '12px 16px', fontWeight: 500 }}>{b.eventName}</td>
+                                                            <td style={{ padding: '12px 16px', color: 'var(--notion-text-secondary)' }}>
+                                                                {new Date(b.eventDate).toLocaleDateString()}
+                                                                {b.endDate && b.endDate !== b.eventDate && ` - ${new Date(b.endDate).toLocaleDateString()}`}
+                                                            </td>
+                                                            <td style={{ padding: '12px 16px', color: 'var(--notion-text-secondary)' }}>{b.venue?.name || '-'}</td>
+                                                            <td style={{ padding: '12px 16px', color: 'var(--notion-text-secondary)' }}>{b.expectedGuests}</td>
+                                                            <td style={{ padding: '12px 16px' }}>
+                                                                <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full)', background: b.status === 'COMPLETED' ? 'var(--notion-green-bg)' : 'var(--notion-red-bg)', color: b.status === 'COMPLETED' ? 'var(--notion-green)' : 'var(--notion-red)' }}>
+                                                                    {b.status}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ padding: '12px 16px', fontWeight: 500 }}>{formatCurrency(b.totalAmount)}</td>
+                                                            <td style={{ padding: '12px 16px' }}>
+                                                                {b.invoice ? (
+                                                                    <span style={{ fontSize: '12px', color: 'var(--notion-green)' }}>{b.invoice.invoiceNumber}</span>
+                                                                ) : (
+                                                                    <span style={{ fontSize: '12px', color: 'var(--notion-text-muted)' }}>-</span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        {completed.length === 0 && cancelled.length === 0 && (
+                                            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
+                                                No completed or cancelled events yet.
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            );
+                        })()}
                     </div>
                 )}
             </div>

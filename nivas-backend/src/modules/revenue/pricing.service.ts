@@ -18,8 +18,15 @@ export const PricingService = {
     },
 
     async updateRule(hotelId: number, id: number, data: any) {
+        // Whitelist updatable fields — never spread the raw body (a client could
+        // inject hotelId/id and move the rule cross-tenant).
+        const allowed = ['name', 'ruleType', 'adjustmentType', 'adjustmentValue', 'minOccupancy', 'maxOccupancy',
+            'daysBeforeArrival', 'daysOfWeek', 'applyToRoomTypes', 'priority', 'isActive', 'startDate', 'endDate'];
+        const updateData: Record<string, any> = {};
+        for (const k of allowed) if (data[k] !== undefined) updateData[k] = data[k];
+
         const [updated] = await db.update(pricingRules)
-            .set(data)
+            .set(updateData)
             .where(and(eq(pricingRules.id, id), eq(pricingRules.hotelId, hotelId)))
             .returning();
         return updated;
@@ -58,7 +65,9 @@ export const PricingService = {
             if (rule.adjustmentType === 'FLAT') {
                 finalRate += adjustment;
             } else if (rule.adjustmentType === 'PERCENTAGE') {
-                finalRate += (baseRate * (adjustment / 100));
+                // Apply % to the RUNNING rate (consistent with FLAT, proper stacking)
+                // — was applied to baseRate, so flat+% ordering gave inconsistent results.
+                finalRate += finalRate * (adjustment / 100);
             }
             appliedRules.push(rule.name);
         }

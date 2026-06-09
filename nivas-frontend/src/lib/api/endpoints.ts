@@ -259,6 +259,14 @@ export const ENDPOINTS = {
         HISTORY: `${API_PREFIX}/night-audit/history`,
         STATUS: `${API_PREFIX}/night-audit/status`,
     },
+    // ========================================================================
+    // HR & Payroll
+    // ========================================================================
+    HR: {
+        PAYROLL_LIST: `${API_PREFIX}/hr/payroll`,
+        PAYROLL_CREATE: `${API_PREFIX}/hr/payroll`,
+        PAYROLL_PAY: (id: number) => `${API_PREFIX}/hr/payroll/${id}/pay`,
+    },
 } as const;
 
 export default ENDPOINTS;

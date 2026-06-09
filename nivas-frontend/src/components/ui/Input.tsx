@@ -51,12 +51,12 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
                     position: 'relative',
                     display: 'flex',
                     alignItems: 'center',
-                    backgroundColor: isFocused ? 'var(--notion-bg-secondary)' : 'rgba(255,255,255,0.03)',
+                    backgroundColor: isFocused ? 'var(--notion-bg-secondary)' : 'var(--notion-bg-hover)',
                     border: '1px solid',
-                    borderColor: isFocused ? 'rgba(255,255,255,0.1)' : 'transparent',
+                    borderColor: isFocused ? 'var(--notion-blue)' : 'var(--notion-border)',
                     borderRadius: 'var(--radius-sm)',
-                    transition: 'all 0.1s ease',
-                    boxShadow: isFocused ? '0 0 0 2px rgba(78, 149, 198, 0.2)' : 'none'
+                    transition: 'all 0.15s ease',
+                    boxShadow: isFocused ? '0 0 0 2px var(--notion-blue-bg)' : 'var(--shadow-sm)'
                 }}>
                     {icon && (
                         <span style={{

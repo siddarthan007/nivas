@@ -1,17 +1,23 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useGuestPortal } from '@/lib/hooks/useGuestPortal';
+import { api } from '@/lib/api';
+import { toast } from 'sonner';
+import { useGuestPortal, type ActivityItem, type GuestBillSummary, type PortalConfig } from '@/lib/hooks/useGuestPortal';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Modal from '@/components/ui/Modal';
+import { useTheme } from '@/lib/contexts/ThemeContext';
 import {
     Hotel,
     UtensilsCrossed,
     Sparkles,
     Receipt,
     LogOut,
+    Wifi,
     Phone,
+    Mail,
+    MapPin,
     Clock,
     ShoppingCart,
     Plus,
@@ -21,16 +27,43 @@ import {
     AlertCircle,
     BedDouble,
     DoorOpen,
-    Wifi,
     Dumbbell,
     Waves,
     Coffee,
     RefreshCw,
     Star,
     Send,
+    Sun,
+    Moon,
     Package,
     CalendarDays,
 } from 'lucide-react';
+
+// Small theme toggle for guest portal header
+function ThemeToggleButton() {
+    const { resolvedTheme, toggleTheme } = useTheme();
+    return (
+        <button
+            onClick={toggleTheme}
+            title={resolvedTheme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+            style={{
+                background: 'transparent',
+                border: '1px solid var(--notion-border)',
+                color: 'var(--notion-text-secondary)',
+                cursor: 'pointer',
+                padding: '6px',
+                borderRadius: 'var(--radius-md)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.15s ease',
+            }}
+            className="hover-bg"
+        >
+            {resolvedTheme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+        </button>
+    );
+}
 
 // Login Screen
 function GuestLogin({
@@ -38,17 +71,21 @@ function GuestLogin({
     isLoading,
     error
 }: {
-    onLogin: (roomNumber: string, pin: string) => void;
+    onLogin: (roomNumber: string, pin: string, hotelSlug?: string) => void;
     isLoading: boolean;
     error: string | null;
 }) {
     const [roomNumber, setRoomNumber] = useState('');
     const [pin, setPin] = useState('');
+    const [hotelSlug, setHotelSlug] = useState(() => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('hotel') || '';
+    });
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (roomNumber && pin.length === 4) {
-            onLogin(roomNumber, pin);
+            onLogin(roomNumber, pin, hotelSlug || undefined);
         }
     };
 
@@ -168,10 +205,51 @@ interface CartItem {
     quantity: number;
 }
 
+// --- Activity progress helpers (shared by Home "Active" + Services tab) ---
+
+/** Step labels + current index for an activity item, differentiated by kind. */
+function getActivityProgress(item: Pick<ActivityItem, 'kind' | 'status'>): { steps: string[]; currentStep: number; cancelled: boolean } {
+    const status = (item.status || '').toUpperCase();
+    const cancelled = status === 'CANCELLED';
+    if (item.kind === 'ORDER') {
+        const steps = ['Received', 'Preparing', 'Ready', 'Served'];
+        const map: Record<string, number> = { PENDING: 0, CONFIRMED: 0, PREPARING: 1, READY: 2, SERVED: 3, COMPLETED: 3 };
+        return { steps, currentStep: map[status] ?? 0, cancelled };
+    }
+    const steps = ['Requested', 'In Progress', 'Done'];
+    const map: Record<string, number> = { PENDING: 0, IN_PROGRESS: 1, STARTED: 1, COMPLETED: 2, DONE: 2 };
+    return { steps, currentStep: map[status] ?? 0, cancelled };
+}
+
+/** A status badge {label,bg,color} for an activity item. */
+function getActivityBadge(item: Pick<ActivityItem, 'kind' | 'status'>): { label: string; bg: string; color: string } {
+    const s = (item.status || '').toUpperCase();
+    if (s === 'CANCELLED') return { label: 'Cancelled', bg: 'var(--notion-red-bg)', color: 'var(--notion-red)' };
+    if (s === 'SERVED' || s === 'COMPLETED' || s === 'DONE') return { label: item.kind === 'ORDER' ? 'Served' : 'Done', bg: 'var(--notion-green-bg)', color: 'var(--notion-green)' };
+    if (s === 'READY') return { label: 'Ready', bg: 'var(--notion-blue-bg)', color: 'var(--notion-blue)' };
+    if (s === 'PREPARING' || s === 'IN_PROGRESS' || s === 'STARTED') return { label: item.kind === 'ORDER' ? 'Preparing' : 'In progress', bg: 'var(--notion-blue-bg)', color: 'var(--notion-blue)' };
+    return { label: item.kind === 'ORDER' ? 'Received' : 'Requested', bg: 'var(--notion-yellow-bg)', color: 'var(--notion-orange)' };
+}
+
+/** Human-friendly title for an activity item. */
+function getActivityTitle(item: Pick<ActivityItem, 'kind' | 'type' | 'orderNumber'>): string {
+    if (item.kind === 'ORDER') return item.orderNumber ? `Order #${item.orderNumber}` : 'Food Order';
+    const t = (item.type || 'CLEANING').replace(/_/g, ' ').toLowerCase();
+    return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/** Whether an activity item is in a terminal (done/cancelled) state. */
+function isActivityDone(item: Pick<ActivityItem, 'status'>): boolean {
+    const s = (item.status || '').toUpperCase();
+    return s === 'SERVED' || s === 'COMPLETED' || s === 'DONE' || s === 'CANCELLED';
+}
+
 // Main Portal Dashboard
 function PortalDashboard({
     session,
     bills,
+    billSummary,
+    portalConfig,
     menuByCategory,
     requests,
     totalSpent,
@@ -185,8 +263,10 @@ function PortalDashboard({
 }: {
     session: { guestName: string; roomNumber: string; checkInDate: string; checkOutDate: string };
     bills: { id: string; category: string; description: string; amount: number; date: string; status: string }[];
+    billSummary: GuestBillSummary | null;
+    portalConfig: PortalConfig | null;
     menuByCategory: Record<string, { id: string; name: string; price: number; description?: string; available: boolean }[]>;
-    requests: { id: string; type: string; status: string; createdAt: string }[];
+    requests: ActivityItem[];
     totalSpent: number;
     pendingAmount: number;
     onPlaceOrder: (items: { menuItemId: string; quantity: number }[], deliveryTo: 'ROOM' | 'RESTAURANT', notes?: string) => Promise<boolean>;
@@ -266,14 +346,14 @@ function PortalDashboard({
         setShowAmenityModal(false);
     };
 
-    const handleFeedbackSubmit = () => {
-        if (feedbackRating > 0) {
-            localStorage.setItem('guest_feedback', JSON.stringify({
-                rating: feedbackRating,
-                comment: feedbackComment,
-                timestamp: new Date().toISOString(),
-            }));
+    const handleFeedbackSubmit = async () => {
+        if (feedbackRating <= 0) return;
+        try {
+            // Persist to the backend (was only saved to localStorage — never reached staff).
+            await api.post('/guest/actions/feedback', { rating: feedbackRating, comment: feedbackComment || undefined });
             setFeedbackSubmitted(true);
+        } catch (e: any) {
+            toast.error(e?.message || 'Could not submit feedback. Please try again.');
         }
     };
 
@@ -285,7 +365,7 @@ function PortalDashboard({
     const daysRemaining = Math.max(0, totalDays - elapsedDays);
     const progressPercent = Math.min(100, Math.round((elapsedDays / totalDays) * 100));
 
-    const pendingRequests = requests.filter(r => r.status !== 'COMPLETED');
+    const pendingRequests = requests.filter(r => !isActivityDone(r));
 
     useEffect(() => {
         if (pendingRequests.length === 0) return;
@@ -347,7 +427,8 @@ function PortalDashboard({
                             Room {session.roomNumber}
                         </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                        <ThemeToggleButton />
                         <Button variant="secondary" size="sm" onClick={() => fetchRequests()}>
                             <RefreshCw size={14} />
                         </Button>
@@ -444,6 +525,105 @@ function PortalDashboard({
                                 </div>
                             </div>
                         </div>
+
+                        {/* Hotel Info / Portal Config */}
+                        {portalConfig && (
+                            <div style={{
+                                backgroundColor: 'var(--notion-bg-secondary)',
+                                borderRadius: 'var(--radius-lg)',
+                                border: '1px solid var(--notion-border)',
+                                padding: 'var(--space-4)',
+                                marginBottom: 'var(--space-5)',
+                            }}>
+                                {portalConfig.welcomeMessage && (
+                                    <div style={{ fontSize: '14px', color: 'var(--notion-text)', marginBottom: 'var(--space-3)', fontWeight: '500' }}>
+                                        {portalConfig.welcomeMessage}
+                                    </div>
+                                )}
+
+                                {portalConfig.wifiNetworks.length > 0 && (
+                                    <div style={{ marginBottom: 'var(--space-3)' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <Wifi size={12} />
+                                            WiFi
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                            {portalConfig.wifiNetworks.map((net, i) => (
+                                                <div key={i} style={{
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center',
+                                                    padding: '8px 12px',
+                                                    backgroundColor: 'var(--notion-bg)',
+                                                    borderRadius: 'var(--radius-md)',
+                                                    border: '1px solid var(--notion-border)',
+                                                }}>
+                                                    <div>
+                                                        <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--notion-text)' }}>{net.ssid}</div>
+                                                        {net.floor && <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)' }}>{net.floor}</div>}
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', fontFamily: 'monospace' }}>
+                                                        {net.password}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {(portalConfig.hotelPhone || portalConfig.hotelEmail || Object.keys(portalConfig.contactNumbers).length > 0) && (
+                                    <div style={{ marginBottom: 'var(--space-3)' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <Phone size={12} />
+                                            Contacts
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                                            {portalConfig.hotelPhone && (
+                                                <a href={`tel:${portalConfig.hotelPhone}`} style={{
+                                                    display: 'flex', alignItems: 'center', gap: '4px',
+                                                    padding: '4px 10px', backgroundColor: 'var(--notion-bg)',
+                                                    borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)',
+                                                    fontSize: '12px', color: 'var(--notion-blue)', textDecoration: 'none'
+                                                }}>
+                                                    <Phone size={12} /> {portalConfig.hotelPhone}
+                                                </a>
+                                            )}
+                                            {portalConfig.hotelEmail && (
+                                                <a href={`mailto:${portalConfig.hotelEmail}`} style={{
+                                                    display: 'flex', alignItems: 'center', gap: '4px',
+                                                    padding: '4px 10px', backgroundColor: 'var(--notion-bg)',
+                                                    borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)',
+                                                    fontSize: '12px', color: 'var(--notion-blue)', textDecoration: 'none'
+                                                }}>
+                                                    <Mail size={12} /> {portalConfig.hotelEmail}
+                                                </a>
+                                            )}
+                                            {Object.entries(portalConfig.contactNumbers).map(([label, number]) => (
+                                                <a key={label} href={`tel:${number}`} style={{
+                                                    display: 'flex', alignItems: 'center', gap: '4px',
+                                                    padding: '4px 10px', backgroundColor: 'var(--notion-bg)',
+                                                    borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)',
+                                                    fontSize: '12px', color: 'var(--notion-blue)', textDecoration: 'none'
+                                                }}>
+                                                    <Phone size={12} /> {label}: {number}
+                                                </a>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {portalConfig.customSections.map((section, i) => (
+                                    <div key={i} style={{ marginBottom: i < portalConfig.customSections.length - 1 ? 'var(--space-3)' : 0 }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-1)' }}>
+                                            {section.title}
+                                        </div>
+                                        <div style={{ fontSize: '13px', color: 'var(--notion-text)', whiteSpace: 'pre-line' }}>
+                                            {section.content}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
 
                         {/* Quick Actions */}
                         <div style={{ marginBottom: 'var(--space-5)' }}>
@@ -598,7 +778,7 @@ function PortalDashboard({
                             </div>
                         </div>
 
-                        {/* Active Orders */}
+                        {/* Active Orders & Requests */}
                         {pendingRequests.length > 0 && (
                             <div style={{ marginBottom: 'var(--space-5)' }}>
                                 <h2 style={{
@@ -607,13 +787,12 @@ function PortalDashboard({
                                     color: 'var(--notion-text)',
                                     marginBottom: 'var(--space-3)',
                                 }}>
-                                    Active Orders
+                                    Active Orders &amp; Requests
                                 </h2>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                                     {pendingRequests.map(req => {
-                                        const steps = ['PENDING', 'IN_PROGRESS', 'COMPLETED'];
-                                        const stepLabels = ['Pending', 'Preparing', 'Ready'];
-                                        const currentStep = steps.indexOf(req.status);
+                                        const { steps, currentStep } = getActivityProgress(req);
+                                        const badge = getActivityBadge(req);
                                         return (
                                             <div key={req.id} style={{
                                                 padding: 'var(--space-4)',
@@ -621,16 +800,34 @@ function PortalDashboard({
                                                 borderRadius: 'var(--radius-lg)',
                                                 border: '1px solid var(--notion-border)',
                                             }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
-                                                    <span style={{ fontWeight: '500', color: 'var(--notion-text)' }}>
-                                                        {req.type.replace('_', ' ')}
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
+                                                    <span style={{ fontWeight: '600', color: 'var(--notion-text)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        {req.kind === 'ORDER' ? <UtensilsCrossed size={14} style={{ color: 'var(--notion-orange)' }} /> : <Sparkles size={14} style={{ color: 'var(--notion-blue)' }} />}
+                                                        {getActivityTitle(req)}
                                                     </span>
-                                                    <span style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
-                                                        {new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    <span style={{
+                                                        fontSize: '11px',
+                                                        fontWeight: 600,
+                                                        padding: '2px 8px',
+                                                        borderRadius: 'var(--radius-full)',
+                                                        backgroundColor: badge.bg,
+                                                        color: badge.color,
+                                                    }}>
+                                                        {badge.label}
                                                     </span>
                                                 </div>
+                                                {req.kind === 'ORDER' && req.items.length > 0 && (
+                                                    <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-3)' }}>
+                                                        {req.items.map(i => `${i.quantity}× ${i.name}`).join(', ')}
+                                                    </div>
+                                                )}
+                                                {req.kind === 'SERVICE' && req.notes && (
+                                                    <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-3)' }}>
+                                                        {req.notes}
+                                                    </div>
+                                                )}
                                                 <div style={{ display: 'flex', gap: 'var(--space-1)', alignItems: 'center' }}>
-                                                    {stepLabels.map((label, i) => (
+                                                    {steps.map((label, i) => (
                                                         <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
                                                             <div style={{
                                                                 width: '100%',
@@ -908,66 +1105,129 @@ function PortalDashboard({
                             color: 'var(--notion-text)',
                             marginBottom: 'var(--space-4)',
                         }}>
-                            Your Bills
+                            Your Bill
                         </h2>
 
-                        {bills.length === 0 ? (
+                        {!billSummary ? (
                             <div style={{
                                 textAlign: 'center',
                                 padding: 'var(--space-8)',
                                 color: 'var(--notion-text-secondary)',
                             }}>
                                 <Receipt size={40} style={{ opacity: 0.3, marginBottom: 'var(--space-3)' }} />
-                                <p>No bills yet</p>
+                                <p>No bill yet</p>
+                                <p style={{ fontSize: '13px', marginTop: 'var(--space-2)' }}>Your charges will appear once checked in.</p>
                             </div>
                         ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                {bills.map(bill => (
-                                    <div
-                                        key={bill.id}
-                                        style={{
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            alignItems: 'center',
-                                            padding: 'var(--space-3) var(--space-4)',
-                                            backgroundColor: 'var(--notion-bg-secondary)',
-                                            borderRadius: 'var(--radius-md)',
-                                            border: '1px solid var(--notion-border)',
-                                        }}
-                                    >
-                                        <div>
-                                            <div style={{ fontWeight: '500', color: 'var(--notion-text)' }}>
-                                                {bill.description}
-                                            </div>
-                                            <div style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 'var(--space-2)',
-                                                fontSize: '12px',
-                                                color: 'var(--notion-text-secondary)',
-                                            }}>
-                                                <span>{bill.category}</span>
-                                                <span>•</span>
-                                                <span>{new Date(bill.date).toLocaleDateString()}</span>
-                                            </div>
-                                        </div>
-                                        <div style={{ textAlign: 'right' }}>
-                                            <div style={{ fontWeight: '600', color: 'var(--notion-text)' }}>
-                                                NPR {bill.amount}
-                                            </div>
-                                            <span style={{
-                                                padding: '2px 6px',
-                                                borderRadius: 'var(--radius-sm)',
-                                                fontSize: '10px',
-                                                fontWeight: '500',
-                                                backgroundColor: bill.status === 'PAID' ? 'var(--notion-green-bg)' : 'var(--notion-yellow-bg)',
-                                                color: bill.status === 'PAID' ? 'var(--notion-green)' : 'var(--notion-orange)',
-                                            }}>
-                                                {bill.status}
-                                            </span>
-                                        </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                {/* Summary Card */}
+                                <div style={{
+                                    padding: 'var(--space-4)',
+                                    backgroundColor: 'var(--notion-bg-secondary)',
+                                    borderRadius: 'var(--radius-lg)',
+                                    border: '1px solid var(--notion-border)',
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+                                        <span style={{ color: 'var(--notion-text-secondary)' }}>Room Charge</span>
+                                        <span style={{ fontWeight: '500' }}>NPR {billSummary.roomCharge.toLocaleString()}</span>
                                     </div>
-                                ))}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+                                        <span style={{ color: 'var(--notion-text-secondary)' }}>Food &amp; Beverage</span>
+                                        <span style={{ fontWeight: '500' }}>NPR {billSummary.ordersTotal.toLocaleString()}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+                                        <span style={{ color: 'var(--notion-text-secondary)' }}>Service Charge ({(billSummary.serviceChargeRate * 100).toFixed(0)}%)</span>
+                                        <span style={{ fontWeight: '500' }}>NPR {billSummary.serviceCharge.toLocaleString()}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+                                        <span style={{ color: 'var(--notion-text-secondary)' }}>VAT ({(billSummary.taxRate * 100).toFixed(0)}%)</span>
+                                        <span style={{ fontWeight: '500' }}>NPR {billSummary.vat.toLocaleString()}</span>
+                                    </div>
+                                    <div style={{ height: '1px', backgroundColor: 'var(--notion-border)', marginBottom: 'var(--space-3)' }} />
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                                        <span style={{ fontWeight: '600', color: 'var(--notion-text)' }}>Total</span>
+                                        <span style={{ fontWeight: '700', color: 'var(--notion-text)' }}>NPR {billSummary.grandTotal.toLocaleString()}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                                        <span style={{ color: 'var(--notion-text-secondary)' }}>Paid</span>
+                                        <span style={{ fontWeight: '500', color: 'var(--notion-green)' }}>NPR {billSummary.paidAmount.toLocaleString()}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <span style={{ color: 'var(--notion-text-secondary)' }}>Amount Due</span>
+                                        <span style={{ fontWeight: '700', color: billSummary.dueAmount > 0 ? 'var(--notion-orange)' : 'var(--notion-green)' }}>
+                                            NPR {billSummary.dueAmount.toLocaleString()}
+                                        </span>
+                                    </div>
+                                    {billSummary.pendingOrdersTotal > 0 && (
+                                        <div style={{ marginTop: 'var(--space-3)', fontSize: '12px', color: 'var(--notion-text-muted)', textAlign: 'center' }}>
+                                            NPR {billSummary.pendingOrdersTotal.toLocaleString()} in pending orders not yet billed
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Itemized Line Items */}
+                                {bills.length > 0 && (
+                                    <>
+                                        <h3 style={{
+                                            fontSize: '14px',
+                                            fontWeight: '600',
+                                            color: 'var(--notion-text)',
+                                            marginTop: 'var(--space-2)',
+                                        }}>
+                                            Charges
+                                        </h3>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                            {bills.map(bill => (
+                                                <div
+                                                    key={bill.id}
+                                                    style={{
+                                                        display: 'flex',
+                                                        justifyContent: 'space-between',
+                                                        alignItems: 'center',
+                                                        padding: 'var(--space-3) var(--space-4)',
+                                                        backgroundColor: 'var(--notion-bg-secondary)',
+                                                        borderRadius: 'var(--radius-md)',
+                                                        border: '1px solid var(--notion-border)',
+                                                    }}
+                                                >
+                                                    <div>
+                                                        <div style={{ fontWeight: '500', color: 'var(--notion-text)', fontSize: '14px' }}>
+                                                            {bill.description}
+                                                        </div>
+                                                        <div style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 'var(--space-2)',
+                                                            fontSize: '12px',
+                                                            color: 'var(--notion-text-secondary)',
+                                                        }}>
+                                                            <span>{bill.category}</span>
+                                                            <span>•</span>
+                                                            <span>{new Date(bill.date).toLocaleDateString()}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ textAlign: 'right' }}>
+                                                        <div style={{ fontWeight: '600', color: 'var(--notion-text)' }}>
+                                                            NPR {bill.amount.toLocaleString()}
+                                                        </div>
+                                                        <span style={{
+                                                            padding: '2px 6px',
+                                                            borderRadius: 'var(--radius-sm)',
+                                                            fontSize: '10px',
+                                                            fontWeight: '500',
+                                                            backgroundColor: bill.status === 'BILLED' ? 'var(--notion-green-bg)' :
+                                                                bill.status === 'PAID' ? 'var(--notion-green-bg)' : 'var(--notion-yellow-bg)',
+                                                            color: bill.status === 'BILLED' ? 'var(--notion-green)' :
+                                                                bill.status === 'PAID' ? 'var(--notion-green)' : 'var(--notion-orange)',
+                                                        }}>
+                                                            {bill.status === 'BILLED' ? 'Billed' : bill.status}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         )}
                     </>
@@ -995,7 +1255,9 @@ function PortalDashboard({
                             </div>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                {requests.map(req => (
+                                {requests.map(req => {
+                                    const badge = getActivityBadge(req);
+                                    return (
                                     <div
                                         key={req.id}
                                         style={{
@@ -1009,18 +1271,30 @@ function PortalDashboard({
                                         }}
                                     >
                                         <div>
-                                            <div style={{ fontWeight: '500', color: 'var(--notion-text)' }}>
-                                                {req.type.replace('_', ' ')}
+                                            <div style={{ fontWeight: '500', color: 'var(--notion-text)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                {req.kind === 'ORDER' ? <UtensilsCrossed size={14} style={{ color: 'var(--notion-orange)' }} /> : <Sparkles size={14} style={{ color: 'var(--notion-blue)' }} />}
+                                                {getActivityTitle(req)}
+                                                {req.kind === 'ORDER' && req.totalAmount != null && (
+                                                    <span style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', fontWeight: 400 }}>
+                                                        · NPR {req.totalAmount.toLocaleString()}
+                                                    </span>
+                                                )}
                                             </div>
+                                            {req.kind === 'ORDER' && req.items.length > 0 && (
+                                                <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', marginTop: '2px' }}>
+                                                    {req.items.map(i => `${i.quantity}× ${i.name}`).join(', ')}
+                                                </div>
+                                            )}
                                             <div style={{
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 gap: '4px',
                                                 fontSize: '12px',
                                                 color: 'var(--notion-text-secondary)',
+                                                marginTop: '2px',
                                             }}>
                                                 <Clock size={12} />
-                                                {new Date(req.createdAt).toLocaleTimeString()}
+                                                {new Date(req.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                             </div>
                                         </div>
                                         <span style={{
@@ -1028,15 +1302,15 @@ function PortalDashboard({
                                             borderRadius: 'var(--radius-sm)',
                                             fontSize: '11px',
                                             fontWeight: '500',
-                                            backgroundColor: req.status === 'COMPLETED' ? 'var(--notion-green-bg)' :
-                                                req.status === 'IN_PROGRESS' ? 'var(--notion-blue-bg)' : 'var(--notion-yellow-bg)',
-                                            color: req.status === 'COMPLETED' ? 'var(--notion-green)' :
-                                                req.status === 'IN_PROGRESS' ? 'var(--notion-blue)' : 'var(--notion-orange)',
+                                            backgroundColor: badge.bg,
+                                            color: badge.color,
+                                            whiteSpace: 'nowrap',
                                         }}>
-                                            {req.status.replace('_', ' ')}
+                                            {badge.label}
                                         </span>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </>
@@ -1104,7 +1378,7 @@ function PortalDashboard({
                         height: '56px',
                         borderRadius: '50%',
                         backgroundColor: 'var(--notion-blue)',
-                        color: 'white',
+                        color: 'var(--foreground-inverse)',
                         border: 'none',
                         cursor: 'pointer',
                         display: 'flex',
@@ -1119,7 +1393,7 @@ function PortalDashboard({
                         top: '-4px',
                         right: '-4px',
                         backgroundColor: 'var(--notion-red)',
-                        color: 'white',
+                        color: 'var(--foreground-inverse)',
                         borderRadius: '50%',
                         width: '20px',
                         height: '20px',
@@ -1399,6 +1673,8 @@ export default function GuestPortalPage() {
         isLoading,
         error,
         bills,
+        billSummary,
+        portalConfig,
         menuByCategory,
         requests,
         totalSpent,
@@ -1409,6 +1685,7 @@ export default function GuestPortalPage() {
         requestRoomService,
         requestCheckout,
         fetchRequests,
+        submitFeedback,
         logout,
     } = useGuestPortal();
 
@@ -1439,19 +1716,31 @@ export default function GuestPortalPage() {
     if (!session) return null;
 
     return (
-        <PortalDashboard
-            session={session}
-            bills={bills}
-            menuByCategory={menuByCategory}
-            requests={requests}
-            totalSpent={totalSpent}
-            pendingAmount={pendingAmount}
-            onPlaceOrder={placeOrder}
-            onRequestHousekeeping={requestHousekeeping}
-            onRequestCheckout={requestCheckout}
-            onRequestAmenity={requestRoomService}
-            fetchRequests={fetchRequests}
-            onLogout={logout}
-        />
+        <>
+            <PortalDashboard
+                session={session}
+                bills={bills}
+                billSummary={billSummary}
+                portalConfig={portalConfig}
+                menuByCategory={menuByCategory}
+                requests={requests}
+                totalSpent={totalSpent}
+                pendingAmount={pendingAmount}
+                onPlaceOrder={placeOrder}
+                onRequestHousekeeping={requestHousekeeping}
+                onRequestCheckout={requestCheckout}
+                onRequestAmenity={requestRoomService}
+                fetchRequests={fetchRequests}
+                onLogout={logout}
+            />
+            {/* Floating AI concierge — self-hides if AI is off for this hotel. */}
+            <AiChatLauncher
+                endpoint="/guest/actions/concierge" field="message" sendHistory
+                title="Concierge" subtitle="Ask me anything"
+                intro="Namaste! 🙏 I can recommend dishes, answer questions about the hotel, and help you order room service or request housekeeping. Ask in Nepali or English."
+                suggestions={['What can I order for dinner?', 'What time is checkout?', 'How do I request housekeeping?']}
+                accent="var(--notion-green)"
+            />
+        </>
     );
 }

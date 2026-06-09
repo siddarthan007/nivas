@@ -42,14 +42,24 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
         const unsubs: (() => void)[] = [];
 
-        for (const [eventType, queryKeys] of Object.entries(EVENT_QUERY_MAP)) {
-            const unsub = socket.on(eventType, () => {
-                for (const key of queryKeys) {
-                    queryClient.invalidateQueries({ queryKey: key });
-                }
-            });
-            unsubs.push(unsub);
+        const invalidateFor = (eventType?: string) => {
+            const queryKeys = eventType ? EVENT_QUERY_MAP[eventType] : undefined;
+            if (!queryKeys) return;
+            for (const key of queryKeys) {
+                queryClient.invalidateQueries({ queryKey: key });
+            }
+        };
+
+        // Transient live-data events (e.g. KITCHEN_NEW_ORDER, DND_UPDATE).
+        for (const eventType of Object.keys(EVENT_QUERY_MAP)) {
+            unsubs.push(socket.on(eventType, () => invalidateFor(eventType)));
         }
+
+        // Bell notifications travel under a single NOTIFICATION envelope; refresh
+        // affected queries based on the inner notification type.
+        unsubs.push(socket.on('NOTIFICATION', (data: any) => {
+            invalidateFor(data?.notifType || data?.type);
+        }));
 
         return () => {
             unsubs.forEach(unsub => unsub());

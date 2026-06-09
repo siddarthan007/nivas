@@ -8,7 +8,7 @@ import { PERMISSIONS } from '../../config/permissions';
 
 const DEFAULT_ROLES = [
     {
-        name: 'Manager', permissions: [
+        name: 'Manager', level: 1, permissions: [
             ...Object.values(PERMISSIONS.BOOKINGS),
             ...Object.values(PERMISSIONS.GUESTS),
             ...Object.values(PERMISSIONS.ROOMS),
@@ -24,7 +24,7 @@ const DEFAULT_ROLES = [
         ]
     },
     {
-        name: 'Front Desk', permissions: [
+        name: 'Front Desk', level: 2, permissions: [
             ...Object.values(PERMISSIONS.BOOKINGS),
             ...Object.values(PERMISSIONS.GUESTS),
             PERMISSIONS.ROOMS.VIEW_STATUS,
@@ -37,7 +37,7 @@ const DEFAULT_ROLES = [
         ]
     },
     {
-        name: 'Kitchen Manager', permissions: [
+        name: 'Kitchen Manager', level: 3, permissions: [
             ...Object.values(PERMISSIONS.ORDERS),
             PERMISSIONS.MENU.VIEW,
             PERMISSIONS.MENU.CREATE,
@@ -49,7 +49,7 @@ const DEFAULT_ROLES = [
         ]
     },
     {
-        name: 'Housekeeping Supervisor', permissions: [
+        name: 'Housekeeping Supervisor', level: 3, permissions: [
             ...Object.values(PERMISSIONS.HOUSEKEEPING),
             PERMISSIONS.ROOMS.VIEW_STATUS,
             PERMISSIONS.ROOMS.MANAGE_CLEANING,
@@ -59,7 +59,7 @@ const DEFAULT_ROLES = [
         ]
     },
     {
-        name: 'Waiter', permissions: [
+        name: 'Waiter', level: 4, permissions: [
             PERMISSIONS.ORDERS.CREATE,
             PERMISSIONS.ORDERS.READ,
             PERMISSIONS.ORDERS.UPDATE_STATUS,
@@ -70,7 +70,7 @@ const DEFAULT_ROLES = [
         ]
     },
     {
-        name: 'Accountant', permissions: [
+        name: 'Accountant', level: 2, permissions: [
             ...Object.values(PERMISSIONS.FINANCE),
             ...Object.values(PERMISSIONS.REPORTS),
             PERMISSIONS.ANALYTICS.VIEW_FINANCIALS,
@@ -78,7 +78,7 @@ const DEFAULT_ROLES = [
         ]
     },
     {
-        name: 'Receptionist', permissions: [
+        name: 'Receptionist', level: 2, permissions: [
             ...Object.values(PERMISSIONS.BOOKINGS),
             ...Object.values(PERMISSIONS.GUESTS),
             PERMISSIONS.ROOMS.VIEW_STATUS,
@@ -90,7 +90,7 @@ const DEFAULT_ROLES = [
         ]
     },
     {
-        name: 'Housekeeper', permissions: [
+        name: 'Housekeeper', level: 4, permissions: [
             PERMISSIONS.HOUSEKEEPING.VIEW_TASKS,
             PERMISSIONS.HOUSEKEEPING.UPDATE_STATUS,
             PERMISSIONS.ROOMS.VIEW_STATUS,
@@ -105,23 +105,47 @@ export const SuperAdminService = {
         name: string;
         slug: string;
         logoUrl?: string;
+        website?: string;
         address: string;
-        serviceChargeRate?: number;
-        taxRate?: number;
+        phone?: string;
+        panNumber?: string;
+        vatNumber?: string;
+        serviceChargeRate?: number | string;
+        taxRate?: number | string;
         ownerName: string;
         ownerEmail: string;
         ownerPhone: string;
         ownerPassword: string;
         packageId?: number;
+        billingCycle?: 'MONTHLY' | 'ANNUAL' | '2_YEAR' | '3_YEAR';
         trialDays?: number;
+        maxRooms?: number;
+        maxUsers?: number;
     }) {
         // Check if slug already exists
-        const existing = await db.query.hotels.findFirst({
+        const existingSlug = await db.query.hotels.findFirst({
             where: (hotels, { eq }) => eq(hotels.slug, data.slug)
         });
-
-        if (existing) {
+        if (existingSlug) {
             throw new BusinessLogicError(`Hotel with slug "${data.slug}" already exists`);
+        }
+
+        // Check if owner email already exists
+        const existingEmail = await db.query.users.findFirst({
+            where: (users, { eq }) => eq(users.email, data.ownerEmail)
+        });
+        if (existingEmail) {
+            throw new BusinessLogicError(`User with email "${data.ownerEmail}" already exists`);
+        }
+
+        // Check if owner phone already exists
+        if (data.ownerPhone) {
+            const existingPhone = await db.query.users.findFirst({
+                where: (users, { eq }) => eq(users.phone, data.ownerPhone)
+            });
+            if (existingPhone) {
+                throw new BusinessLogicError(`User with phone "${data.ownerPhone}" already exists`);
+            }
         }
 
         const result = await db.transaction(async (tx) => {
@@ -129,12 +153,18 @@ export const SuperAdminService = {
                 name: data.name,
                 slug: data.slug,
                 logoUrl: data.logoUrl,
+                website: data.website,
                 address: data.address,
+                phone: data.phone,
+                panNumber: data.panNumber,
+                vatNumber: data.vatNumber,
                 licenseKey: crypto.randomUUID(),
                 isActive: true,
-                serviceChargeRate: (data.serviceChargeRate ?? 0.10).toString(),
-                taxRate: (data.taxRate ?? 0.13).toString(),
-                email: data.ownerEmail
+                serviceChargeRate: (typeof data.serviceChargeRate === 'string' ? parseFloat(data.serviceChargeRate) / 100 : (data.serviceChargeRate ?? 0.10)).toString(),
+                taxRate: (typeof data.taxRate === 'string' ? parseFloat(data.taxRate) / 100 : (data.taxRate ?? 0.13)).toString(),
+                email: data.ownerEmail,
+                maxRooms: data.maxRooms ?? 50,
+                maxUsers: data.maxUsers ?? 10
             }).returning();
 
             if (!newHotel) {
@@ -146,6 +176,7 @@ export const SuperAdminService = {
                 DEFAULT_ROLES.map(r => ({
                     hotelId: newHotel.id,
                     name: r.name,
+                    level: r.level,
                     permissions: r.permissions
                 }))
             );
@@ -154,6 +185,7 @@ export const SuperAdminService = {
             const [ownerRole] = await tx.insert(roles).values({
                 hotelId: newHotel.id,
                 name: 'Owner',
+                level: 0,
                 permissions: ['*']
             }).returning();
 
@@ -196,32 +228,94 @@ export const SuperAdminService = {
                 resolvedPkgId = anyPackage?.id;
             }
 
-            // Resolve trial days from plan or explicit override
-            let trialDays = data.trialDays || 14;
-            if (resolvedPkgId && !data.trialDays) {
-                const pkg = await tx.query.subscriptionPackages.findFirst({
+            // Load package details
+            let resolvedPkgCode = 'STANDARD';
+            let isTrial = !data.packageId;
+            let pkgDetails: typeof subscriptionPackages.$inferSelect | undefined;
+            if (resolvedPkgId) {
+                pkgDetails = await tx.query.subscriptionPackages.findFirst({
                     where: (sp, { eq }) => eq(sp.id, resolvedPkgId!)
                 });
-                if (pkg?.trialDays) trialDays = pkg.trialDays;
+                if (pkgDetails) {
+                    resolvedPkgCode = pkgDetails.code;
+                    isTrial = pkgDetails.code === 'TRIAL' || !data.packageId;
+                }
             }
 
-            const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000);
+            if (!resolvedPkgId) {
+                throw new BusinessLogicError('No subscription package available for onboarding');
+            }
+            const pkgId = resolvedPkgId; // narrowed
 
-            // Update hotel license fields
-            await tx.update(hotels).set({
-                licenseStatus: 'TRIAL',
-                licenseExpiresAt: trialEndsAt,
-            }).where(eq(hotels.id, newHotel.id));
+            const now = new Date();
+            const billingCycle = data.billingCycle || 'MONTHLY';
 
-            if (resolvedPkgId) {
+            if (isTrial) {
+                // Trial flow
+                const trialDays = data.trialDays || pkgDetails?.trialDays || 14;
+                const trialEndsAt = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
+
+                await tx.update(hotels).set({
+                    licenseStatus: 'TRIAL',
+                    licenseExpiresAt: trialEndsAt,
+                    planTier: resolvedPkgCode,
+                }).where(eq(hotels.id, newHotel.id));
+
                 await tx.insert(subscriptions).values({
                     hotelId: newHotel.id,
-                    packageId: resolvedPkgId,
+                    packageId: pkgId,
                     status: 'TRIAL',
-                    billingCycle: 'MONTHLY',
-                    startDate: new Date(),
+                    billingCycle,
+                    startDate: now,
                     trialEndsAt,
                 });
+            } else {
+                // Paid plan flow
+                const periodEnd = new Date(now);
+                if (billingCycle === 'ANNUAL') {
+                    periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+                } else if (billingCycle === '2_YEAR') {
+                    periodEnd.setFullYear(periodEnd.getFullYear() + 2);
+                } else if (billingCycle === '3_YEAR') {
+                    periodEnd.setFullYear(periodEnd.getFullYear() + 3);
+                } else {
+                    periodEnd.setMonth(periodEnd.getMonth() + 1);
+                }
+
+                const price = billingCycle === 'ANNUAL' || billingCycle === '2_YEAR' || billingCycle === '3_YEAR'
+                    ? (pkgDetails?.annualPrice ?? pkgDetails?.monthlyPrice ?? '0')
+                    : (pkgDetails?.monthlyPrice ?? '0');
+
+                await tx.update(hotels).set({
+                    licenseStatus: 'ACTIVE',
+                    licenseExpiresAt: periodEnd,
+                    planTier: resolvedPkgCode,
+                }).where(eq(hotels.id, newHotel.id));
+
+                const [subscription] = await tx.insert(subscriptions).values({
+                    hotelId: newHotel.id,
+                    packageId: pkgId,
+                    status: 'ACTIVE',
+                    billingCycle,
+                    startDate: now,
+                    currentPeriodStart: now,
+                    currentPeriodEnd: periodEnd,
+                }).returning();
+
+                // Record payment
+                if (subscription) {
+                    await tx.insert(subscriptionPayments).values({
+                        subscriptionId: subscription.id,
+                        hotelId: newHotel.id,
+                        amount: price,
+                        currency: 'USD',
+                        paymentMethod: 'MANUAL',
+                        status: 'COMPLETED',
+                        periodStart: now,
+                        periodEnd: periodEnd,
+                        notes: `Onboard payment — ${billingCycle.toLowerCase()} ${resolvedPkgCode} plan`,
+                    });
+                }
             }
 
             return { hotel: newHotel, owner: ownerUser };
@@ -370,12 +464,15 @@ export const SuperAdminService = {
         });
 
         // Generate Token for the Owner
+        const impersonationId = crypto.randomUUID();
         const token = await jwt.sign({
             id: ownerUser.id,
             hotelId: ownerUser.hotelId,
             type: 'HOTEL_STAFF',
             permissions: ownerRole.permissions as string[],
-            role: ownerRole.name
+            role: ownerRole.name,
+            impersonation: true,
+            impersonationId,
         });
 
         // Audit log the impersonation
@@ -392,6 +489,7 @@ export const SuperAdminService = {
         return {
             message: `Impersonating ${ownerUser.fullName} at ${hotel?.name || 'Hotel #' + targetHotelId}`,
             token,
+            impersonationId,
             user: {
                 id: ownerUser.id,
                 fullName: ownerUser.fullName,

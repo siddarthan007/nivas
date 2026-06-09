@@ -213,7 +213,7 @@ export default function CommandPalette() {
                     justifyContent: 'center',
                     padding: '16px',
                     paddingTop: 'max(16px, 12vh)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    backgroundColor: 'var(--notion-overlay)',
                     backdropFilter: 'blur(4px)',
                 }}
                 onClick={close}

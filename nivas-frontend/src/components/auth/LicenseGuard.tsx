@@ -85,7 +85,7 @@ export default function LicenseGuard({ children }: LicenseGuardProps) {
                             Please contact your administrator.
                         </span>
                         <a
-                            href="/dashboard/saas-billing"
+                            href="/hotel/billing"
                             style={{
                                 color: 'var(--notion-yellow)',
                                 textDecoration: 'underline',
@@ -102,23 +102,8 @@ export default function LicenseGuard({ children }: LicenseGuardProps) {
 
         // Full blocking UI for expired/revoked/paused licenses
         return (
-            <div style={{
-                minHeight: '100vh',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: 'var(--notion-bg)',
-                padding: 'var(--space-8)',
-            }}>
-                <div style={{
-                    textAlign: 'center',
-                    padding: 'var(--space-10)',
-                    backgroundColor: 'var(--notion-bg-secondary)',
-                    borderRadius: 'var(--radius-lg)',
-                    border: '1px solid var(--notion-border)',
-                    maxWidth: '480px',
-                    width: '100%',
-                }}>
+            <div className="page-center" style={{ padding: 'var(--space-8)' }}>
+                <div className="card-box" style={{ maxWidth: '480px', width: '100%', padding: 'var(--space-10)' }}>
                     <div style={{
                         width: '64px',
                         height: '64px',
@@ -132,30 +117,16 @@ export default function LicenseGuard({ children }: LicenseGuardProps) {
                         <Icon size={32} color={config.color} />
                     </div>
 
-                    <h1 style={{
-                        fontSize: '24px',
-                        fontWeight: '700',
-                        color: 'var(--notion-text)',
-                        marginBottom: 'var(--space-3)',
-                    }}>
+                    <h1 style={{ fontSize: '24px', fontWeight: '700', marginBottom: 'var(--space-3)' }}>
                         {config.title}
                     </h1>
 
-                    <p style={{
-                        fontSize: '14px',
-                        color: 'var(--notion-text-secondary)',
-                        marginBottom: 'var(--space-6)',
-                        lineHeight: '1.6',
-                    }}>
+                    <p style={{ fontSize: '14px', marginBottom: 'var(--space-6)', lineHeight: '1.6' }} className="text-notion-secondary">
                         {licenseError.message}
                     </p>
 
                     {licenseError.expiresAt && (
-                        <p style={{
-                            fontSize: '12px',
-                            color: 'var(--notion-text-muted)',
-                            marginBottom: 'var(--space-6)',
-                        }}>
+                        <p style={{ fontSize: '12px', marginBottom: 'var(--space-6)' }} className="text-notion-muted">
                             Expired: {new Date(licenseError.expiresAt).toLocaleDateString()}
                         </p>
                     )}
@@ -163,7 +134,7 @@ export default function LicenseGuard({ children }: LicenseGuardProps) {
                     <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'center' }}>
                         <Button
                             variant="primary"
-                            onClick={() => { window.location.href = '/dashboard/saas-billing'; }}
+                            onClick={() => { window.location.href = '/hotel/billing'; }}
                         >
                             View Billing
                         </Button>

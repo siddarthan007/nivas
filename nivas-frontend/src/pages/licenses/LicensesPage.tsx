@@ -23,9 +23,11 @@ import {
     Clock,
     Crown,
     Zap,
+    Pause,
+    ShieldAlert,
 } from 'lucide-react';
 
-type LicenseStatus = 'ACTIVE' | 'EXPIRED' | 'SUSPENDED' | 'TRIAL';
+type LicenseStatus = 'ACTIVE' | 'EXPIRED' | 'SUSPENDED' | 'TRIAL' | 'PAUSED' | 'REVOKED';
 
 // Default plan color palette for dynamic plans
 const PLAN_COLORS = [
@@ -45,6 +47,8 @@ const STATUS_CONFIG: Record<LicenseStatus, { color: string; bg: string; label: s
     EXPIRED: { color: 'var(--notion-red)', bg: 'var(--notion-red-bg)', label: 'Expired' },
     SUSPENDED: { color: 'var(--notion-orange)', bg: 'var(--notion-yellow-bg)', label: 'Suspended' },
     TRIAL: { color: 'var(--notion-blue)', bg: 'var(--notion-blue-bg)', label: 'Trial' },
+    PAUSED: { color: 'var(--notion-yellow)', bg: 'var(--notion-yellow-bg)', label: 'Paused' },
+    REVOKED: { color: 'var(--notion-red)', bg: 'var(--notion-red-bg)', label: 'Revoked' },
 };
 
 // License Card Component
@@ -54,6 +58,7 @@ function LicenseCard({
     onRenew,
     onSuspend,
     onReactivate,
+    onRevoke,
     planConfigIndex,
 }: {
     license: {
@@ -70,6 +75,7 @@ function LicenseCard({
     onRenew: () => void;
     onSuspend: () => void;
     onReactivate: () => void;
+    onRevoke: () => void;
     planConfigIndex: number;
 }) {
     const planConfig = getPlanConfig(planConfigIndex);
@@ -83,7 +89,7 @@ function LicenseCard({
             borderRadius: 'var(--radius-lg)',
             border: '1px solid var(--notion-border)',
             padding: 'var(--space-5)',
-            opacity: license.status === 'SUSPENDED' ? 0.7 : 1,
+            opacity: (license.status === 'SUSPENDED' || license.status === 'PAUSED' || license.status === 'REVOKED') ? 0.7 : 1,
         }}>
             {/* Header */}
             <div style={{
@@ -214,27 +220,46 @@ function LicenseCard({
                 borderTop: '1px solid var(--notion-divider)',
                 paddingTop: 'var(--space-3)',
             }}>
-                {license.status === 'ACTIVE' && (
+                {(license.status === 'ACTIVE' || license.status === 'TRIAL') && (
                     <>
                         <Button size="sm" onClick={onRenew} style={{ flex: 1 }}>
                             <RefreshCw size={14} />
                             <span style={{ marginLeft: '4px' }}>Renew</span>
                         </Button>
-                        <Button size="sm" variant="secondary" onClick={onSuspend}>
-                            <XCircle size={14} />
+                        <Button size="sm" variant="secondary" onClick={onSuspend} title="Suspend">
+                            <Pause size={14} />
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={onRevoke} style={{ color: 'var(--notion-red)' }} title="Revoke">
+                            <ShieldAlert size={14} />
                         </Button>
                     </>
                 )}
-                {license.status === 'SUSPENDED' && (
-                    <Button size="sm" onClick={onReactivate} style={{ flex: 1 }}>
-                        <CheckCircle size={14} />
-                        <span style={{ marginLeft: '4px' }}>Reactivate</span>
-                    </Button>
+                {(license.status === 'SUSPENDED' || license.status === 'PAUSED') && (
+                    <>
+                        <Button size="sm" onClick={onReactivate} style={{ flex: 1 }}>
+                            <CheckCircle size={14} />
+                            <span style={{ marginLeft: '4px' }}>Reactivate</span>
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={onRevoke} style={{ color: 'var(--notion-red)' }} title="Revoke">
+                            <ShieldAlert size={14} />
+                        </Button>
+                    </>
                 )}
                 {license.status === 'EXPIRED' && (
-                    <Button size="sm" onClick={onRenew} style={{ flex: 1 }}>
-                        <RefreshCw size={14} />
-                        <span style={{ marginLeft: '4px' }}>Renew</span>
+                    <>
+                        <Button size="sm" onClick={onRenew} style={{ flex: 1 }}>
+                            <RefreshCw size={14} />
+                            <span style={{ marginLeft: '4px' }}>Renew</span>
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={onRevoke} style={{ color: 'var(--notion-red)' }} title="Revoke">
+                            <ShieldAlert size={14} />
+                        </Button>
+                    </>
+                )}
+                {license.status === 'REVOKED' && (
+                    <Button size="sm" variant="secondary" style={{ flex: 1 }} disabled>
+                        <XCircle size={14} />
+                        <span style={{ marginLeft: '4px' }}>Revoked</span>
                     </Button>
                 )}
             </div>
@@ -335,6 +360,7 @@ export default function LicensesPage() {
         renewLicense,
         suspendLicense,
         reactivateLicense,
+        revokeLicense,
         getDaysUntilExpiry,
     } = useLicenses();
 
@@ -348,6 +374,12 @@ export default function LicensesPage() {
         licenseId: '',
         tenantName: '',
     });
+    const [revokeModal, setRevokeModal] = useState<{ isOpen: boolean; licenseId: string; tenantName: string }>({
+        isOpen: false,
+        licenseId: '',
+        tenantName: '',
+    });
+    const [revokePw, setRevokePw] = useState('');
     const [isNewLicenseOpen, setIsNewLicenseOpen] = useState(false);
 
     // Filter licenses
@@ -401,7 +433,7 @@ export default function LicensesPage() {
                             </Button>
                             <Button onClick={() => setIsNewLicenseOpen(true)}>
                                 <Plus size={14} style={{ marginRight: '6px' }} />
-                                New License
+                                Grant Trial
                             </Button>
                         </div>
                     </div>
@@ -409,16 +441,17 @@ export default function LicensesPage() {
                     {/* Stats */}
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: 'repeat(5, 1fr)',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
                         gap: 'var(--space-4)',
                         marginBottom: 'var(--space-6)',
                     }}>
                         {[
                             { label: 'Total', value: stats.total, color: 'var(--notion-text)', icon: Key },
                             { label: 'Active', value: stats.active, color: 'var(--notion-green)', icon: CheckCircle },
-                            { label: 'Expiring Soon', value: stats.expiringSoon, color: 'var(--notion-orange)', icon: AlertTriangle },
-                            { label: 'Expired', value: stats.expired, color: 'var(--notion-red)', icon: XCircle },
                             { label: 'Trial', value: stats.trial, color: 'var(--notion-blue)', icon: Clock },
+                            { label: 'Paused', value: stats.paused, color: 'var(--notion-yellow)', icon: AlertTriangle },
+                            { label: 'Expired', value: stats.expired, color: 'var(--notion-red)', icon: XCircle },
+                            { label: 'Revoked', value: stats.revoked, color: 'var(--notion-red)', icon: XCircle },
                         ].map(stat => {
                             const Icon = stat.icon;
                             return (
@@ -511,9 +544,11 @@ export default function LicensesPage() {
                             options={[
                                 { value: 'ALL', label: 'All Status' },
                                 { value: 'ACTIVE', label: 'Active' },
-                                { value: 'EXPIRED', label: 'Expired' },
-                                { value: 'SUSPENDED', label: 'Suspended' },
                                 { value: 'TRIAL', label: 'Trial' },
+                                { value: 'PAUSED', label: 'Paused' },
+                                { value: 'SUSPENDED', label: 'Suspended' },
+                                { value: 'EXPIRED', label: 'Expired' },
+                                { value: 'REVOKED', label: 'Revoked' },
                             ]}
                         />
 
@@ -574,6 +609,7 @@ export default function LicensesPage() {
                                         onRenew={() => setRenewalModal({ isOpen: true, licenseId: license.id, tenantName: license.tenantName })}
                                         onSuspend={() => suspendLicense(license.id)}
                                         onReactivate={() => reactivateLicense(license.id)}
+                                        onRevoke={() => setRevokeModal({ isOpen: true, licenseId: license.id, tenantName: license.tenantName })}
                                         planConfigIndex={planIdx >= 0 ? planIdx : 0}
                                     />
                                 );
@@ -590,7 +626,36 @@ export default function LicensesPage() {
                 tenantName={renewalModal.tenantName}
             />
 
-            {/* New License Modal */}
+            {/* Revoke Confirm Modal */}
+            {revokeModal.licenseId && (
+                <Modal isOpen={revokeModal.isOpen} onClose={() => setRevokeModal({ isOpen: false, licenseId: '', tenantName: '' })} title={`Revoke License - ${revokeModal.tenantName}`}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                        <p style={{ fontSize: '14px', color: 'var(--notion-text-secondary)' }}>
+                            Are you sure you want to <strong style={{ color: 'var(--notion-red)' }}>revoke</strong> this license? This will immediately stop all operations for this hotel. This action cannot be undone from the UI.
+                        </p>
+                        <div>
+                            <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', display: 'block', marginBottom: '4px' }}>Confirm your password</label>
+                            <Input type="password" value={revokePw} onChange={e => setRevokePw(e.target.value)} placeholder="Your password" fullWidth />
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                            <Button variant="secondary" onClick={() => { setRevokeModal({ isOpen: false, licenseId: '', tenantName: '' }); setRevokePw(''); }} style={{ flex: 1 }}>Cancel</Button>
+                            <Button
+                                disabled={!revokePw}
+                                onClick={async () => {
+                                    await revokeLicense(revokeModal.licenseId, revokePw);
+                                    setRevokeModal({ isOpen: false, licenseId: '', tenantName: '' });
+                                    setRevokePw('');
+                                }}
+                                style={{ flex: 1, backgroundColor: 'var(--notion-red)', color: 'var(--foreground-inverse)' }}
+                            >
+                                Revoke License
+                            </Button>
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
+            {/* Grant Trial Modal */}
             <Modal isOpen={isNewLicenseOpen} onClose={() => setIsNewLicenseOpen(false)} title="Grant Trial License">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                     <p style={{ fontSize: '14px', color: 'var(--notion-text-secondary)' }}>

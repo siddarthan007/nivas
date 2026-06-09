@@ -112,7 +112,7 @@ export function useCRM() {
     const searchGuests = useCallback(async (search?: string) => {
         setIsLoading(true);
         try {
-            const url = search ? `/guests?search=${encodeURIComponent(search)}` : '/guests';
+            const url = search ? `/crm/guests?search=${encodeURIComponent(search)}` : '/crm/guests';
             const res = await api.get<Guest[]>(url);
             setGuests(res.data || []);
         } catch (err: any) {
@@ -124,7 +124,7 @@ export function useCRM() {
 
     const getGuestHistory = async (guestId: string) => {
         try {
-            const res = await api.get<GuestHistory>(`/guests/${guestId}/history`);
+            const res = await api.get<GuestHistory>(`/crm/guests/${guestId}/history`);
             return res.data;
         } catch (err: any) {
             toast.error(err?.message || 'Failed to fetch guest history');
@@ -135,7 +135,7 @@ export function useCRM() {
     const updateGuestProfile = async (guestId: string, data: { preferences?: any; tags?: string[]; isVip?: boolean }) => {
         setIsLoading(true);
         try {
-            await api.patch(`/guests/${guestId}`, data);
+            await api.patch(`/crm/guests/${guestId}`, data);
             await searchGuests();
             toast.success('Guest profile updated');
             return true;

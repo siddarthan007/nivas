@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { purchaseRequests, purchaseOrders } from '../../db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { NotFoundError } from '../../utils/errors';
 
 export const ProcurementService = {
@@ -12,9 +12,9 @@ export const ProcurementService = {
 
     async createRequest(hotelId: number, userId: string, data: { itemId: number; quantity: number; reason: string | null; priority: any }) {
         const [request] = await db.insert(purchaseRequests).values({
+            ...data,
             hotelId,
             requesterId: userId,
-            ...data,
             status: 'PENDING',
         }).returning();
         return request;
@@ -23,7 +23,7 @@ export const ProcurementService = {
     async updateRequestStatus(hotelId: number, requestId: number, status: any) {
         const [updated] = await db.update(purchaseRequests)
             .set({ status, updatedAt: new Date() })
-            .where(eq(purchaseRequests.id, requestId))
+            .where(and(eq(purchaseRequests.id, requestId), eq(purchaseRequests.hotelId, hotelId)))
             .returning();
 
         if (!updated) throw new NotFoundError('Purchase Request');

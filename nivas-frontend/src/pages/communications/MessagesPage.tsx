@@ -125,7 +125,7 @@ function ConversationItem({
                     height: '20px',
                     borderRadius: '50%',
                     backgroundColor: 'var(--notion-blue)',
-                    color: 'white',
+                    color: 'var(--foreground-inverse)',
                     fontSize: '11px',
                     fontWeight: '600',
                     display: 'flex',
@@ -151,7 +151,7 @@ function MessageBubble({ message, isOwn }: { message: Message; isOwn: boolean })
                 padding: '10px 14px',
                 borderRadius: isOwn ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
                 backgroundColor: isOwn ? 'var(--notion-blue)' : 'var(--notion-bg-tertiary)',
-                color: isOwn ? 'white' : 'var(--notion-text)'
+                color: isOwn ? 'var(--foreground-inverse)' : 'var(--notion-text)'
             }}>
                 {!isOwn && message.senderName && (
                     <div style={{ fontSize: '12px', fontWeight: '500', marginBottom: '4px', opacity: 0.8 }}>
@@ -219,7 +219,7 @@ function NewConversationPanel({
     const filtered = useMemo(() =>
         staffList.filter(m =>
             (m.name || '').toLowerCase().includes(search.toLowerCase()) ||
-            (m.role || '').toLowerCase().includes(search.toLowerCase())
+            (m.role?.name || '').toLowerCase().includes(search.toLowerCase())
         ),
         [staffList, search]
     );
@@ -319,7 +319,7 @@ function NewConversationPanel({
                                     {member.name}
                                 </div>
                                 <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
-                                    {member.role}
+                                    {member.role?.name}
                                 </div>
                             </div>
                         </button>
@@ -419,7 +419,7 @@ export default function MessagesPage() {
                                     {totalUnread > 0 && (
                                         <span style={{
                                             backgroundColor: 'var(--notion-red)',
-                                            color: 'white',
+                                            color: 'var(--foreground-inverse)',
                                             fontSize: '11px',
                                             padding: '2px 6px',
                                             borderRadius: '10px',
@@ -623,11 +623,13 @@ export default function MessagesPage() {
                                 flexDirection: 'column',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                color: 'var(--notion-text-secondary)'
+                                color: 'var(--notion-text-secondary)',
+                                padding: '0 32px',
+                                textAlign: 'center'
                             }}>
                                 <Inbox size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
-                                <h3 style={{ margin: '0 0 8px 0', fontWeight: '500' }}>Select a conversation</h3>
-                                <p style={{ fontSize: '14px', marginBottom: '16px' }}>Choose from your existing conversations or start a new one</p>
+                                <h3 style={{ margin: '0 0 8px 0', fontWeight: '600', fontSize: '16px', color: 'var(--notion-text)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Select a conversation</h3>
+                                <p style={{ fontSize: '14px', marginBottom: '20px', maxWidth: '320px', lineHeight: '1.5' }}>Choose from your existing conversations or start a new one</p>
                                 <Button variant="secondary" onClick={handleNewConversation} icon={<Plus size={16} />}>
                                     New Conversation
                                 </Button>

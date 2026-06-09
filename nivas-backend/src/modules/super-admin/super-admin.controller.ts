@@ -3,7 +3,7 @@ import { authMiddleware } from '../../middlewares/auth.middleware';
 import { PERMISSIONS } from '../../config/permissions';
 import { SuperAdminService } from './super-admin.service';
 import { createResponse } from '../../utils/response.helper';
-import { UnauthorizedError } from '../../utils/errors';
+import { UnauthorizedError, ForbiddenError } from '../../utils/errors';
 
 export const superAdminController = new Elysia({ prefix: '/super-admin' })
     .use(authMiddleware)
@@ -14,18 +14,26 @@ export const superAdminController = new Elysia({ prefix: '/super-admin' })
         isSignedIn: true,
         hasPermission: PERMISSIONS.SYSTEM.MANAGE_TENANTS,
         body: t.Object({
-            name: t.String(),
-            slug: t.String(),
+            name: t.String({ minLength: 1 }),
+            // URL-safe slug — drives tenant resolution + guest-portal URLs.
+            slug: t.String({ pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', minLength: 2 }),
             logoUrl: t.Optional(t.String()),
+            website: t.Optional(t.String()),
             address: t.String(),
-            ownerName: t.String(),
-            ownerEmail: t.String(),
+            phone: t.Optional(t.String()),
+            panNumber: t.Optional(t.String()),
+            vatNumber: t.Optional(t.String()),
+            ownerName: t.String({ minLength: 1 }),
+            ownerEmail: t.String({ format: 'email' }),
             ownerPhone: t.String(),
-            ownerPassword: t.String({ minLength: 6 }),
-            serviceChargeRate: t.Optional(t.Number()),
-            taxRate: t.Optional(t.Number()),
+            ownerPassword: t.String({ minLength: 8 }),
+            serviceChargeRate: t.Optional(t.String()),
+            taxRate: t.Optional(t.String()),
             packageId: t.Optional(t.Number()),
+            billingCycle: t.Optional(t.Union([t.Literal('MONTHLY'), t.Literal('ANNUAL'), t.Literal('2_YEAR'), t.Literal('3_YEAR')])),
             trialDays: t.Optional(t.Number()),
+            maxRooms: t.Optional(t.Number()),
+            maxUsers: t.Optional(t.Number()),
         }),
         detail: {
             summary: 'Onboard a new hotel (SaaS admin only)',
@@ -110,6 +118,15 @@ export const superAdminController = new Elysia({ prefix: '/super-admin' })
                 maxAge: 60 * 60 * 2,
                 path: '/'
             });
+
+            cookie.impersonation_id?.set({
+                value: result.impersonationId,
+                httpOnly: false,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict',
+                maxAge: 60 * 60 * 2,
+                path: '/'
+            });
         }
 
         return createResponse(result, result.message);
@@ -124,17 +141,37 @@ export const superAdminController = new Elysia({ prefix: '/super-admin' })
             tags: ['Super Admin']
         }
     })
-    .post('/end-impersonate', async ({ cookie }) => {
-        const backupToken = cookie?.admin_backup_token?.value;
+    .post('/end-impersonate', async ({ cookie, user, jwt }) => {
+        if (!user?.impersonation) {
+            throw new ForbiddenError('Not in an impersonation session');
+        }
 
+        const backupToken = cookie?.admin_backup_token?.value;
         if (!backupToken) {
-            return createResponse({ restored: false }, 'No backup session found');
+            cookie?.impersonation_active?.remove();
+            cookie?.impersonation_hotel?.remove();
+            cookie?.impersonation_token?.remove();
+            cookie?.impersonation_id?.remove();
+            cookie?.admin_backup_token?.remove();
+            return createResponse({ restored: false }, 'No backup session found. Please login again.');
+        }
+
+        // Verify backup token is still valid (not expired / tampered)
+        const backupProfile = await jwt.verify(backupToken as string);
+        if (!backupProfile || backupProfile.type !== 'SUPER_ADMIN') {
+            cookie?.admin_backup_token?.remove();
+            cookie?.impersonation_active?.remove();
+            cookie?.impersonation_hotel?.remove();
+            cookie?.impersonation_token?.remove();
+            cookie?.impersonation_id?.remove();
+            return createResponse({ restored: false }, 'Backup session invalid or expired. Please login again.');
         }
 
         cookie?.admin_backup_token?.remove();
         cookie?.impersonation_active?.remove();
         cookie?.impersonation_hotel?.remove();
         cookie?.impersonation_token?.remove();
+        cookie?.impersonation_id?.remove();
 
         cookie.auth?.set({
             value: backupToken,
@@ -161,6 +198,16 @@ export const superAdminController = new Elysia({ prefix: '/super-admin' })
         isSignedIn: true,
         detail: {
             summary: 'End impersonation and restore admin session',
+            tags: ['Super Admin']
+        }
+    })
+    .get('/validate-impersonation', async ({ user }) => {
+        const valid = user?.impersonation === true;
+        return createResponse({ valid }, valid ? 'Impersonation session active' : 'Not in an impersonation session');
+    }, {
+        isSignedIn: true,
+        detail: {
+            summary: 'Validate current impersonation session',
             tags: ['Super Admin']
         }
     });

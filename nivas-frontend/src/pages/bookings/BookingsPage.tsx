@@ -1,13 +1,19 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { useSearchParams } from '@/lib/router';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { useBookings } from '@/lib/hooks/useBookings';
+import { useBookings, type BookingSegment } from '@/lib/hooks/useBookings';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import CustomDatePicker from '@/components/ui/DatePicker';
 import Modal from '@/components/ui/Modal';
+import CheckoutModal from '@/components/features/bookings/CheckoutModal';
+import GroupBookingModal from '@/components/features/bookings/GroupBookingModal';
+import FolioPanel from '@/components/features/bookings/FolioPanel';
 import Select from '@/components/ui/Select';
+import SearchableSelect from '@/components/ui/SearchableSelect';
 import { useRooms } from '@/lib/hooks/useRooms';
 import { useCorporate } from '@/lib/hooks/useCorporate';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -31,7 +37,8 @@ import {
     Pencil,
     XCircle,
     ArrowRightLeft,
-    CalendarPlus,
+    CalendarRange,
+    Receipt,
     MoreHorizontal
 } from 'lucide-react';
 import Pagination from '@/components/ui/Pagination';
@@ -40,6 +47,8 @@ import type { GuestSearchResult } from '@/lib/services/guest.service';
 import NationalitySelect from '@/components/features/guests/NationalitySelect';
 import type { CreateBookingPayload, BookingSource, Booking, BookingStatus } from '@/lib/types/api.types';
 import { format } from 'date-fns';
+import DualDate from '@/components/ui/DualDate';
+import BookingGanttPage from './BookingGanttPage';
 
 const BOOKING_SOURCES: BookingSource[] = ['WALK_IN', 'PHONE', 'WEBSITE', 'OTA', 'TRAVEL_AGENT', 'CORPORATE'];
 
@@ -158,11 +167,15 @@ function CheckInSuccessModal({
 function CreateBookingModal({
     isOpen,
     onClose,
-    onCreate
+    onCreate,
+    bookings,
+    prefill,
 }: {
     isOpen: boolean;
     onClose: () => void;
     onCreate: (data: CreateBookingPayload) => Promise<void>;
+    bookings: Booking[];
+    prefill?: { roomId?: number; checkIn?: string };
 }) {
     const { rooms } = useRooms();
     const { companies, agents } = useCorporate();
@@ -186,10 +199,22 @@ function CreateBookingModal({
         travelAgentId: undefined,
     });
 
-    // Reset step on open
+    // Reset step on open + apply any prefill (e.g. from the Gantt cell click).
     useEffect(() => {
-        if (isOpen) setStep(1);
-    }, [isOpen]);
+        if (isOpen) {
+            setStep(1);
+            if (prefill && (prefill.roomId || prefill.checkIn)) {
+                setFormData(prev => ({
+                    ...prev,
+                    ...(prefill.roomId ? { roomId: prefill.roomId } : {}),
+                    ...(prefill.checkIn ? {
+                        checkIn: prefill.checkIn,
+                        checkOut: new Date(new Date(prefill.checkIn).getTime() + 86400000).toISOString().split('T')[0],
+                    } : {}),
+                }));
+            }
+        }
+    }, [isOpen, prefill]);
 
     // Auto-calculate amount
     useEffect(() => {
@@ -240,7 +265,24 @@ function CreateBookingModal({
         }
     };
 
-    const availableRooms = rooms.filter(r => r.status === 'VACANT' || r.status === 'AVAILABLE');
+    const checkInDate = formData.checkIn ? new Date(formData.checkIn) : null;
+    const checkOutDate = formData.checkOut ? new Date(formData.checkOut) : null;
+
+    const availableRooms = rooms.filter(r => {
+        // Exclude permanently unavailable statuses
+        if (r.status === 'OCCUPIED' || r.status === 'MAINTENANCE') return false;
+        // Check actual booking conflicts for selected dates
+        if (checkInDate && checkOutDate) {
+            const hasConflict = bookings.some(b =>
+                b.roomId === r.id &&
+                (b.status === 'CONFIRMED' || b.status === 'CHECKED_IN') &&
+                checkInDate < new Date(b.checkOut) &&
+                checkOutDate > new Date(b.checkIn)
+            );
+            if (hasConflict) return false;
+        }
+        return true;
+    });
     const selectedRoom = rooms.find(r => r.id === Number(formData.roomId));
     const nights = formData.checkIn && formData.checkOut
         ? Math.max(1, Math.ceil((new Date(formData.checkOut).getTime() - new Date(formData.checkIn).getTime()) / 86400000))
@@ -253,7 +295,7 @@ function CreateBookingModal({
     const labelStyle: React.CSSProperties = { display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="New Booking">
+        <Modal isOpen={isOpen} onClose={onClose} title="New Booking" onSubmit={step === 3 ? handleSubmit : undefined}>
             {/* Step Indicator */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', marginBottom: 'var(--space-5)', position: 'relative' }}>
                 {/* Connecting lines layer */}
@@ -324,17 +366,17 @@ function CreateBookingModal({
                     </div>
 
                     <div>
-                        <label style={labelStyle}>Room *</label>
-                        <Select
-                            value={formData.roomId?.toString() || ''}
-                            onChange={e => setFormData({ ...formData, roomId: Number(e.target.value) })}
-                            options={[
-                                { value: '', label: 'Select a room...' },
-                                ...availableRooms.map(r => ({
-                                    value: r.id.toString(),
-                                    label: `${r.number} - ${r.type} (₹${r.rate}/night)`
-                                }))
-                            ]}
+                        <SearchableSelect
+                            label="Room *"
+                            value={formData.roomId || null}
+                            onChange={val => setFormData({ ...formData, roomId: Number(val) })}
+                            placeholder="Select a room..."
+                            searchPlaceholder="Search rooms..."
+                            options={availableRooms.map(r => ({
+                                value: r.id,
+                                label: `Room ${r.number}`,
+                                subtitle: `${r.type} — Rs ${r.rate}/night`
+                            }))}
                         />
                     </div>
 
@@ -352,11 +394,11 @@ function CreateBookingModal({
                                         Room {selectedRoom.number} — {selectedRoom.type}
                                     </div>
                                     <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', marginTop: '2px' }}>
-                                        {nights} night{nights !== 1 ? 's' : ''} × ₹{selectedRoom.rate?.toLocaleString()}
+                                        {nights} night{nights !== 1 ? 's' : ''} × Rs {selectedRoom.rate?.toLocaleString()}
                                     </div>
                                 </div>
                                 <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--notion-blue)' }}>
-                                    ₹{(formData.totalAmount || 0).toLocaleString()}
+                                    Rs {(formData.totalAmount || 0).toLocaleString()}
                                 </div>
                             </div>
                         </div>
@@ -472,14 +514,14 @@ function CreateBookingModal({
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                         <div>
-                            <label style={labelStyle}>Total Amount (₹) *</label>
+                            <label style={labelStyle}>Total Amount (Rs ) *</label>
                             <Input type="number" required value={formData.totalAmount}
                                 onChange={e => setFormData({ ...formData, totalAmount: Number(e.target.value) })}
                                 icon={<CreditCard size={14} />}
                             />
                         </div>
                         <div>
-                            <label style={labelStyle}>Advance Payment (₹)</label>
+                            <label style={labelStyle}>Advance Payment (Rs )</label>
                             <Input type="number" value={formData.advancePayment}
                                 onChange={e => setFormData({ ...formData, advancePayment: Number(e.target.value) })}
                             />
@@ -549,7 +591,7 @@ function CreateBookingModal({
                                 Balance Due
                             </span>
                             <span style={{ fontSize: '16px', fontWeight: '700', color: (formData.totalAmount - (formData.advancePayment || 0)) > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>
-                                ₹{((formData.totalAmount || 0) - (formData.advancePayment || 0)).toLocaleString()}
+                                Rs {((formData.totalAmount || 0) - (formData.advancePayment || 0)).toLocaleString()}
                             </span>
                         </div>
                     )}
@@ -602,12 +644,27 @@ function EditBookingModal({
                 guestCount: booking.guestCount,
                 checkIn: new Date(booking.checkIn).toISOString().split('T')[0],
                 checkOut: new Date(booking.checkOut).toISOString().split('T')[0],
-                totalAmount: booking.totalAmount,
-                advancePayment: booking.advancePayment || 0,
+                totalAmount: booking.totalAmount ? parseFloat(String(booking.totalAmount)) : 0,
+                advancePayment: booking.advancePayment ? parseFloat(String(booking.advancePayment)) : 0,
                 source: booking.source || 'WALK_IN'
             });
         }
     }, [booking]);
+
+    // Auto-recalculate total amount when dates change
+    useEffect(() => {
+        if (!booking || !formData.checkIn || !formData.checkOut) return;
+        const origCheckIn = new Date(booking.checkIn).toISOString().split('T')[0];
+        const origCheckOut = new Date(booking.checkOut).toISOString().split('T')[0];
+        const datesChanged = formData.checkIn !== origCheckIn || formData.checkOut !== origCheckOut;
+        if (!datesChanged) return;
+        const room = rooms.find(r => r.id === booking.roomId);
+        if (!room) return;
+        const start = new Date(formData.checkIn);
+        const end = new Date(formData.checkOut);
+        const nights = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+        setFormData((prev: any) => ({ ...prev, totalAmount: room.rate * nights }));
+    }, [formData.checkIn, formData.checkOut, booking, rooms]);
 
     if (!booking) return null;
 
@@ -623,8 +680,8 @@ function EditBookingModal({
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Edit Booking">
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <Modal isOpen={isOpen} onClose={onClose} title="Edit Booking" onSubmit={() => { (document.getElementById('edit-booking-form') as HTMLFormElement)?.requestSubmit(); }}>
+            <form id="edit-booking-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                     <div>
                         <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Guest Name</label>
@@ -649,7 +706,7 @@ function EditBookingModal({
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                     <div>
-                        <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Total Amount (₹)</label>
+                        <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Total Amount (Rs )</label>
                         <Input type="number" value={formData.totalAmount} onChange={e => setFormData({ ...formData, totalAmount: Number(e.target.value) })} />
                     </div>
                     <div>
@@ -755,7 +812,7 @@ function ChangeRoomModal({
                         onChange={e => setSelectedRoom(e.target.value ? Number(e.target.value) : null)}
                         options={[
                             { value: '', label: 'Select a room...' },
-                            ...availableRooms.map(r => ({ value: r.id.toString(), label: `Room ${r.number} - ${r.type} (₹${r.rate})` })),
+                            ...availableRooms.map(r => ({ value: r.id.toString(), label: `Room ${r.number} - ${r.type} (Rs ${r.rate})` })),
                         ]}
                     />
                 </div>
@@ -769,20 +826,54 @@ function ChangeRoomModal({
 }
 
 export default function BookingsPage() {
-    const { bookings, isLoading, pagination, fetchBookings, createBooking, checkIn, checkOut, updateBooking, cancelBooking, extendStay, changeRoom } = useBookings();
+    const { bookings, isLoading, pagination, fetchBookings, createBooking, checkIn, checkOut, getCheckoutPreview, processCheckout, updateBooking, cancelBooking, extendStay, changeRoom } = useBookings();
+    const [activeTab, setActiveTab] = useState<'list' | 'gantt'>('list');
+    const [segment, setSegment] = useState<BookingSegment>('all');
     const [currentPage, setCurrentPage] = useState(1);
     const [pageLimit, setPageLimit] = useState(20);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
+    const [isGroupOpen, setIsGroupOpen] = useState(false);
+    const [checkingInId, setCheckingInId] = useState<string | null>(null);
+    const [folioBookingId, setFolioBookingId] = useState<string | null>(null);
+    const [createPrefill, setCreatePrefill] = useState<{ roomId?: number; checkIn?: string } | undefined>(undefined);
+
+    // Open the create modal (optionally prefilled) from a deep link / Gantt click.
+    // useSearchParams is reactive, so this fires even if the page was already mounted.
+    const searchParams = useSearchParams();
+    useEffect(() => {
+        if (searchParams.get('action') === 'new') {
+            const roomId = searchParams.get('roomId') ? Number(searchParams.get('roomId')) : undefined;
+            const checkIn = searchParams.get('checkIn') || undefined;
+            if (roomId || checkIn) setCreatePrefill({ roomId, checkIn });
+            setIsCreateOpen(true);
+            // Clear the params so a refresh doesn't reopen it.
+            window.history.replaceState({}, '', '/hotel/bookings');
+            window.dispatchEvent(new PopStateEvent('popstate'));
+        }
+    }, [searchParams]);
+    const { rooms: allRooms } = useRooms();
     const [searchQuery, setSearchQuery] = useState('');
     const [checkInSuccess, setCheckInSuccess] = useState<{ show: boolean; pin: string }>({ show: false, pin: '' });
     const [editBooking, setEditBooking] = useState<Booking | null>(null);
     const [cancelBookingTarget, setCancelBookingTarget] = useState<Booking | null>(null);
     const [changeRoomTarget, setChangeRoomTarget] = useState<Booking | null>(null);
+    const [checkoutBookingId, setCheckoutBookingId] = useState<string | null>(null);
     const [actionMenuId, setActionMenuId] = useState<string | null>(null);
+    const [actionMenuPos, setActionMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+    const actionButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
+    // Server-side search (debounced) so results aren't limited to the loaded page.
     useEffect(() => {
-        fetchBookings({ page: currentPage, limit: pageLimit });
-    }, [currentPage, pageLimit]);
+        const t = setTimeout(() => {
+            fetchBookings({ page: currentPage, limit: pageLimit, segment, search: searchQuery });
+        }, searchQuery ? 350 : 0);
+        return () => clearTimeout(t);
+    }, [currentPage, pageLimit, segment, searchQuery]);
+
+    const selectSegment = (next: BookingSegment) => {
+        setCurrentPage(1);
+        setSegment(next);
+    };
 
     const filteredBookings = bookings.filter(b =>
         (b.guestName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -791,9 +882,15 @@ export default function BookingsPage() {
     );
 
     const handleCheckIn = async (bookingId: string) => {
-        const result = await checkIn(bookingId);
-        if (result.success && result.guestPin) {
-            setCheckInSuccess({ show: true, pin: result.guestPin });
+        if (checkingInId) return; // guard double-click → double check-in / duplicate PIN
+        setCheckingInId(bookingId);
+        try {
+            const result = await checkIn(bookingId);
+            if (result.success && result.guestPin) {
+                setCheckInSuccess({ show: true, pin: result.guestPin });
+            }
+        } finally {
+            setCheckingInId(null);
         }
     };
 
@@ -812,8 +909,11 @@ export default function BookingsPage() {
                         </p>
                     </div>
                     <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                        <Button variant="secondary" onClick={() => fetchBookings()} disabled={isLoading}>
+                        <Button variant="secondary" onClick={() => fetchBookings({ page: currentPage, limit: pageLimit, segment })} disabled={isLoading}>
                             <RefreshCw size={14} style={{ marginRight: '8px' }} /> Refresh
+                        </Button>
+                        <Button onClick={() => setIsGroupOpen(true)} variant="secondary">
+                            <Plus size={14} style={{ marginRight: '8px' }} /> Group Booking
                         </Button>
                         <Button onClick={() => setIsCreateOpen(true)} variant="primary">
                             <Plus size={14} style={{ marginRight: '8px' }} /> New Booking
@@ -821,17 +921,72 @@ export default function BookingsPage() {
                     </div>
                 </div>
 
-                {/* Filters */}
-                <div style={{ marginBottom: 'var(--space-6)', maxWidth: '400px' }}>
-                    <Input
-                        placeholder="Search by guest name, phone, or booking ID..."
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        icon={<Search size={16} />}
-                    />
+                {/* Tabs */}
+                <div style={{ display: 'flex', gap: 'var(--space-1)', borderBottom: '1px solid var(--notion-divider)', marginBottom: 'var(--space-6)' }}>
+                    <button onClick={() => setActiveTab('list')} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3) var(--space-4)', fontSize: '14px', fontWeight: activeTab === 'list' ? '600' : '400', color: activeTab === 'list' ? 'var(--notion-text)' : 'var(--notion-text-secondary)', backgroundColor: 'transparent', border: 'none', borderBottom: activeTab === 'list' ? '2px solid var(--notion-blue)' : '2px solid transparent', cursor: 'pointer' }}>
+                        <CalendarDays size={16} /> List View
+                    </button>
+                    <button onClick={() => setActiveTab('gantt')} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3) var(--space-4)', fontSize: '14px', fontWeight: activeTab === 'gantt' ? '600' : '400', color: activeTab === 'gantt' ? 'var(--notion-text)' : 'var(--notion-text-secondary)', backgroundColor: 'transparent', border: 'none', borderBottom: activeTab === 'gantt' ? '2px solid var(--notion-blue)' : '2px solid transparent', cursor: 'pointer' }}>
+                        <CalendarRange size={16} /> Schedule
+                    </button>
                 </div>
 
-                {/* Bookings List */}
+                {/* Lifecycle segments — front-desk queues keep booking and check-in distinct */}
+                {activeTab === 'list' && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
+                        {([
+                            { key: 'all', label: 'All' },
+                            { key: 'arrivals', label: 'Arrivals' },
+                            { key: 'inhouse', label: 'In-house' },
+                            { key: 'departures', label: 'Departures' },
+                            { key: 'reservations', label: 'Reservations' },
+                        ] as { key: BookingSegment; label: string }[]).map(seg => {
+                            const active = segment === seg.key;
+                            return (
+                                <button
+                                    key={seg.key}
+                                    onClick={() => selectSegment(seg.key)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '6px',
+                                        padding: '6px 14px', fontSize: '13px',
+                                        fontWeight: active ? 600 : 400,
+                                        color: active ? 'var(--notion-blue)' : 'var(--notion-text-secondary)',
+                                        background: active ? 'var(--notion-blue-bg)' : 'var(--notion-bg-secondary)',
+                                        border: `1px solid ${active ? 'var(--notion-blue)' : 'var(--notion-border)'}`,
+                                        borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                                        transition: 'all 0.12s ease',
+                                    }}
+                                >
+                                    {seg.label}
+                                    {active && pagination.total > 0 && (
+                                        <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--notion-blue)' }}>
+                                            {pagination.total}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* Filters */}
+                {activeTab === 'list' && (
+                    <div style={{ marginBottom: 'var(--space-6)', maxWidth: '400px' }}>
+                        <Input
+                            placeholder="Search by guest name, phone, or booking ID..."
+                            value={searchQuery}
+                            onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                            icon={<Search size={16} />}
+                        />
+                    </div>
+                )}
+
+                {/* Content */}
+                {activeTab === 'gantt' ? (
+                    <div style={{ height: '700px', backgroundColor: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                        <BookingGanttPage />
+                    </div>
+                ) : (
                 <div style={{
                     backgroundColor: 'var(--notion-bg)',
                     border: '1px solid var(--notion-border)',
@@ -900,16 +1055,22 @@ export default function BookingsPage() {
                                                 <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>{booking.room?.type}</div>
                                             </td>
                                             <td style={{ padding: '12px 16px', color: 'var(--notion-text-secondary)' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                    <Calendar size={12} />
-                                                    {format(new Date(booking.checkIn), 'MMM d')} - {format(new Date(booking.checkOut), 'MMM d')}
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                        <Calendar size={12} />
+                                                        <DualDate date={booking.checkIn} format="compact" />
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', paddingLeft: '16px' }}>
+                                                        <span style={{ color: 'var(--notion-text-tertiary)' }}>to</span>
+                                                        <DualDate date={booking.checkOut} format="compact" />
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td style={{ padding: '12px 16px', fontWeight: '500' }}>
-                                                ₹{(booking.totalAmount ?? 0).toLocaleString()}
+                                                Rs {(booking.totalAmount ?? 0).toLocaleString()}
                                                 {booking.advancePayment !== undefined && booking.advancePayment > 0 && (
                                                     <span style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', display: 'block' }}>
-                                                        Adv: ₹{booking.advancePayment}
+                                                        Adv: Rs {booking.advancePayment}
                                                     </span>
                                                 )}
                                             </td>
@@ -919,26 +1080,50 @@ export default function BookingsPage() {
                                             <td style={{ padding: '12px 16px' }}>
                                                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                                                     {booking.status === 'CONFIRMED' && (
-                                                        <Button size="sm" variant="secondary" onClick={() => handleCheckIn(booking.id)} title="Check In">
-                                                            <LogIn size={14} style={{ marginRight: '4px' }} /> Check In
+                                                        <Button size="sm" variant="secondary" onClick={() => handleCheckIn(booking.id)} disabled={checkingInId === booking.id} title="Check In">
+                                                            <LogIn size={14} style={{ marginRight: '4px' }} /> {checkingInId === booking.id ? 'Checking in…' : 'Check In'}
                                                         </Button>
                                                     )}
                                                     {booking.status === 'CHECKED_IN' && (
-                                                        <Button size="sm" variant="secondary" onClick={() => checkOut(booking.id)} title="Check Out">
+                                                        <Button size="sm" variant="secondary" onClick={() => setFolioBookingId(booking.id)} title="Folio / charges">
+                                                            <Receipt size={14} style={{ marginRight: '4px' }} /> Folio
+                                                        </Button>
+                                                    )}
+                                                    {booking.status === 'CHECKED_IN' && (
+                                                        <Button size="sm" variant="secondary" onClick={() => setCheckoutBookingId(booking.id)} title="Check Out">
                                                             <LogOut size={14} style={{ marginRight: '4px' }} /> Check Out
                                                         </Button>
                                                     )}
                                                     {(booking.status === 'CONFIRMED' || booking.status === 'CHECKED_IN') && (
-                                                        <div style={{ position: 'relative' }}>
-                                                            <Button size="sm" variant="secondary" onClick={() => setActionMenuId(actionMenuId === booking.id ? null : booking.id)} title="More Actions">
+                                                        <div>
+                                                            <Button
+                                                                ref={(el) => { actionButtonRefs.current[booking.id] = el; }}
+                                                                size="sm"
+                                                                variant="secondary"
+                                                                onClick={() => {
+                                                                    const btn = actionButtonRefs.current[booking.id];
+                                                                    if (btn) {
+                                                                        const rect = btn.getBoundingClientRect();
+                                                                        setActionMenuPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX });
+                                                                    }
+                                                                    setActionMenuId(actionMenuId === booking.id ? null : booking.id);
+                                                                }}
+                                                                title="More Actions"
+                                                            >
                                                                 <MoreHorizontal size={14} />
                                                             </Button>
-                                                            {actionMenuId === booking.id && (
+                                                            {actionMenuId === booking.id && typeof document !== 'undefined' && createPortal(
                                                                 <div style={{
-                                                                    position: 'absolute', right: 0, top: '100%', zIndex: 9999,
-                                                                    backgroundColor: 'var(--notion-bg)', border: '1px solid var(--notion-border)',
-                                                                    borderRadius: 'var(--radius-md)', padding: '4px 0', minWidth: '160px',
-                                                                    boxShadow: '0 8px 24px rgba(0,0,0,0.4)', marginTop: '4px'
+                                                                    position: 'fixed',
+                                                                    top: actionMenuPos.top,
+                                                                    left: actionMenuPos.left,
+                                                                    zIndex: 99999,
+                                                                    backgroundColor: 'var(--notion-bg)',
+                                                                    border: '1px solid var(--notion-border)',
+                                                                    borderRadius: 'var(--radius-md)',
+                                                                    padding: '4px 0',
+                                                                    minWidth: '160px',
+                                                                    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
                                                                 }}>
                                                                     <button onClick={() => { setEditBooking(booking); setActionMenuId(null); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', fontSize: '13px', color: 'var(--notion-text)', background: 'none', border: 'none', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--notion-bg-hover)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
                                                                         <Pencil size={14} /> Edit Booking
@@ -954,7 +1139,8 @@ export default function BookingsPage() {
                                                                     <button onClick={() => { setCancelBookingTarget(booking); setActionMenuId(null); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', fontSize: '13px', color: 'var(--notion-red)', background: 'none', border: 'none', cursor: 'pointer' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--notion-bg-hover)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
                                                                         <XCircle size={14} /> Cancel Booking
                                                                     </button>
-                                                                </div>
+                                                                </div>,
+                                                                document.body
                                                             )}
                                                         </div>
                                                     )}
@@ -967,8 +1153,9 @@ export default function BookingsPage() {
                         </table>
                     </div>
                 </div>
+                )}
 
-                {pagination.total > 0 && (
+                {activeTab === 'list' && pagination.total > 0 && (
                     <Pagination
                         page={currentPage}
                         totalPages={pagination.totalPages}
@@ -981,8 +1168,25 @@ export default function BookingsPage() {
 
                 <CreateBookingModal
                     isOpen={isCreateOpen}
-                    onClose={() => setIsCreateOpen(false)}
+                    onClose={() => { setIsCreateOpen(false); setCreatePrefill(undefined); }}
                     onCreate={createBooking}
+                    bookings={bookings}
+                    prefill={createPrefill}
+                />
+
+                <GroupBookingModal
+                    isOpen={isGroupOpen}
+                    onClose={() => setIsGroupOpen(false)}
+                    rooms={allRooms as any}
+                    onCreated={() => fetchBookings({ page: currentPage, limit: pageLimit, segment })}
+                />
+
+                <FolioPanel
+                    isOpen={!!folioBookingId}
+                    bookingId={folioBookingId}
+                    onClose={() => setFolioBookingId(null)}
+                    otherBookings={bookings.filter(b => b.status === 'CHECKED_IN') as any}
+                    onChanged={() => fetchBookings({ page: currentPage, limit: pageLimit, segment })}
                 />
 
                 <CheckInSuccessModal
@@ -1010,6 +1214,14 @@ export default function BookingsPage() {
                     onClose={() => setChangeRoomTarget(null)}
                     booking={changeRoomTarget}
                     onConfirm={changeRoom}
+                />
+
+                <CheckoutModal
+                    isOpen={!!checkoutBookingId}
+                    bookingId={checkoutBookingId}
+                    onClose={() => setCheckoutBookingId(null)}
+                    onPreview={getCheckoutPreview}
+                    onCheckout={processCheckout}
                 />
             </div>
         </DashboardLayout>

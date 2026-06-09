@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import BulkImportModal from "@/components/features/shared/BulkImportModal";
 import { useMenu } from '@/lib/hooks/useMenu';
+import { usePermissions } from '@/lib/hooks/usePermissions';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
@@ -17,23 +19,29 @@ import {
     EyeOff,
     Edit,
     Settings,
-    Trash2
-} from 'lucide-react';
+    Trash2,
+    Upload,
+} from "lucide-react";
 import type { MenuItem, CreateMenuItemPayload } from '@/lib/types/api.types';
 import CategoryManagerModal from '@/components/features/menu/CategoryManagerModal';
 import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal';
+import ImageUpload from '@/components/ui/ImageUpload';
 
 // Menu Item Card
 function MenuItemCard({
     item,
     onToggleAvailability,
     onEdit,
-    onDelete
+    onDelete,
+    canUpdate,
+    canDelete,
 }: {
     item: MenuItem;
     onToggleAvailability: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    canUpdate: boolean;
+    canDelete: boolean;
 }) {
     return (
         <div style={{
@@ -53,15 +61,20 @@ function MenuItemCard({
                 e.currentTarget.style.boxShadow = 'none';
             }}
         >
-            {/* Image placeholder */}
+            {/* Image */}
             <div style={{
                 height: '120px',
-                background: 'linear-gradient(135deg, var(--notion-bg-tertiary), var(--notion-bg-secondary))',
+                background: item.imageUrl ? 'transparent' : 'linear-gradient(135deg, var(--notion-bg-tertiary), var(--notion-bg-secondary))',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                overflow: 'hidden',
             }}>
-                <UtensilsCrossed size={32} style={{ color: 'var(--notion-text-secondary)', opacity: 0.5 }} />
+                {item.imageUrl ? (
+                    <img src={item.imageUrl} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                    <UtensilsCrossed size={32} style={{ color: 'var(--notion-text-secondary)', opacity: 0.5 }} />
+                )}
             </div>
 
             {/* Content */}
@@ -93,7 +106,7 @@ function MenuItemCard({
                         fontWeight: '700',
                         color: 'var(--notion-green)',
                     }}>
-                        ₹{item.price}
+                        Rs {item.price}
                     </span>
                 </div>
 
@@ -112,44 +125,38 @@ function MenuItemCard({
                     </p>
                 )}
 
-                {item.preparationTime && (
+                {/* Actions */}
+                {(canUpdate || canDelete) && (
                     <div style={{
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        fontSize: '12px',
-                        color: 'var(--notion-text-secondary)',
-                        marginBottom: 'var(--space-3)',
+                        gap: 'var(--space-2)',
+                        borderTop: '1px solid var(--notion-divider)',
+                        paddingTop: 'var(--space-3)',
                     }}>
-                        <Clock size={12} />
-                        {item.preparationTime} min
+                        {canUpdate && (
+                            <Button
+                                size="sm"
+                                variant={item.isAvailable ? 'secondary' : 'primary'}
+                                onClick={onToggleAvailability}
+                                style={{ flex: 1 }}
+                            >
+                                {item.isAvailable ? <EyeOff size={14} /> : <Eye size={14} />}
+                                <span style={{ marginLeft: '4px' }}>{item.isAvailable ? 'Hide' : 'Show'}</span>
+                            </Button>
+                        )}
+                        {canUpdate && (
+                            <Button size="sm" variant="secondary" onClick={onEdit}>
+                                <Edit size={14} />
+                            </Button>
+                        )}
+                        {canDelete && (
+                            <Button size="sm" variant="secondary" onClick={onDelete}
+                                style={{ color: 'var(--notion-red)' }}>
+                                <Trash2 size={14} />
+                            </Button>
+                        )}
                     </div>
                 )}
-
-                {/* Actions */}
-                <div style={{
-                    display: 'flex',
-                    gap: 'var(--space-2)',
-                    borderTop: '1px solid var(--notion-divider)',
-                    paddingTop: 'var(--space-3)',
-                }}>
-                    <Button
-                        size="sm"
-                        variant={item.isAvailable ? 'secondary' : 'primary'}
-                        onClick={onToggleAvailability}
-                        style={{ flex: 1 }}
-                    >
-                        {item.isAvailable ? <EyeOff size={14} /> : <Eye size={14} />}
-                        <span style={{ marginLeft: '4px' }}>{item.isAvailable ? 'Hide' : 'Show'}</span>
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={onEdit}>
-                        <Edit size={14} />
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={onDelete}
-                        style={{ color: 'var(--notion-red)' }}>
-                        <Trash2 size={14} />
-                    </Button>
-                </div>
             </div>
         </div>
     );
@@ -170,14 +177,34 @@ function MenuFormModal({
     categories: string[];
 }) {
     const [formData, setFormData] = useState<CreateMenuItemPayload>({
-        name: editingItem?.name || '',
-        description: editingItem?.description || '',
-        category: editingItem?.category || '',
-        price: editingItem?.price ?? ('' as unknown as number),
-        isAvailable: editingItem?.isAvailable ?? true,
-        preparationTime: editingItem?.preparationTime || 15,
+        name: '',
+        description: '',
+        category: '',
+        price: '' as unknown as number,
+        isAvailable: true,
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    useEffect(() => {
+        if (editingItem) {
+            setFormData({
+                name: editingItem.name || '',
+                description: editingItem.description || '',
+                category: editingItem.category || '',
+                price: editingItem.price ? parseFloat(String(editingItem.price)) : ('' as unknown as number),
+                isAvailable: editingItem.isAvailable ?? true,
+                imageUrl: editingItem.imageUrl,
+            });
+        } else {
+            setFormData({
+                name: '',
+                description: '',
+                category: '',
+                price: '' as unknown as number,
+                isAvailable: true,
+            });
+        }
+    }, [editingItem]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -241,7 +268,7 @@ function MenuFormModal({
                     </div>
                     <div>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Price (₹) *
+                            Price (Rs ) *
                         </label>
                         <Input
                             type="number"
@@ -254,17 +281,6 @@ function MenuFormModal({
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                    <div>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Prep Time (min)
-                        </label>
-                        <Input
-                            type="number"
-                            min={0}
-                            value={formData.preparationTime || ''}
-                            onChange={e => setFormData({ ...formData, preparationTime: parseInt(e.target.value) || undefined })}
-                        />
-                    </div>
                     <div style={{ display: 'flex', alignItems: 'center', paddingTop: '24px' }}>
                         <input
                             type="checkbox"
@@ -277,6 +293,12 @@ function MenuFormModal({
                         </label>
                     </div>
                 </div>
+
+                <ImageUpload
+                    label="Item Image"
+                    value={formData.imageUrl || null}
+                    onChange={(url) => setFormData({ ...formData, imageUrl: url || undefined })}
+                />
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
                     <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>
@@ -293,9 +315,14 @@ function MenuFormModal({
 
 export default function MenuPage() {
     const { menuItems, categories: fetchedCategories, isLoading, fetchMenu, createItem, updateItem, deleteItem, refreshCategories } = useMenu();
+    const { can } = usePermissions();
+    const canCreate = can('menu:create');
+    const canUpdate = can('menu:update');
+    const canDelete = can('menu:delete');
     const [searchQuery, setSearchQuery] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
     const [isFormOpen, setIsFormOpen] = useState(false);
+    const [isImportOpen, setIsImportOpen] = useState(false);
     const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<MenuItem | undefined>();
     const [deleteTarget, setDeleteTarget] = useState<MenuItem | null>(null);
@@ -363,19 +390,44 @@ export default function MenuPage() {
                     </div>
 
                     <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                        <Button variant="secondary" onClick={() => setIsCategoryModalOpen(true)}>
-                            <Settings size={14} style={{ marginRight: '6px' }} />
-                            Categories
-                        </Button>
+                        {canCreate && (
+                            <Button variant="secondary" onClick={() => setIsCategoryModalOpen(true)}>
+                                <Settings size={14} style={{ marginRight: '6px' }} />
+                                Categories
+                            </Button>
+                        )}
                         <Button variant="secondary" onClick={() => fetchMenu()} disabled={isLoading}>
                             <RefreshCw size={14} style={{ marginRight: '6px' }} />
                             Refresh
                         </Button>
-                        <Button onClick={() => { setEditingItem(undefined); setIsFormOpen(true); }}>
-                            <Plus size={14} style={{ marginRight: '6px' }} />
-                            Add Item
-                        </Button>
+                        {canCreate && (
+                            <Button variant="secondary" onClick={() => setIsImportOpen(true)}>
+                                <Upload size={14} style={{ marginRight: '6px' }} />
+                                Import CSV
+                            </Button>
+                        )}
+                        {canCreate && (
+                            <Button onClick={() => { setEditingItem(undefined); setIsFormOpen(true); }}>
+                                <Plus size={14} style={{ marginRight: '6px' }} />
+                                Add Item
+                            </Button>
+                        )}
                     </div>
+
+                    <BulkImportModal
+                        isOpen={isImportOpen}
+                        onClose={() => setIsImportOpen(false)}
+                        title="Menu Items"
+                        endpoint="/import/menu"
+                        columns={[
+                            { key: 'name', required: true },
+                            { key: 'price', required: true },
+                            { key: 'category', required: false },
+                            { key: 'description', required: false },
+                        ]}
+                        sampleRow={{ name: 'Chicken Momo', price: '250', category: 'Snacks', description: 'Steamed dumplings' }}
+                        onImported={() => fetchMenu()}
+                    />
                 </div>
 
                 {/* Stats */}
@@ -466,6 +518,8 @@ export default function MenuPage() {
                                 onToggleAvailability={() => toggleAvailability(item.id)}
                                 onEdit={() => { setEditingItem(item); setIsFormOpen(true); }}
                                 onDelete={() => setDeleteTarget(item)}
+                                canUpdate={canUpdate}
+                                canDelete={canDelete}
                             />
                         ))}
                     </div>

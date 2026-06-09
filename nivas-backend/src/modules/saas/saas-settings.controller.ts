@@ -18,6 +18,57 @@ export const saasSettingsController = new Elysia({ prefix: '/saas' })
         detail: { summary: 'Get tenant feature toggles', tags: ['SaaS'] }
     })
 
+    // IRD CBMS credentials — only usable when the plan feature enableCbms is on.
+    .get('/ai', async ({ user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const feats = await SaasSettingsService.getTenantFeatures(user.hotelId);
+        if (!(feats as any)?.enableAi) return createResponse({ available: false }, 'AI not enabled on this plan');
+        return createResponse({ available: true, ...(await SaasSettingsService.getAiConfig(user.hotelId)) }, 'AI config');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS,
+        detail: { summary: 'Get AI engine config', tags: ['SaaS'] }
+    })
+    .patch('/ai', async ({ body, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const feats = await SaasSettingsService.getTenantFeatures(user.hotelId);
+        if (!(feats as any)?.enableAi) throw new ValidationError('AI is not enabled on your plan');
+        return createResponse(await SaasSettingsService.setAiConfig(user.hotelId, body), 'AI config updated');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS,
+        body: t.Partial(t.Object({ enabled: t.Boolean(), model: t.String(), apiKey: t.String() })),
+        detail: { summary: 'Update AI engine config (Gemini key)', tags: ['SaaS'] }
+    })
+    .get('/cbms', async ({ user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const feats = await SaasSettingsService.getTenantFeatures(user.hotelId);
+        if (!(feats as any)?.enableCbms) return createResponse({ available: false }, 'CBMS not enabled on this plan');
+        return createResponse({ available: true, ...(await SaasSettingsService.getCbmsConfig(user.hotelId)) }, 'CBMS config');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS,
+        detail: { summary: 'Get IRD CBMS config', tags: ['SaaS'] }
+    })
+    .patch('/cbms', async ({ body, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const feats = await SaasSettingsService.getTenantFeatures(user.hotelId);
+        if (!(feats as any)?.enableCbms) throw new ValidationError('CBMS is not enabled on your plan');
+        const updated = await SaasSettingsService.setCbmsConfig(user.hotelId, body);
+        return createResponse(updated, 'CBMS config updated');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS,
+        body: t.Partial(t.Object({
+            enabled: t.Boolean(),
+            username: t.String(),
+            password: t.String(),
+            sellerPan: t.String(),
+            isRealtime: t.Boolean(),
+        })),
+        detail: { summary: 'Update IRD CBMS config', tags: ['SaaS'] }
+    })
+
     .patch('/features', async ({ body, user }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
         const updated = await SaasSettingsService.updateTenantFeatures(user.hotelId, body);

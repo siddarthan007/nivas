@@ -1,0 +1,155 @@
+# ============================================================
+# Nivas PMS — docker-compose.yml (DEVELOPMENT)
+# Usage: docker compose up --build
+#
+# Services:
+#   postgres  — PostgreSQL 16
+#   redis     — Redis 8 (cache, pub/sub, idempotency)
+#   minio     — S3-compatible object storage
+#   backend   — Elysia + Bun (port 3000, hot-reload)
+#   frontend  — Bun server (port 5173, hot-reload)
+# ============================================================
+
+name: nivas-dev
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nivas_dev_password}
+      POSTGRES_DB: nivas_db
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - nivas-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nivas_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Redis ──────────────────────────────────────────────────
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: >
+      redis-server
+        --requirepass ${REDIS_PASSWORD:-nivas_redis_dev}
+        --maxmemory 256mb
+        --maxmemory-policy allkeys-lru
+        --appendonly yes
+        --appendfsync everysec
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - nivas-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-nivas_redis_dev}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO ──────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-nivas_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-nivas_minio_secret_dev}
+    ports:
+      - "127.0.0.1:9000:9000"    # S3 API
+      - "127.0.0.1:9001:9001"    # MinIO Console UI
+    volumes:
+      - minio_data:/data
+    networks:
+      - nivas-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend ────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./nivas-backend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    env_file:
+      - ./nivas-backend/.env
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-nivas_dev_password}@postgres:5432/nivas_db
+      REDIS_URL: redis://:${REDIS_PASSWORD:-nivas_redis_dev}@redis:6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+      MINIO_USE_SSL: "false"
+      MINIO_PUBLIC_URL: http://localhost:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-nivas_minio}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-nivas_minio_secret_dev}
+      MINIO_BUCKET: ${MINIO_BUCKET:-nivas}
+    ports:
+      - "3000:3000"
+    volumes:
+      # Hot-reload: mount source (exclude node_modules — use container's)
+      - ./nivas-backend/src:/usr/src/app/src
+      - ./nivas-backend/public:/usr/src/app/public
+      - ./nivas-backend/scripts:/usr/src/app/scripts
+      - ./nivas-backend/drizzle.config.ts:/usr/src/app/drizzle.config.ts
+    networks:
+      - nivas-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # ── Frontend ───────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./nivas-frontend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    env_file:
+      - ./nivas-frontend/.env
+    environment:
+      NODE_ENV: development
+      BACKEND_URL: http://backend:3000
+    ports:
+      - "5173:5173"
+    volumes:
+      # Hot-reload: mount source (exclude node_modules)
+      - ./nivas-frontend/src:/usr/src/app/src
+      - ./nivas-frontend/public:/usr/src/app/public
+      # Required: tsconfig.json needed by Bun dev server to resolve @/* path aliases
+      - ./nivas-frontend/tsconfig.json:/usr/src/app/tsconfig.json:ro
+    networks:
+      - nivas-net
+    depends_on:
+      - backend
+
+# ── Volumes ────────────────────────────────────────────────
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+
+# ── Networks ───────────────────────────────────────────────
+networks:
+  nivas-net:
+    driver: bridge

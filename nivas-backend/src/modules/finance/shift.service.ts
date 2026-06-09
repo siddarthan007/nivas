@@ -6,9 +6,10 @@ import { logAction } from '../system/audit.service';
 
 export const ShiftService = {
     async getCurrent(userId: string) {
-        return db.query.shifts.findFirst({
+        const shift = await db.query.shifts.findFirst({
             where: and(eq(shifts.userId, userId), eq(shifts.status, 'OPEN'))
-        }) ?? null;
+        });
+        return shift ?? null;
     },
 
     async open(hotelId: number, userId: string, startFloat: number, ipAddress?: string) {

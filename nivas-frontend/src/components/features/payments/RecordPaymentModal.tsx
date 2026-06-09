@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { api } from '@/lib/api';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import { CreditCard, DollarSign } from 'lucide-react';
-import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
 const PAYMENT_METHODS = [
@@ -15,7 +15,7 @@ const PAYMENT_METHODS = [
     { value: 'ESEWA', label: 'eSewa' },
     { value: 'KHALTI', label: 'Khalti' },
     { value: 'CONNECT_IPS', label: 'ConnectIPS' },
-    { value: 'UPI', label: 'UPI' },
+    { value: 'FONEPAY', label: 'Fonepay' },
     { value: 'BANK_TRANSFER', label: 'Bank Transfer' },
     { value: 'OTHER', label: 'Other' },
 ];
@@ -40,6 +40,19 @@ export default function RecordPaymentModal({ isOpen, onClose, onSuccess, context
     const [transactionId, setTransactionId] = useState('');
     const [notes, setNotes] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [payQr, setPayQr] = useState<{ imageUrl?: string; label?: string } | null>(null);
+    const [payQrs, setPayQrs] = useState<Record<string, { imageUrl?: string; label?: string }>>({});
+
+    useEffect(() => {
+        if (!isOpen) return;
+        api.get<any>('/settings/payment').then(r => {
+            setPayQr(r.data?.paymentQr || null);
+            setPayQrs(r.data?.paymentQrs || {});
+        }).catch(() => {});
+    }, [isOpen]);
+
+    // Show the QR linked to the selected method; fall back to a generic one.
+    const activeQr = (payQrs[paymentMethod]?.imageUrl ? payQrs[paymentMethod] : payQr) || null;
 
     const handleSubmit = async () => {
         const num = parseFloat(amount);
@@ -103,7 +116,7 @@ export default function RecordPaymentModal({ isOpen, onClose, onSuccess, context
                                     fontSize: '18px', fontWeight: '700',
                                     color: context.totalDue > 0 ? 'var(--notion-red)' : 'var(--notion-green)',
                                 }}>
-                                    ₹{context.totalDue.toLocaleString()}
+                                    Rs {context.totalDue.toLocaleString()}
                                 </div>
                             </div>
                         )}
@@ -117,7 +130,7 @@ export default function RecordPaymentModal({ isOpen, onClose, onSuccess, context
                             type="number"
                             value={amount}
                             onChange={(e: any) => setAmount(e.target.value)}
-                            placeholder={context?.totalDue ? `Max ₹${context.totalDue.toLocaleString()}` : '0.00'}
+                            placeholder={context?.totalDue ? `Max Rs ${context.totalDue.toLocaleString()}` : '0.00'}
                         />
                         {context?.totalDue && (
                             <button
@@ -128,7 +141,7 @@ export default function RecordPaymentModal({ isOpen, onClose, onSuccess, context
                                     border: 'none', cursor: 'pointer', marginTop: '4px', padding: 0,
                                 }}
                             >
-                                Pay full amount (₹{context.totalDue.toLocaleString()})
+                                Pay full amount (Rs {context.totalDue.toLocaleString()})
                             </button>
                         )}
                     </div>
@@ -144,6 +157,12 @@ export default function RecordPaymentModal({ isOpen, onClose, onSuccess, context
 
                 {paymentMethod !== 'CASH' && (
                     <div>
+                        {activeQr?.imageUrl && (
+                            <div style={{ textAlign: 'center', marginBottom: 'var(--space-3)', padding: 'var(--space-3)', background: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+                                <img src={activeQr.imageUrl} alt="Scan to pay" style={{ height: 180, maxWidth: '100%', objectFit: 'contain' }} />
+                                <div style={{ fontSize: 12, color: 'var(--notion-text-secondary)', marginTop: 6 }}>{activeQr.label || `Scan to pay (${paymentMethod})`}</div>
+                            </div>
+                        )}
                         <label style={labelStyle}>Transaction ID</label>
                         <Input
                             value={transactionId}
@@ -166,7 +185,7 @@ export default function RecordPaymentModal({ isOpen, onClose, onSuccess, context
                     <Button variant="secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</Button>
                     <Button onClick={handleSubmit} disabled={isSubmitting || !amount} style={{ flex: 1 }}>
                         <CreditCard size={14} style={{ marginRight: '6px' }} />
-                        {isSubmitting ? 'Recording...' : `Record Payment${amount ? ` (₹${parseFloat(amount || '0').toLocaleString()})` : ''}`}
+                        {isSubmitting ? 'Recording...' : `Record Payment${amount ? ` (Rs ${parseFloat(amount || '0').toLocaleString()})` : ''}`}
                     </Button>
                 </div>
             </div>

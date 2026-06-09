@@ -1,10 +1,24 @@
 import { db } from '../../db';
 import { messages, users } from '../../db/schema';
 import { eq, and, or, asc, desc } from 'drizzle-orm';
-import { NotFoundError } from '../../utils/errors';
+import { NotFoundError, BusinessLogicError } from '../../utils/errors';
+import { WSService } from '../notifications/ws.service';
 
 export const MessagesService = {
     async sendMessage(hotelId: number, senderId: string, data: { receiverId?: string; roomId?: number; content: string; messageType?: string }) {
+        if (!data.receiverId && !data.roomId) {
+            throw new BusinessLogicError('A recipient (user or room) is required');
+        }
+        // Confirm the recipient belongs to this hotel — blocks cross-tenant /
+        // orphaned messages to arbitrary user ids.
+        if (data.receiverId) {
+            const recipient = await db.query.users.findFirst({
+                where: and(eq(users.id, data.receiverId), eq(users.hotelId, hotelId)),
+                columns: { id: true },
+            });
+            if (!recipient) throw new NotFoundError('Recipient not found in this hotel');
+        }
+
         const [message] = await db.insert(messages).values({
             hotelId,
             senderId,
@@ -13,6 +27,14 @@ export const MessagesService = {
             content: data.content,
             messageType: data.messageType || 'TEXT',
         }).returning();
+
+        // Push to the recipient so their UI updates live instead of polling.
+        if (data.receiverId) {
+            WSService.sendToUser(hotelId, data.receiverId, 'NEW_MESSAGE', {
+                from: senderId,
+                messageId: message?.id,
+            }).catch(() => { /* non-fatal: client falls back to its slow poll */ });
+        }
 
         return message;
     },

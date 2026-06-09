@@ -17,7 +17,7 @@ const server = serve({
     // ═══════════════════════════════════════════
     // API PROXY - Forward all /api/* to backend
     // ═══════════════════════════════════════════
-    "/api/*": async (req) => {
+    "/api/*": async (req, server) => {
       const url = new URL(req.url);
       const backendUrl = `${BACKEND_URL}${url.pathname}${url.search}`;
 
@@ -25,6 +25,17 @@ const server = serve({
         // Clone headers but remove host
         const headers = new Headers(req.headers);
         headers.delete("host");
+
+        // Forward the real client IP so backend rate-limiting keys per-client
+        // (without this every request looks like it comes from the proxy).
+        try {
+          const clientIp = (server as any)?.requestIP?.(req)?.address;
+          if (clientIp) {
+            const existing = req.headers.get("x-forwarded-for");
+            headers.set("x-forwarded-for", existing ? `${existing}, ${clientIp}` : clientIp);
+            if (!req.headers.get("x-real-ip")) headers.set("x-real-ip", clientIp);
+          }
+        } catch { /* ip unavailable — backend falls back gracefully */ }
 
         // Forward request to backend
         console.log(`[Proxy] ${req.method} ${url.pathname} -> ${backendUrl}`);
@@ -46,7 +57,7 @@ const server = serve({
         // Use getSetCookie() to properly preserve multiple Set-Cookie headers
         // (the Headers constructor can incorrectly merge them)
         const responseHeaders = new Headers(response.headers);
-        responseHeaders.set("Access-Control-Allow-Origin", "*");
+        // Do not override Access-Control-Allow-Origin; backend CORS config handles it properly
 
         const setCookies = response.headers.getSetCookie?.() ?? [];
         if (setCookies.length > 0) {

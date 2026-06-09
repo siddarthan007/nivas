@@ -4,12 +4,12 @@ import { useState, useEffect } from 'react';
 import { useRevenue } from '@/lib/hooks/useRevenue';
 import { useAnalytics } from '@/lib/hooks/useAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import DashboardLayout from '@/components/layout/DashboardLayout';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import CustomDatePicker from '@/components/ui/DatePicker';
+import TimePicker from '@/components/ui/TimePicker';
 import {
     TrendingUp,
     TrendingDown,
@@ -102,7 +102,7 @@ function PricingRuleCard({ rule, onToggle, onDelete, onEdit }: {
                         {rule.name}
                     </div>
                     <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
-                        {rule.type} • {rule.adjustmentType === 'PERCENTAGE' ? `${rule.adjustmentValue}%` : `₹${rule.adjustmentValue}`}
+                        {rule.type} • {rule.adjustmentType === 'PERCENTAGE' ? `${rule.adjustmentValue}%` : `Rs ${rule.adjustmentValue}`}
                     </div>
                 </div>
                 <div style={{
@@ -113,7 +113,7 @@ function PricingRuleCard({ rule, onToggle, onDelete, onEdit }: {
                     color: rule.adjustmentValue > 0 ? 'var(--notion-green)' : 'var(--notion-red)',
                     borderRadius: 'var(--radius-sm)',
                 }}>
-                    {rule.adjustmentValue > 0 ? '+' : ''}{rule.adjustmentType === 'PERCENTAGE' ? `${rule.adjustmentValue}%` : `₹${rule.adjustmentValue}`}
+                    {rule.adjustmentValue > 0 ? '+' : ''}{rule.adjustmentType === 'PERCENTAGE' ? `${rule.adjustmentValue}%` : `Rs ${rule.adjustmentValue}`}
                 </div>
             </div>
 
@@ -184,7 +184,7 @@ function DiscountRuleCard({ rule, onToggle, onDelete, onEdit }: {
                     borderRadius: 'var(--radius-sm)',
                 }}>
                     {rule.discountType === 'BOGO' ? 'BOGO' :
-                        rule.discountType === 'PERCENTAGE' ? `-${rule.discountValue}%` : `-₹${rule.discountValue}`}
+                        rule.discountType === 'PERCENTAGE' ? `-${rule.discountValue}%` : `-Rs ${rule.discountValue}`}
                 </div>
             </div>
 
@@ -196,7 +196,7 @@ function DiscountRuleCard({ rule, onToggle, onDelete, onEdit }: {
 
             {rule.minOrderAmount && (
                 <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-3)' }}>
-                    Min order: ₹${rule.minOrderAmount}
+                    Min order: Rs ${rule.minOrderAmount}
                 </div>
             )}
 
@@ -247,7 +247,7 @@ function LosDiscountCard({ rule, onToggle, onDelete, onEdit }: {
                     color: 'var(--notion-blue)',
                     borderRadius: 'var(--radius-sm)',
                 }}>
-                    {rule.discountType === 'PERCENTAGE' ? `-${rule.discountValue}%` : `-₹${rule.discountValue}`}
+                    {rule.discountType === 'PERCENTAGE' ? `-${rule.discountValue}%` : `-Rs ${rule.discountValue}`}
                 </div>
             </div>
 
@@ -352,7 +352,7 @@ function ChartTooltip({ active, payload, label }: any) {
         }}>
             <div style={{ color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>{label}</div>
             <div style={{ color: 'var(--notion-text)', fontWeight: '600' }}>
-                ₹{(Number(payload[0]?.value) || 0).toLocaleString('en-IN')}
+                Rs {(Number(payload[0]?.value) || 0).toLocaleString('en-IN')}
             </div>
         </div>
     );
@@ -371,9 +371,9 @@ function AnalyticsTab() {
 
     const formatCurrency = (val: number | undefined | null) => {
         const v = Number(val) || 0;
-        if (v >= 100000) return `₹${(v / 100000).toFixed(1)}L`;
-        if (v >= 1000) return `₹${(v / 1000).toFixed(1)}K`;
-        return `₹${v.toFixed(0)}`;
+        if (v >= 100000) return `Rs ${(v / 100000).toFixed(1)}L`;
+        if (v >= 1000) return `Rs ${(v / 1000).toFixed(1)}K`;
+        return `Rs ${v.toFixed(0)}`;
     };
 
     if (isLoading && !metrics) {
@@ -671,7 +671,7 @@ function CreatePricingRuleModal({ isOpen, onClose, onSubmit }: {
                     </div>
                     <div style={{ flex: 1 }}>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Value {formData.adjustmentType === 'PERCENTAGE' ? '(%)' : '(₹)'}
+                            Value {formData.adjustmentType === 'PERCENTAGE' ? '(%)' : '(Rs )'}
                         </label>
                         <Input
                             type="number"
@@ -773,23 +773,17 @@ function CreateDiscountRuleModal({ isOpen, onClose, onSubmit }: {
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Start Time
-                        </label>
-                        <Input
-                            type="time"
+                        <TimePicker
+                            label="Start Time"
                             value={formData.startTime || ''}
-                            onChange={e => setFormData({ ...formData, startTime: e.target.value })}
+                            onChange={v => setFormData({ ...formData, startTime: v })}
                         />
                     </div>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            End Time
-                        </label>
-                        <Input
-                            type="time"
+                        <TimePicker
+                            label="End Time"
                             value={formData.endTime || ''}
-                            onChange={e => setFormData({ ...formData, endTime: e.target.value })}
+                            onChange={v => setFormData({ ...formData, endTime: v })}
                         />
                     </div>
                 </div>
@@ -893,7 +887,7 @@ function EditPricingRuleModal({ isOpen, onClose, rule, onSubmit }: {
                     </div>
                     <div style={{ flex: 1 }}>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Value {formData.adjustmentType === 'PERCENTAGE' ? '(%)' : '(₹)'}
+                            Value {formData.adjustmentType === 'PERCENTAGE' ? '(%)' : '(Rs )'}
                         </label>
                         <Input
                             type="number"
@@ -1015,23 +1009,17 @@ function EditDiscountRuleModal({ isOpen, onClose, rule, onSubmit }: {
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Start Time
-                        </label>
-                        <Input
-                            type="time"
+                        <TimePicker
+                            label="Start Time"
                             value={formData.startTime || ''}
-                            onChange={e => setFormData({ ...formData, startTime: e.target.value })}
+                            onChange={v => setFormData({ ...formData, startTime: v })}
                         />
                     </div>
                     <div style={{ flex: 1 }}>
-                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            End Time
-                        </label>
-                        <Input
-                            type="time"
+                        <TimePicker
+                            label="End Time"
                             value={formData.endTime || ''}
-                            onChange={e => setFormData({ ...formData, endTime: e.target.value })}
+                            onChange={v => setFormData({ ...formData, endTime: v })}
                         />
                     </div>
                 </div>
@@ -1134,7 +1122,7 @@ function CreateLosDiscountModal({ isOpen, onClose, onSubmit }: {
                     </div>
                     <div style={{ flex: 1 }}>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Value {formData.discountType === 'PERCENTAGE' ? '(%)' : '(₹)'}
+                            Value {formData.discountType === 'PERCENTAGE' ? '(%)' : '(Rs )'}
                         </label>
                         <Input
                             type="number"
@@ -1273,7 +1261,7 @@ function EditLosDiscountModal({ isOpen, onClose, rule, onSubmit }: {
                     </div>
                     <div style={{ flex: 1 }}>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Value {formData.discountType === 'PERCENTAGE' ? '(%)' : '(₹)'}
+                            Value {formData.discountType === 'PERCENTAGE' ? '(%)' : '(Rs )'}
                         </label>
                         <Input
                             type="number"
@@ -1370,9 +1358,9 @@ export default function RevenuePage() {
     };
 
     return (
-        <DashboardLayout>
-            <div style={{ padding: 'var(--space-8)' }}>
-                    {/* Header */}
+        <>
+        <div style={{ padding: 'var(--space-8)' }}>
+                {/* Header */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
                         <div>
                             <h1 style={{
@@ -1590,6 +1578,6 @@ export default function RevenuePage() {
                 confirmText="Delete Rule"
                 isDestructive
             />
-        </DashboardLayout>
+        </>
     );
 }

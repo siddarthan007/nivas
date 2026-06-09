@@ -17,8 +17,10 @@ export const messagesController = new Elysia({ prefix: '/messages' })
         body: t.Object({
             receiverId: t.Optional(t.String()),
             roomId: t.Optional(t.Number()),
-            content: t.String(),
-            messageType: t.Optional(t.String())
+            content: t.String({ minLength: 1, maxLength: 5000 }),
+            messageType: t.Optional(t.Union([
+                t.Literal('TEXT'), t.Literal('ANNOUNCEMENT'), t.Literal('ALERT'), t.Literal('TASK'),
+            ]))
         }),
         detail: {
             summary: 'Send a message',

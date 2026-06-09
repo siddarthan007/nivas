@@ -32,10 +32,15 @@ export const MenuCategoryService = {
 
         if (!existing) throw new NotFoundError('Menu Category');
 
-        // Update the category
+        const allowed = ['name', 'description', 'sortOrder', 'isActive'];
+        const updateData: any = {};
+        const raw = data as any;
+        for (const key of allowed) {
+            if (raw[key] !== undefined) updateData[key] = raw[key];
+        }
         const [updated] = await db.update(menuCategories)
             .set({
-                ...data,
+                ...updateData,
                 updatedAt: new Date()
             })
             .where(eq(menuCategories.id, categoryId))

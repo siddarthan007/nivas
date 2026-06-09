@@ -5,6 +5,7 @@ import { config } from '../config/env';
 import { db } from '../db';
 import { users } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import { cache } from '../shared/redis';
 import { logAction } from '../modules/system/audit.service';
 import { validateLicense, isLicenseValid, getLicenseErrorMessage, isExemptPath } from './license.middleware';
 
@@ -19,6 +20,7 @@ export interface User {
     role?: { name: string };
     licenseStatus?: LicenseStatus;
     licenseGraceEndsAt?: Date;
+    impersonation?: boolean;
 }
 
 export const authMiddleware = (app: Elysia) => app.use(
@@ -62,6 +64,7 @@ export const authMiddleware = (app: Elysia) => app.use(
             roomId,
             role: { name: 'Guest' },
             licenseStatus: 'ACTIVE',
+            impersonation: profile.impersonation === true,
         };
         return { user };
     }
@@ -71,17 +74,28 @@ export const authMiddleware = (app: Elysia) => app.use(
         return { user: null };
     }
 
-    let dbUser;
+    // This runs on EVERY authenticated request — cache the user+role+permissions
+    // for 30s (graceful: falls back to a direct query if Redis is down).
+    // Invalidated on user/role changes via AuthCache.invalidateUser / invalidateAll.
+    let dbUser: any;
     try {
-        dbUser = await db.query.users.findFirst({
-            where: eq(users.id, profileId),
-            with: { role: true }
+        dbUser = await cache.getOrSet(`authuser:${profileId}`, 30, async () => {
+            return await db.query.users.findFirst({
+                where: eq(users.id, profileId),
+                columns: { id: true, hotelId: true, userType: true, isActive: true, tokenVersion: true },
+                with: { role: { columns: { name: true, permissions: true } } },
+            }) ?? null;
         });
     } catch {
         return { user: null };
     }
 
     if (!dbUser || !dbUser.isActive) {
+        return { user: null };
+    }
+    // Reject tokens issued before a "log out all devices" (tokenVersion bump).
+    // Old tokens without the claim are treated as version 0 (the default).
+    if (((profile as any).tokenVersion ?? 0) !== (dbUser.tokenVersion ?? 0)) {
         return { user: null };
     }
 
@@ -93,6 +107,7 @@ export const authMiddleware = (app: Elysia) => app.use(
         roomId: undefined,
         role: { name: dbUser.role?.name || '' },
         licenseStatus: 'ACTIVE',
+        impersonation: profile.impersonation === true,
     };
 
     if (user.type !== 'SUPER_ADMIN' && user.type !== 'GUEST' && !user.hotelId) {
@@ -104,7 +119,7 @@ export const authMiddleware = (app: Elysia) => app.use(
     isSignedIn(enabled: boolean) {
         if (!enabled) return;
 
-        onBeforeHandle(async ({ user, error, path, set }: { user: User | null; error: any; path: string; set: any }) => {
+        onBeforeHandle(async ({ user, error, path, set }: { user: User | null; error: (status: number, value?: unknown) => Response; path: string; set: { status: number | string; headers: Record<string, string> } }) => {
             if (!user) return error(401, "Unauthorized: Please login first.");
 
             // License Check Integration
@@ -135,7 +150,7 @@ export const authMiddleware = (app: Elysia) => app.use(
         });
     },
     hasPermission(requiredPermission: string) {
-        onBeforeHandle(({ user, request, error }: { user: User | null; request: Request; error: any }) => {
+        onBeforeHandle(({ user, request, error }: { user: User | null; request: Request; error: (status: number, value?: unknown) => Response }) => {
             if (!user) return error(401, "Unauthorized");
 
             if (user.type === 'SUPER_ADMIN') return;

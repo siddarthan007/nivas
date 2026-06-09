@@ -14,6 +14,7 @@ interface ModalProps {
     closeOnOverlay?: boolean;
     closeOnEscape?: boolean;
     footer?: ReactNode;
+    onSubmit?: () => void;
 }
 
 const Modal = ({
@@ -23,9 +24,12 @@ const Modal = ({
     children,
     size = 'md',
     showClose = true,
-    closeOnOverlay = true,
+    // Default false: a backdrop misclick must not discard a half-filled form.
+    // X / Cancel / Esc still close intentionally.
+    closeOnOverlay = false,
     closeOnEscape = true,
     footer,
+    onSubmit,
 }: ModalProps) => {
     const sizeMap = {
         sm: '400px',
@@ -39,8 +43,12 @@ const Modal = ({
             if (closeOnEscape && e.key === 'Escape') {
                 onClose();
             }
+            if (onSubmit && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                onSubmit();
+            }
         },
-        [closeOnEscape, onClose]
+        [closeOnEscape, onClose, onSubmit]
     );
 
     const handleOverlayClick = (e: React.MouseEvent) => {
@@ -49,29 +57,38 @@ const Modal = ({
         }
     };
 
+    // Lock scroll + autofocus the first field — ONLY when the modal opens.
+    // Keyed on isOpen alone so it does NOT re-run on every parent re-render
+    // (which would steal focus back to the first field on each keystroke).
     useEffect(() => {
-        if (isOpen) {
-            document.addEventListener('keydown', handleEscape);
-            document.body.style.overflow = 'hidden';
+        if (!isOpen) return;
+        document.body.style.overflow = 'hidden';
 
-            // Focus trap: Focus first focusable element on open
-            setTimeout(() => {
-                const modal = document.querySelector('.modal') as HTMLElement;
-                if (modal) {
-                    const focusable = modal.querySelectorAll(
-                        'button, [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-                    ) as NodeListOf<HTMLElement>;
-                    if (focusable.length > 0) {
-                        focusable[0]?.focus();
-                    }
-                }
-            }, 0);
-        }
+        const t = setTimeout(() => {
+            const modal = document.querySelector('.modal') as HTMLElement;
+            if (!modal) return;
+            const field = modal.querySelector(
+                'input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled])'
+            ) as HTMLElement | null;
+            if (field) { field.focus(); return; }
+            const focusable = modal.querySelectorAll(
+                'button:not(.modal-close), [href], [tabindex]:not([tabindex="-1"])'
+            ) as NodeListOf<HTMLElement>;
+            focusable[0]?.focus();
+        }, 0);
 
         return () => {
-            document.removeEventListener('keydown', handleEscape);
+            clearTimeout(t);
             document.body.style.overflow = '';
         };
+    }, [isOpen]);
+
+    // Escape / Ctrl+Enter listener — rebinds when the handler identity changes,
+    // but never touches focus.
+    useEffect(() => {
+        if (!isOpen) return;
+        document.addEventListener('keydown', handleEscape);
+        return () => document.removeEventListener('keydown', handleEscape);
     }, [isOpen, handleEscape]);
 
     // Tab trap handler

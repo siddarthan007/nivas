@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { toast } from 'sonner';
+import { useWebSocket } from '@/lib/contexts/WebSocketContext';
 
 export interface Message {
     id: number | string;
@@ -37,7 +38,7 @@ export interface SendMessagePayload {
 export interface StaffMember {
     id: string;
     name: string;
-    role: string;
+    role?: { name?: string };
 }
 
 export interface UseMessagesReturn {
@@ -65,7 +66,16 @@ export function useMessages(): UseMessagesReturn {
     const [staffList, setStaffList] = useState<StaffMember[]>([]);
     const [isLoadingStaff, setIsLoadingStaff] = useState(false);
 
+    const hasHotel = useCallback(() => {
+        try {
+            const userStr = localStorage.getItem('nivas_user_data');
+            const user = userStr ? JSON.parse(userStr) : null;
+            return !!user?.hotelId;
+        } catch { return false; }
+    }, []);
+
     const fetchConversations = useCallback(async () => {
+        if (!hasHotel()) { setIsLoading(false); return; }
         try {
             setIsLoading(true);
             setError(null);
@@ -164,6 +174,7 @@ export function useMessages(): UseMessagesReturn {
     }, []);
 
     const fetchStaffList = useCallback(async () => {
+        if (!hasHotel()) { setIsLoadingStaff(false); return; }
         try {
             setIsLoadingStaff(true);
             const response = await api.get<StaffMember[]>('/messages/staff');
@@ -196,31 +207,36 @@ export function useMessages(): UseMessagesReturn {
     }, [conversations, selectConversation]);
 
     useEffect(() => {
-        fetchConversations();
+        if (hasHotel()) fetchConversations();
     }, [fetchConversations]);
 
-    // Auto-refresh conversations every 10s for near-realtime
+    const ws = useWebSocket();
+
+    const refreshActiveMessages = useCallback(async (participantId: string) => {
+        try {
+            const response = await api.get<{ conversation: any; messages: Message[] }>(`/messages/conversations/${participantId}`);
+            if (response.data?.messages) setMessages(response.data.messages);
+        } catch { /* silent */ }
+    }, []);
+
+    // Push: refresh instantly when the server signals a new message for this user.
     useEffect(() => {
+        const unsub = ws.on('NEW_MESSAGE', () => {
+            if (hasHotel()) fetchConversations();
+            if (activeConversation?.participantId) refreshActiveMessages(activeConversation.participantId);
+        });
+        return unsub;
+    }, [ws, fetchConversations, activeConversation?.participantId, refreshActiveMessages]);
+
+    // Fallback polling ONLY when the socket is down (otherwise push handles it).
+    useEffect(() => {
+        if (!hasHotel() || ws.status === 'connected') return;
         const interval = setInterval(() => {
             fetchConversations();
-        }, 10000);
+            if (activeConversation?.participantId) refreshActiveMessages(activeConversation.participantId);
+        }, 15000);
         return () => clearInterval(interval);
-    }, [fetchConversations]);
-
-    // Auto-refresh active conversation messages every 5s
-    useEffect(() => {
-        if (!activeConversation?.participantId) return;
-        const participantId = activeConversation.participantId;
-        const interval = setInterval(async () => {
-            try {
-                const response = await api.get<{ conversation: any; messages: Message[] }>(`/messages/conversations/${participantId}`);
-                if (response.data?.messages) {
-                    setMessages(response.data.messages);
-                }
-            } catch { /* silent */ }
-        }, 5000);
-        return () => clearInterval(interval);
-    }, [activeConversation?.participantId]);
+    }, [fetchConversations, ws.status, activeConversation?.participantId, refreshActiveMessages]);
 
     return {
         conversations,

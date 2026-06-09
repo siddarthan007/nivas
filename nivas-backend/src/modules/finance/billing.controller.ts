@@ -68,12 +68,12 @@ export const billingController = new Elysia({ prefix: '/billing' })
             throw new ForbiddenError('Guest access required');
         }
 
-        const summary = await BillingService.calculateRoomBillingSummary(
+        const bill = await BillingService.getGuestBill(
             user.hotelId!,
             user.roomId
         );
 
-        return createResponse(summary, 'Guest bill fetched');
+        return createResponse(bill, 'Guest bill fetched');
     }, {
         isSignedIn: true,
         detail: { summary: 'Guest view own bill', tags: ['Finance'] }

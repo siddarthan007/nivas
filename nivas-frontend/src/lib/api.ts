@@ -10,6 +10,7 @@ const API_BASE_URL = '/api/v1'; // Prefix for proxy forwarding
 // Token storage keys - prefixed to avoid collisions
 const TOKEN_KEY = 'nivas_auth_token';
 const USER_KEY = 'nivas_user_data';
+const REFRESH_KEY = 'nivas_refresh_token';
 
 /**
  * Secure token storage with XSS protection
@@ -39,11 +40,22 @@ export const tokenStorage = {
         }
     },
 
+    getRefreshToken(): string | null {
+        if (typeof window === 'undefined') return null;
+        try { return localStorage.getItem(REFRESH_KEY); } catch { return null; }
+    },
+
+    setRefreshToken(token: string): void {
+        if (typeof window === 'undefined' || !token) return;
+        try { localStorage.setItem(REFRESH_KEY, token); } catch { /* ignore */ }
+    },
+
     removeToken(): void {
         if (typeof window === 'undefined') return;
         try {
             localStorage.removeItem(TOKEN_KEY);
             localStorage.removeItem(USER_KEY);
+            localStorage.removeItem(REFRESH_KEY);
         } catch (e) {
             console.error('[API] Failed to remove token:', e);
         }
@@ -68,6 +80,38 @@ export const tokenStorage = {
         }
     }
 };
+
+// Single-flight refresh: on a 401 we exchange the refresh token for a new access
+// token once; concurrent callers share the same in-flight refresh.
+let refreshPromise: Promise<boolean> | null = null;
+async function refreshAccessToken(): Promise<boolean> {
+    if (refreshPromise) return refreshPromise;
+    const rt = tokenStorage.getRefreshToken();
+    if (!rt) return false;
+    refreshPromise = (async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/iam/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken: rt }),
+            });
+            if (!res.ok) return false;
+            const data = await res.json();
+            const newToken = data?.data?.token;
+            if (newToken) {
+                tokenStorage.setToken(newToken);
+                if (data.data.refreshToken) tokenStorage.setRefreshToken(data.data.refreshToken);
+                return true;
+            }
+            return false;
+        } catch {
+            return false;
+        } finally {
+            refreshPromise = null;
+        }
+    })();
+    return refreshPromise;
+}
 
 /**
  * Standardized API Response structure
@@ -169,12 +213,16 @@ async function request<T>(
         ...fetchOptions
     } = options;
 
+    const isFormData = body instanceof FormData;
+
     // Build headers
     const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
         'Accept': 'application/json',
         ...(customHeaders as Record<string, string> || {}),
     };
+    if (!isFormData && !headers['Content-Type']) {
+        headers['Content-Type'] = 'application/json';
+    }
 
     // Add auth token if available and not skipped
     if (!skipAuth) {
@@ -190,13 +238,14 @@ async function request<T>(
 
     let lastError: ApiError | null = null;
     let attempt = 0;
+    let triedRefresh = false;
 
     while (attempt <= retries) {
         try {
             const response = await fetch(url, {
                 ...fetchOptions,
                 headers,
-                body: body ? JSON.stringify(body) : undefined,
+                body: isFormData ? body : (body ? JSON.stringify(body) : undefined),
             });
 
             // Parse response
@@ -223,8 +272,17 @@ async function request<T>(
                     data.data
                 );
 
-                // Handle 401 - session expired (but not on login endpoint)
-                if (response.status === 401 && !endpoint.includes('/login')) {
+                // Handle 401 - try a one-time token refresh before giving up.
+                if (response.status === 401 && !endpoint.includes('/login') && !endpoint.includes('/iam/refresh')) {
+                    if (!skipAuth && !triedRefresh) {
+                        triedRefresh = true;
+                        const refreshed = await refreshAccessToken();
+                        if (refreshed) {
+                            const newToken = tokenStorage.getToken();
+                            if (newToken) headers['Authorization'] = `Bearer ${newToken}`;
+                            continue; // retry the request with the fresh token
+                        }
+                    }
                     tokenStorage.removeToken();
                     if (typeof window !== 'undefined') {
                         window.location.href = '/login';
@@ -233,11 +291,12 @@ async function request<T>(
 
                 // Handle 403 with LICENSE_INVALID - emit license event
                 if (response.status === 403 && data.code === 'LICENSE_INVALID') {
+                    const licenseData = data.data as LicenseErrorInfo | undefined;
                     licenseEvents.emit({
-                        licenseStatus: (data as any).licenseStatus ?? 'EXPIRED',
+                        licenseStatus: licenseData?.licenseStatus ?? 'EXPIRED',
                         message: data.message || 'License is invalid',
-                        expiresAt: (data as any).expiresAt,
-                        graceEndsAt: (data as any).graceEndsAt,
+                        expiresAt: licenseData?.expiresAt,
+                        graceEndsAt: licenseData?.graceEndsAt,
                     });
                 }
 

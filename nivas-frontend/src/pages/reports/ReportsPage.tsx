@@ -1,10 +1,22 @@
 'use client';
 
 import { useState } from 'react';
+import { toLocalDateString } from "@/lib/utils/format";
 import { useReports } from '@/lib/hooks/useReports';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Button from '@/components/ui/Button';
 import CustomDatePicker from '@/components/ui/DatePicker';
+import { exportToCsv } from '@/lib/utils/export';
+import { useRouter } from '@/lib/router';
+import ReportTypeView from './ReportTypeView';
+import { toast } from 'sonner';
+
+const REPORT_TABS: { id: string; label: string }[] = [
+    { id: 'dashboard', label: 'Analytics Dashboard' },
+    { id: 'sales', label: 'Sales / Income' },
+    { id: 'payment-collection', label: 'Payment Collection' },
+    { id: 'purchase-expense', label: 'Purchase / Expense' },
+];
 import {
     BarChart3,
     RefreshCw,
@@ -14,8 +26,23 @@ import {
     DollarSign,
     BedDouble,
     Clock,
-    Calendar
+    Calendar,
+    LineChart as LineChartIcon,
+    Download,
+    ClipboardList,
 } from 'lucide-react';
+import DualDate from '@/components/ui/DualDate';
+import {
+    LineChart,
+    Line,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer,
+    AreaChart,
+    Area,
+} from 'recharts';
 
 // Metric Card Component
 function MetricCard({
@@ -164,7 +191,7 @@ function RevenueBreakdown({
                             </span>
                         </div>
                         <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>
-                            ₹{(item.value || 0).toLocaleString()}
+                            Rs {(item.value || 0).toLocaleString()}
                         </span>
                     </div>
                 ))}
@@ -237,16 +264,50 @@ function OccupancyByType({
 
 export default function ReportsPage() {
     const { revenue, occupancy, metrics, period, isLoading, fetchReports, setPeriodPreset, setCustomPeriod } = useReports();
+    const router = useRouter();
+    const [reportMode, setReportMode] = useState('dashboard');
     const [customStart, setCustomStart] = useState<Date | null>(null);
     const [customEnd, setCustomEnd] = useState<Date | null>(null);
 
     const handleCustomRange = (start: Date | null, end: Date | null) => {
         if (start && end) {
-            setCustomPeriod(
-                start.toISOString().split('T')[0]!,
-                end.toISOString().split('T')[0]!
-            );
+            // Local date — toISOString() would shift a day in UTC+ timezones.
+            setCustomPeriod(toLocalDateString(start), toLocalDateString(end));
         }
+    };
+
+    const handleExportCsv = () => {
+        if (!revenue && !occupancy && !metrics) {
+            toast.error('Nothing to export yet');
+            return;
+        }
+        const num = (n: number | undefined) => Number(n ?? 0).toFixed(2);
+        const rows: (string | number)[][] = [
+            ['Nivas PMS — Performance Report'],
+            ['Period', period.label, `${period.startDate} to ${period.endDate}`],
+            [],
+            ['Summary'],
+            ['Metric', 'Value'],
+            ['Total Revenue', num(revenue?.totalRevenue)],
+            ['Room Revenue', num(revenue?.roomRevenue)],
+            ['F&B Revenue', num(revenue?.fbRevenue)],
+            ['Other Revenue', num(revenue?.otherRevenue)],
+            ['Change vs Previous (%)', num(revenue?.comparison?.change)],
+            ['ADR', num(metrics?.adr)],
+            ['RevPAR', num(metrics?.revpar)],
+            ['Occupancy Rate (%)', num(metrics?.occupancyRate ?? occupancy?.averageOccupancy)],
+            ['Avg Length of Stay', num(metrics?.averageLos)],
+            [],
+            ['Daily Revenue'],
+            ['Date', 'Amount'],
+            ...((revenue?.trend ?? []).map(t => [t.date, num(t.amount)])),
+            [],
+            ['Daily Occupancy (%)'],
+            ['Date', 'Occupancy'],
+            ...((occupancy?.trend ?? []).map(t => [t.date, num(t.occupancy)])),
+        ];
+        exportToCsv(`nivas-report-${period.startDate}_${period.endDate}.csv`, rows);
+        toast.success('Report exported');
     };
 
     return (
@@ -281,13 +342,48 @@ export default function ReportsPage() {
                         </div>
 
                         <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                            <Button variant="secondary" onClick={() => router.push('/hotel/reports/waiter-kot')}>
+                                <ClipboardList size={14} style={{ marginRight: '6px' }} />
+                                Waiter KOT
+                            </Button>
                             <Button variant="secondary" onClick={() => fetchReports()} disabled={isLoading}>
                                 <RefreshCw size={14} style={{ marginRight: '6px' }} />
                                 Refresh
                             </Button>
+                            <Button variant="secondary" onClick={handleExportCsv} disabled={isLoading}>
+                                <Download size={14} style={{ marginRight: '6px' }} />
+                                Export CSV
+                            </Button>
                         </div>
                     </div>
 
+                    {/* Report type tabs */}
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: 'var(--space-5)', borderBottom: '1px solid var(--notion-divider)' }}>
+                        {REPORT_TABS.map(t => {
+                            const active = reportMode === t.id;
+                            return (
+                                <button
+                                    key={t.id}
+                                    onClick={() => setReportMode(t.id)}
+                                    style={{
+                                        padding: 'var(--space-3) var(--space-4)', fontSize: '14px',
+                                        fontWeight: active ? 600 : 400,
+                                        color: active ? 'var(--notion-text)' : 'var(--notion-text-secondary)',
+                                        background: 'transparent', border: 'none',
+                                        borderBottom: active ? '2px solid var(--notion-blue)' : '2px solid transparent',
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    {t.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {reportMode !== 'dashboard' ? (
+                        <ReportTypeView type={reportMode} />
+                    ) : (
+                    <>
                     {/* Period Selector */}
                     <div style={{
                         display: 'flex',
@@ -381,14 +477,14 @@ export default function ReportsPage() {
                                 <MetricCard
                                     title="Average Daily Rate"
                                     value={metrics?.adr || 0}
-                                    prefix="₹"
+                                    prefix="Rs "
                                     icon={DollarSign}
                                     color="var(--notion-green)"
                                 />
                                 <MetricCard
                                     title="RevPAR"
                                     value={metrics?.revpar || 0}
-                                    prefix="₹"
+                                    prefix="Rs "
                                     icon={TrendingUp}
                                     color="var(--notion-blue)"
                                 />
@@ -418,7 +514,7 @@ export default function ReportsPage() {
                                 <MetricCard
                                     title="Total Revenue"
                                     value={revenue?.totalRevenue || 0}
-                                    prefix="₹"
+                                    prefix="Rs "
                                     icon={DollarSign}
                                     trend={revenue?.comparison ? {
                                         value: revenue.comparison.change,
@@ -458,7 +554,84 @@ export default function ReportsPage() {
                                     ]}
                                 />
                             </div>
+
+                            {/* Trend Charts */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: 'var(--space-4)', marginTop: 'var(--space-6)' }}>
+                                {/* Revenue Trend */}
+                                <div style={{ backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)', padding: 'var(--space-5)' }}>
+                                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--notion-text)', marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                        <LineChartIcon size={18} /> Revenue Trend
+                                    </h3>
+                                    <div style={{ height: '260px' }}>
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={revenue?.trend || []}>
+                                                <defs>
+                                                    <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor="var(--notion-green)" stopOpacity={0.2}/>
+                                                        <stop offset="95%" stopColor="var(--notion-green)" stopOpacity={0}/>
+                                                    </linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--notion-border)" />
+                                                <XAxis dataKey="date" tick={{ fill: 'var(--notion-text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} dy={8} />
+                                                <YAxis tick={{ fill: 'var(--notion-text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `Rs ${(v / 1000).toFixed(0)}k`} />
+                                                <Tooltip contentStyle={{ backgroundColor: 'var(--notion-bg)', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)' }} formatter={(v: any) => `Rs ${Number(v).toLocaleString()}`} />
+                                                <Area type="monotone" dataKey="amount" stroke="var(--notion-green)" fill="url(#revGrad)" strokeWidth={2} />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+
+                                {/* F&B Trend */}
+                                <div style={{ backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)', padding: 'var(--space-5)' }}>
+                                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--notion-text)', marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                        <TrendingUp size={18} /> F&B Sales Trend
+                                    </h3>
+                                    <div style={{ height: '260px' }}>
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={revenue?.fbTrend || []}>
+                                                <defs>
+                                                    <linearGradient id="fbGrad" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor="var(--notion-orange)" stopOpacity={0.2}/>
+                                                        <stop offset="95%" stopColor="var(--notion-orange)" stopOpacity={0}/>
+                                                    </linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--notion-border)" />
+                                                <XAxis dataKey="date" tick={{ fill: 'var(--notion-text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} dy={8} />
+                                                <YAxis tick={{ fill: 'var(--notion-text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `Rs ${(v / 1000).toFixed(0)}k`} />
+                                                <Tooltip contentStyle={{ backgroundColor: 'var(--notion-bg)', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)' }} formatter={(v: any) => `Rs ${Number(v).toLocaleString()}`} />
+                                                <Area type="monotone" dataKey="amount" stroke="var(--notion-orange)" fill="url(#fbGrad)" strokeWidth={2} />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+
+                                {/* Occupancy Trend */}
+                                <div style={{ backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)', padding: 'var(--space-5)' }}>
+                                    <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--notion-text)', marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                        <BedDouble size={18} /> Occupancy Trend
+                                    </h3>
+                                    <div style={{ height: '260px' }}>
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={occupancy?.trend || []}>
+                                                <defs>
+                                                    <linearGradient id="occGrad" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor="var(--notion-blue)" stopOpacity={0.2}/>
+                                                        <stop offset="95%" stopColor="var(--notion-blue)" stopOpacity={0}/>
+                                                    </linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--notion-border)" />
+                                                <XAxis dataKey="date" tick={{ fill: 'var(--notion-text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} dy={8} />
+                                                <YAxis tick={{ fill: 'var(--notion-text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={v => `${v}%`} />
+                                                <Tooltip contentStyle={{ backgroundColor: 'var(--notion-bg)', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)' }} formatter={(v: any) => `${Number(v).toFixed(1)}%`} />
+                                                <Area type="monotone" dataKey="occupancy" stroke="var(--notion-blue)" fill="url(#occGrad)" strokeWidth={2} />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            </div>
                         </>
+                    )}
+                    </>
                     )}
             </div>
         </DashboardLayout>

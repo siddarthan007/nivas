@@ -4,6 +4,7 @@ import { PERMISSIONS } from '../../config/permissions';
 import { FinanceService } from './finance.service';
 import { createResponse } from '../../utils/response.helper';
 import { ValidationError } from '../../utils/errors';
+import { requirePassword } from '../../utils/password.guard';
 
 export const paymentsController = new Elysia({ prefix: '/finance' })
     .use(authMiddleware)
@@ -24,14 +25,14 @@ export const paymentsController = new Elysia({ prefix: '/finance' })
         body: t.Object({
             bookingId: t.Optional(t.String()),
             orderId: t.Optional(t.String()),
-            amount: t.Number(),
+            amount: t.Number({ exclusiveMinimum: 0 }),
             paymentMethod: t.Union([
                 t.Literal('CASH'),
                 t.Literal('CARD'),
                 t.Literal('ESEWA'),
                 t.Literal('KHALTI'),
                 t.Literal('CONNECT_IPS'),
-                t.Literal('UPI'),
+                t.Literal('FONEPAY'),
                 t.Literal('BANK_TRANSFER'),
                 t.Literal('OTHER')
             ]),
@@ -73,6 +74,7 @@ export const paymentsController = new Elysia({ prefix: '/finance' })
     })
     .post('/payments/:id/void', async ({ params, body, user, request }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        await requirePassword(user.id, body.confirmPassword);
         const ipAddress = request.headers.get('x-forwarded-for') || undefined;
         const voided = await FinanceService.voidPayment(user.hotelId, user.id, params.id, body.reason, ipAddress);
         return createResponse(voided, 'Payment voided successfully');
@@ -80,7 +82,8 @@ export const paymentsController = new Elysia({ prefix: '/finance' })
         isSignedIn: true,
         hasPermission: PERMISSIONS.FINANCE.VOID_INVOICE,
         body: t.Object({
-            reason: t.Optional(t.String())
+            reason: t.Optional(t.String()),
+            confirmPassword: t.String(),
         }),
         detail: {
             summary: 'Void a payment',

@@ -18,62 +18,75 @@ export function LoginAnimation() {
         return () => window.removeEventListener("mousemove", handleMouseMove);
     }, []);
 
-    // Notion-style Pastel Geometric shapes
+    // Dark Notion-themed geometric shapes
     const shapes = [
-        { type: "circle", x: 15, y: 15, size: 80, color: "#FFD6E0", speed: 1.5 }, // Pastel Pink
-        { type: "rect", x: 85, y: 25, size: 60, color: "#C9E4DE", speed: 1.2 }, // Pastel Mint
-        { type: "circle", x: 55, y: 75, size: 100, color: "#DBCDF0", speed: 0.8 }, // Pastel Lavender
-        { type: "rect", x: 10, y: 65, size: 50, color: "#F2F2F2", speed: 1.8 }, // Light Gray
-        { type: "circle", x: 80, y: 80, size: 30, color: "#F7D9C4", speed: 2 }, // Pastel Peach
+        { type: "circle", x: 18, y: 20, size: 90, color: "rgba(78, 149, 198, 0.15)", speed: 1.2 },
+        { type: "rect", x: 82, y: 15, size: 50, color: "rgba(76, 171, 154, 0.12)", speed: 1.5 },
+        { type: "circle", x: 60, y: 70, size: 120, color: "rgba(154, 109, 215, 0.1)", speed: 0.8 },
+        { type: "rect", x: 12, y: 62, size: 55, color: "rgba(215, 125, 67, 0.12)", speed: 1.8 },
+        { type: "circle", x: 78, y: 82, size: 35, color: "rgba(218, 103, 154, 0.12)", speed: 2.0 },
     ];
 
     return (
         <div
-            className="relative w-full h-full overflow-hidden bg-[#F7F7F5]"
-            style={{ backgroundColor: '#F7F7F5', position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}
+            style={{
+                backgroundColor: 'var(--notion-bg-secondary)',
+                position: 'relative',
+                width: '100%',
+                height: '100%',
+                overflow: 'hidden',
+            }}
         >
-            {/* Notion-style Dot Grid Pattern */}
+            {/* Subtle dot grid */}
             <div
-                className="absolute inset-0 opacity-[0.4]"
                 style={{
-                    backgroundImage: `radial-gradient(#d1d1d1 1px, transparent 1px)`,
-                    backgroundSize: '24px 24px',
+                    backgroundImage: `radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px)`,
+                    backgroundSize: '28px 28px',
                     position: 'absolute',
                     inset: 0,
-                    opacity: 0.4
                 }}
             />
 
-            {/* Floating Geometric Shapes - Flat 2D */}
+            {/* Floating geometric shapes */}
             {shapes.map((shape, i) => (
                 <motion.div
                     key={i}
-                    className="absolute"
                     style={{
+                        position: 'absolute',
                         left: `${shape.x}%`,
                         top: `${shape.y}%`,
                         width: shape.size,
                         height: shape.size,
-                        borderRadius: shape.type === "circle" ? "50%" : "2px",
+                        borderRadius: shape.type === "circle" ? "50%" : "4px",
                         backgroundColor: shape.color,
-                        border: "1px solid rgba(0,0,0,0.03)", // Subtle border for definition
+                        border: "1px solid rgba(255,255,255,0.03)",
+                        filter: 'blur(1px)',
                     }}
                     animate={{
-                        x: mousePosition.x * 15 * shape.speed,
-                        y: mousePosition.y * 15 * shape.speed,
-                        rotate: [0, 10, -10, 0], // Gentle rotation, not spinning
+                        x: mousePosition.x * 20 * shape.speed,
+                        y: mousePosition.y * 20 * shape.speed,
+                        rotate: [0, 8, -8, 0],
                     }}
                     transition={{
-                        x: { type: "spring", stiffness: 50, damping: 20 },
-                        y: { type: "spring", stiffness: 50, damping: 20 },
-                        rotate: { repeat: Infinity, duration: 8 / shape.speed, ease: "easeInOut", repeatType: "reverse" }
+                        x: { type: "spring", stiffness: 40, damping: 25 },
+                        y: { type: "spring", stiffness: 40, damping: 25 },
+                        rotate: { repeat: Infinity, duration: 10 / shape.speed, ease: "easeInOut", repeatType: "reverse" }
                     }}
                 />
             ))}
 
-            {/* Animated Lines/Connecting Nodes effect could be added here for more complexity */}
-
-            {/* Overlay causing a subtle vignette or noise if desired, but keeping it clean for flat 2D */}
+            {/* Bottom gradient fade */}
+            <div
+                style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: '40%',
+                    background: 'linear-gradient(to top, var(--notion-bg-secondary), transparent)',
+                    pointerEvents: 'none',
+                }}
+            />
         </div>
     );
 }

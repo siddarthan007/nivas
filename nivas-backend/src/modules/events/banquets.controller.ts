@@ -101,7 +101,9 @@ export const banquetsController = new Elysia({ prefix: '/banquets' })
             organizerEmail: t.Optional(t.String()),
             contactName: t.Optional(t.String()),
             contactPhone: t.Optional(t.String()),
+            guestId: t.Optional(t.String()),
             eventDate: t.String(),
+            endDate: t.Optional(t.String()),
             startTime: t.String(),
             endTime: t.String(),
             expectedGuests: t.Number(),
@@ -184,6 +186,7 @@ export const banquetsController = new Elysia({ prefix: '/banquets' })
         body: t.Partial(t.Object({
             eventName: t.String(),
             eventDate: t.String(),
+            endDate: t.String(),
             startTime: t.String(),
             endTime: t.String(),
             expectedGuests: t.Number(),
@@ -196,7 +199,9 @@ export const banquetsController = new Elysia({ prefix: '/banquets' })
             avEquipment: t.Array(t.String()),
             specialRequirements: t.String(),
             totalAmount: t.Number(),
-            advanceAmount: t.Number()
+            advanceAmount: t.Number(),
+            guestId: t.String(),
+            invoiceId: t.String()
         })),
         detail: { summary: 'Update banquet booking', tags: ['Events'] }
     })

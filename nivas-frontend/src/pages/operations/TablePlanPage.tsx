@@ -4,6 +4,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { usePermissions } from '@/lib/hooks/usePermissions';
+import { useRouter } from '@/lib/router';
 import {
     Plus,
     Search,
@@ -99,7 +100,7 @@ function TableModal({
         <div style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
+            backgroundColor: 'var(--notion-overlay)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -220,9 +221,98 @@ function TableModal({
     );
 }
 
+// Locations Management Modal
+function LocationsModal({
+    isOpen,
+    onClose,
+    locations,
+    tables,
+    onRename,
+    onDelete,
+    onAdd
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    locations: string[];
+    tables: Table[];
+    onRename: (oldLoc: string, newLoc: string) => Promise<void>;
+    onDelete: (loc: string) => Promise<void>;
+    onAdd: (name: string) => void;
+}) {
+    const [editingLoc, setEditingLoc] = useState<string | null>(null);
+    const [editValue, setEditValue] = useState('');
+    const [newName, setNewName] = useState('');
+    const [showAdd, setShowAdd] = useState(false);
+
+    if (!isOpen) return null;
+
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, backgroundColor: 'var(--notion-overlay)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)'
+        }}>
+            <div style={{
+                backgroundColor: 'var(--notion-bg)', borderRadius: 'var(--radius-lg)',
+                width: '100%', maxWidth: '480px', maxHeight: '80vh', overflow: 'auto',
+                padding: 'var(--space-6)', border: '1px solid var(--notion-border)', boxShadow: 'var(--shadow-lg)'
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--notion-text)' }}>Manage Locations</h3>
+                    <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text-secondary)' }}><XCircle size={20} /></button>
+                </div>
+
+                {showAdd ? (
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
+                        <Input type="text" placeholder="e.g. Rooftop" value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1 }} />
+                        <Button size="sm" variant="primary" onClick={() => { if (newName.trim()) { onAdd(newName.trim()); setNewName(''); setShowAdd(false); } }}>Add</Button>
+                        <Button size="sm" variant="ghost" onClick={() => { setShowAdd(false); setNewName(''); }}>Cancel</Button>
+                    </div>
+                ) : (
+                    <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)} icon={<Plus size={14} />} style={{ marginBottom: 'var(--space-4)' }}>
+                        Add Location
+                    </Button>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                    {locations.filter(loc => loc !== 'ALL').map(loc => {
+                        const count = tables.filter(t => t.location === loc).length;
+                        const isEditing = editingLoc === loc;
+                        return (
+                            <div key={loc} style={{
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                padding: '10px 12px', backgroundColor: 'var(--notion-bg-secondary)',
+                                borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)'
+                            }}>
+                                {isEditing ? (
+                                    <>
+                                        <Input type="text" value={editValue} onChange={e => setEditValue(e.target.value)}
+                                            style={{ flex: 1, fontSize: '13px' }} autoFocus
+                                            onKeyDown={e => { if (e.key === 'Enter') { onRename(loc, editValue); setEditingLoc(null); } if (e.key === 'Escape') setEditingLoc(null); }}
+                                        />
+                                        <button onClick={() => { onRename(loc, editValue); setEditingLoc(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-green)' }}><CheckCircle2 size={16} /></button>
+                                        <button onClick={() => setEditingLoc(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-red)' }}><XCircle size={16} /></button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span style={{ flex: 1, fontWeight: 500, color: 'var(--notion-text)', fontSize: '14px' }}>{loc.replace(/_/g, ' ')}</span>
+                                        <span style={{ color: 'var(--notion-text-secondary)', fontSize: '12px' }}>{count} tables</span>
+                                        <button onClick={() => { setEditingLoc(loc); setEditValue(loc.replace(/_/g, ' ')); }} title="Rename" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text-secondary)', padding: '4px' }}><Edit size={14} /></button>
+                                        <button onClick={() => onDelete(loc)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-red)', padding: '4px' }}><Trash2 size={14} /></button>
+                                    </>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function TablePlanPage() {
     const { user } = useAuth();
     const { can } = usePermissions();
+    const router = useRouter();
     const [searchQuery, setSearchQuery] = useState('');
     const [locationFilter, setLocationFilter] = useState<string>('ALL');
     const [statusFilter, setStatusFilter] = useState<string>('');
@@ -231,12 +321,15 @@ export default function TablePlanPage() {
     const [tables, setTables] = useState<Table[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
+    const [showAddLocation, setShowAddLocation] = useState(false);
+    const [extraLocations, setExtraLocations] = useState<string[]>([]);
+
     const fetchTables = async () => {
         if (!user?.hotelId) return;
         setIsLoading(true);
         try {
-            const res = await api.get<{ data: Table[] }>('/operations/tables');
-            setTables(res?.data?.data || []);
+            const res = await api.get<Table[]>('/operations/tables');
+            setTables(res?.data || []);
         } catch (error) {
             console.error('Failed to fetch tables:', error);
             toast.error('Failed to fetch tables');
@@ -249,12 +342,12 @@ export default function TablePlanPage() {
         fetchTables();
     }, [user?.hotelId]);
 
-    // Derive dynamic locations from existing tables
+    // Derive dynamic locations from existing tables + extras
     const dynamicLocations = useMemo(() => {
         const fromTables = [...new Set(tables.map(t => t.location).filter(Boolean))];
         const defaults = ['MAIN_HALL', 'TERRACE', 'GARDEN', 'BAR', 'PRIVATE_ROOM'];
-        return [...new Set([...defaults, ...fromTables])];
-    }, [tables]);
+        return [...new Set([...defaults, ...fromTables, ...extraLocations])];
+    }, [tables, extraLocations]);
 
     // Derived state
     const filteredTables = useMemo(() => {
@@ -300,6 +393,53 @@ export default function TablePlanPage() {
         } catch (err: any) {
             toast.error(err.response?.data?.message || 'Failed to delete table');
         }
+    };
+
+    // Locations CRUD handlers
+    const handleRenameLocation = async (oldLocation: string, newValue?: string) => {
+        const newName = (newValue ?? '').trim().toUpperCase().replace(/\s+/g, '_');
+        if (!newName || newName === oldLocation) return;
+        const tablesToUpdate = tables.filter(t => t.location === oldLocation);
+        if (tablesToUpdate.length === 0) return;
+        try {
+            await Promise.all(
+                tablesToUpdate.map(t => api.patch(`/operations/tables/${t.id}`, { location: newName }))
+            );
+            toast.success(`Location renamed to ${newName.replace(/_/g, ' ')}`);
+            fetchTables();
+        } catch {
+            toast.error('Failed to rename location');
+        }
+    };
+
+    const handleDeleteLocation = async (location: string) => {
+        const tablesAtLocation = tables.filter(t => t.location === location);
+        if (tablesAtLocation.length > 0) {
+            if (!confirm(`Move ${tablesAtLocation.length} table(s) to MAIN_HALL and delete this location?`)) return;
+            try {
+                await Promise.all(
+                    tablesAtLocation.map(t => api.patch(`/operations/tables/${t.id}`, { location: 'MAIN_HALL' }))
+                );
+                toast.success('Location removed, tables moved to Main Hall');
+                fetchTables();
+            } catch {
+                toast.error('Failed to remove location');
+            }
+        }
+    };
+
+    const handleAddLocation = (rawName?: string) => {
+        const name = (rawName ?? '').trim().toUpperCase().replace(/\s+/g, '_');
+        if (!name) {
+            toast.error('Location name is required');
+            return;
+        }
+        if (dynamicLocations.includes(name)) {
+            toast.error('Location already exists');
+            return;
+        }
+        setExtraLocations(prev => [...prev, name]);
+        toast.success('Location added');
     };
 
     // Status Badge Helper
@@ -383,7 +523,7 @@ export default function TablePlanPage() {
                             ]}
                         />
 
-                        <Button variant="secondary" onClick={() => window.location.href = '/dashboard/operations/floor-plan'}>
+                        <Button variant="secondary" onClick={() => router.push('/hotel/operations/floor-plan')}>
                             View Visual Plan
                         </Button>
                     </div>
@@ -431,6 +571,26 @@ export default function TablePlanPage() {
                             Total: {tables.length} tables · {tables.reduce((sum, t) => sum + t.capacity, 0)} seats
                         </div>
                     </div>
+
+                    {/* Locations Management */}
+                    {can('operations:setup_facilities') && (
+                        <div style={{
+                            marginBottom: 'var(--space-6)',
+                            padding: 'var(--space-4)',
+                            backgroundColor: 'var(--notion-bg-secondary)',
+                            borderRadius: 'var(--radius-lg)',
+                            border: '1px solid var(--notion-border)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                        }}>
+                            <div>
+                                <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>Locations</h3>
+                                <p style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', marginTop: '2px' }}>{dynamicLocations.filter(l => l !== 'ALL').length} zones configured</p>
+                            </div>
+                            <Button size="sm" variant="secondary" onClick={() => setShowAddLocation(true)} icon={<Edit size={14} />}>Manage Locations</Button>
+                        </div>
+                    )}
 
                     {/* Table Grid */}
                     {isLoading ? (
@@ -515,7 +675,7 @@ export default function TablePlanPage() {
                                                     size="sm"
                                                     variant="primary"
                                                     style={{ flex: 1 }}
-                                                    onClick={() => { window.location.href = `/dashboard/orders?table=${table.tableNumber}`; }}
+                                                    onClick={() => { router.push(`/hotel/orders?table=${table.tableNumber}`); }}
                                                     icon={<UtensilsCrossed size={14} />}
                                                 >
                                                     Take Order
@@ -537,9 +697,7 @@ export default function TablePlanPage() {
                                                         variant="danger"
                                                         onClick={() => handleDelete(table.id)}
                                                         icon={<Trash2 size={14} />}
-                                                    >
-                                                        <Trash2 size={14} />
-                                                    </Button>
+                                                    />
                                                 </>
                                             )}
                                         </div>
@@ -566,6 +724,16 @@ export default function TablePlanPage() {
                             locations={dynamicLocations}
                         />
                     )}
+
+                    <LocationsModal
+                        isOpen={showAddLocation}
+                        onClose={() => setShowAddLocation(false)}
+                        locations={dynamicLocations}
+                        tables={tables}
+                        onRename={handleRenameLocation}
+                        onDelete={handleDeleteLocation}
+                        onAdd={handleAddLocation}
+                    />
                 </div>
             </PageContainer>
         </DashboardLayout>

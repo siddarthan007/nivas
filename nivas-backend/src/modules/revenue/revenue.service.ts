@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { revenueRules, rooms, bookings } from '../../db/schema';
-import { eq, and, lte, gte, count, desc } from 'drizzle-orm';
+import { eq, and, lte, gte, count, desc, inArray } from 'drizzle-orm';
 import { NotFoundError } from '../../utils/errors';
 
 export const RevenueService = {
@@ -30,9 +30,14 @@ export const RevenueService = {
     },
 
     async updateRule(hotelId: number, ruleId: number, data: any) {
+        const allowed = ['name', 'ruleType', 'minOccupancy', 'maxOccupancy', 'daysBeforeArrival', 'daysOfWeek', 'adjustmentType', 'applyToRoomTypes', 'priority', 'isActive'];
+        const updateData: any = {};
+        for (const key of allowed) {
+            if (data[key] !== undefined) updateData[key] = data[key];
+        }
         const [updated] = await db.update(revenueRules)
             .set({
-                ...data,
+                ...updateData,
                 adjustmentValue: data.adjustmentValue?.toString()
             })
             .where(and(
@@ -65,6 +70,9 @@ export const RevenueService = {
             .from(bookings)
             .where(and(
                 eq(bookings.hotelId, hotelId),
+                // Only live bookings occupy a room — exclude cancelled/checked-out
+                // so occupancy (and therefore the price) isn't inflated.
+                inArray(bookings.status, ['CONFIRMED', 'CHECKED_IN']),
                 lte(bookings.checkIn, new Date(checkIn)),
                 gte(bookings.checkOut, new Date(checkIn))
             ));
@@ -103,6 +111,9 @@ export const RevenueService = {
             }
         }
 
+        // Never let stacked rules drive the price below zero.
+        adjustedPrice = Math.max(0, adjustedPrice);
+
         return {
             basePrice,
             adjustedPrice: Math.round(adjustedPrice * 100) / 100,
@@ -132,9 +143,22 @@ export const RevenueService = {
             .where(eq(rooms.hotelId, hotelId));
 
         const totalCount = roomCount[0]?.count || 1;
-        const daysInRange = Math.ceil((new Date(endDate!).getTime() - new Date(startDate!).getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        const MS = 1000 * 60 * 60 * 24;
+        const rangeStart = new Date(startDate!).getTime();
+        const rangeEnd = new Date(endDate!).getTime() + MS; // inclusive end day
+        const daysInRange = Math.ceil((new Date(endDate!).getTime() - new Date(startDate!).getTime()) / MS) + 1;
         const potentialRoomNights = totalCount * daysInRange;
-        const occupancyRate = (revenueBookings.length / potentialRoomNights) * 100;
+
+        // Sum ACTUAL room-nights within the range (was counting each booking as 1
+        // night regardless of stay length — understated multi-night occupancy).
+        let occupiedRoomNights = 0;
+        for (const b of revenueBookings as any[]) {
+            if (!b.checkIn || !b.checkOut) { occupiedRoomNights += 1; continue; }
+            const start = Math.max(new Date(b.checkIn).getTime(), rangeStart);
+            const end = Math.min(new Date(b.checkOut).getTime(), rangeEnd);
+            occupiedRoomNights += Math.max(0, Math.round((end - start) / MS));
+        }
+        const occupancyRate = Math.min(100, (occupiedRoomNights / potentialRoomNights) * 100);
         const revPAR = totalRevenue / potentialRoomNights;
 
         return {

@@ -36,19 +36,30 @@ export interface ProcurementStats {
     totalValue: number;
 }
 
+export interface Vendor {
+    id: number;
+    name: string;
+    paymentTerms?: string | null;
+    contact?: unknown;
+}
+
 export interface CreatePOPayload {
     supplierName: string;
+    vendorId?: number;
     items: { itemId: number; quantity: number; unitCost: number }[];
     notes?: string;
+    expectedDelivery?: string;
 }
 
 export interface UseProcurementReturn {
     purchaseOrders: PurchaseOrder[];
+    vendors: Vendor[];
     stats: ProcurementStats;
     isLoading: boolean;
     error: string | null;
     refresh: () => Promise<void>;
     createPO: (payload: CreatePOPayload) => Promise<boolean>;
+    createVendor: (name: string, paymentTerms?: string) => Promise<Vendor | null>;
     approvePO: (poId: number) => Promise<boolean>;
     rejectPO: (poId: number) => Promise<boolean>;
     receivePO: (poId: number) => Promise<boolean>;
@@ -70,6 +81,8 @@ interface BackendPurchaseOrder {
     id: number;
     poNumber: string;
     supplierName?: string | null;
+    vendorId?: number | null;
+    vendor?: { id: number; name: string } | null;
     status?: string | null;
     totalCost?: string | number | null;
     notes?: string | null;
@@ -98,19 +111,21 @@ function normalizeStatus(status?: string | null): PurchaseOrderStatus {
 }
 
 function normalizePurchaseOrder(raw: BackendPurchaseOrder): PurchaseOrder {
-    const items = (raw.items || []).map(item => ({
-        id: item.id,
+    const items = (raw.items || []).map((item: any, idx: number) => ({
+        id: item.id ?? idx,
         itemId: item.itemId,
-        itemName: item.item?.name || `Item #${item.itemId}`,
-        quantity: Number(item.quantityOrdered || 0),
-        unitPrice: Number(item.unitCost || 0),
+        itemName: item.item?.name || item.itemName || `Item #${item.itemId}`,
+        // Tolerate both the relation shape (quantityOrdered/unitCost) and the
+        // stored JSON shape (quantity/unitCost) so quantities never read as 0.
+        quantity: Number(item.quantityOrdered ?? item.quantity ?? 0),
+        unitPrice: Number(item.unitCost ?? item.unitPrice ?? 0),
         receivedQuantity: item.quantityReceived !== null && item.quantityReceived !== undefined ? Number(item.quantityReceived) : undefined,
     }));
 
     return {
         id: raw.id,
         poNumber: raw.poNumber,
-        supplier: raw.supplierName || 'Unknown supplier',
+        supplier: raw.vendor?.name || raw.supplierName || 'Unknown supplier',
         status: normalizeStatus(raw.status),
         items,
         totalAmount: Number(raw.totalCost || 0),
@@ -131,9 +146,33 @@ function buildStats(orders: PurchaseOrder[]): ProcurementStats {
 
 export function useProcurement(): UseProcurementReturn {
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+    const [vendors, setVendors] = useState<Vendor[]>([]);
     const [stats, setStats] = useState<ProcurementStats>(EMPTY_STATS);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    const fetchVendors = useCallback(async () => {
+        try {
+            const response = await api.get<Vendor[]>('/procurement/vendors');
+            setVendors(response.data || []);
+        } catch (e) {
+            // Vendor list is an optional convenience; don't block the page on it.
+            console.error('[useProcurement] vendors', e);
+        }
+    }, []);
+
+    const createVendor = useCallback(async (name: string, paymentTerms?: string): Promise<Vendor | null> => {
+        try {
+            const response = await api.post<Vendor>('/procurement/vendors', { name, paymentTerms });
+            await fetchVendors();
+            toast.success(`Vendor "${name}" added`);
+            return response.data || null;
+        } catch (e) {
+            const message = e instanceof ApiError ? e.message : 'Failed to add vendor';
+            toast.error(message);
+            return null;
+        }
+    }, [fetchVendors]);
 
     const fetchPurchaseOrders = useCallback(async () => {
         try {
@@ -219,15 +258,18 @@ export function useProcurement(): UseProcurementReturn {
 
     useEffect(() => {
         fetchPurchaseOrders();
-    }, [fetchPurchaseOrders]);
+        fetchVendors();
+    }, [fetchPurchaseOrders, fetchVendors]);
 
     return {
         purchaseOrders,
+        vendors,
         stats,
         isLoading,
         error,
         refresh: fetchPurchaseOrders,
         createPO,
+        createVendor,
         approvePO,
         rejectPO,
         receivePO,

@@ -9,8 +9,12 @@ export const guestAuthController = new Elysia({ prefix: '/guest' })
         name: 'jwt',
         secret: config.jwt.secret
     }))
-    .post('/login', async ({ body, jwt, cookie: { auth } }) => {
-        const result = await GuestAuthService.login(body.token, body.roomNumber, body.pin, jwt);
+    // Brute-force protection is handled per-room inside GuestAuthService
+    // (Redis INCR), so no global elysia rate-limiter here — applying one with the
+    // library's default `scoping: 'global'` would throttle the ENTIRE app.
+    .post('/login', async ({ body, jwt, cookie: { auth }, request }) => {
+        const ipAddress = request.headers.get('x-forwarded-for') || undefined;
+        const result = await GuestAuthService.login(body.token, body.roomNumber, body.hotelSlug, body.pin, jwt, ipAddress);
 
         auth?.set({
             value: result.token,
@@ -29,10 +33,11 @@ export const guestAuthController = new Elysia({ prefix: '/guest' })
         body: t.Object({
             token: t.Optional(t.String()),
             roomNumber: t.Optional(t.String()),
+            hotelSlug: t.Optional(t.String()),
             pin: t.String()
         }),
         detail: {
-            summary: 'Guest login via QR code',
+            summary: 'Guest login via room number/PIN or QR token',
             tags: ['Auth']
         }
     });

@@ -3,6 +3,13 @@ import api from '../api';
 import { toast } from 'sonner';
 
 // Types
+export interface InvoiceLineItem {
+    description: string;
+    quantity: number;
+    rate: number;
+    amount: number;
+}
+
 export interface Invoice {
     id: string;
     invoiceNumber: string;
@@ -10,21 +17,27 @@ export interface Invoice {
     bookingId: string;
     guestName: string;
     guestPan?: string;
-    roomCharges: string;
-    serviceCharges: string;
-    restaurantCharges: string;
-    otherCharges: string;
+    guestPhone?: string;
+    guestEmail?: string;
+    checkIn?: string;
+    checkOut?: string;
+    subTotal: string;
+    serviceCharge: string;
     discountAmount: string;
-    taxableAmount: string;
     vatAmount: string;
     grandTotal: string;
     fiscalYear: string;
-    cbmsSynced: boolean;
+    paymentStatus?: string;
     isVoided: boolean;
     createdAt: string;
     booking?: {
         guestName: string;
+        guestPhone?: string;
+        guestEmail?: string;
+        checkIn?: string;
+        checkOut?: string;
     };
+    lineItems?: InvoiceLineItem[];
 }
 
 export interface Payment {
@@ -33,7 +46,7 @@ export interface Payment {
     bookingId?: string;
     orderId?: string;
     amount: string;
-    paymentMethod: 'CASH' | 'CARD' | 'ESEWA' | 'KHALTI' | 'CONNECT_IPS' | 'UPI' | 'BANK_TRANSFER' | 'OTHER';
+    paymentMethod: 'CASH' | 'CARD' | 'ESEWA' | 'KHALTI' | 'CONNECT_IPS' | 'FONEPAY' | 'BANK_TRANSFER' | 'OTHER';
     transactionId?: string;
     notes?: string;
     recordedById: string;
@@ -126,16 +139,6 @@ export function useFinance() {
         }
     };
 
-    const syncInvoiceCbms = async (invoiceId: string) => {
-        try {
-            await api.post(`/invoices/${invoiceId}/sync-cbms`, {});
-            toast.success('CBMS sync initiated');
-            await fetchInvoices();
-        } catch (err: any) {
-            toast.error(err?.message || 'CBMS sync failed');
-        }
-    };
-
     // Payments
     const fetchPayments = useCallback(async (limit = 50) => {
         setIsLoading(true);
@@ -153,7 +156,7 @@ export function useFinance() {
         setIsLoading(true);
         try {
             await api.post('/finance/payments', data);
-            await fetchPayments();
+            await Promise.all([fetchPayments(), fetchInvoices()]);
             toast.success('Payment recorded successfully');
             return true;
         } catch (err: any) {
@@ -164,10 +167,10 @@ export function useFinance() {
         }
     };
 
-    const voidPayment = async (paymentId: string) => {
+    const voidPayment = async (paymentId: string, confirmPassword: string) => {
         setIsLoading(true);
         try {
-            await api.post(`/finance/payments/${paymentId}/void`, {});
+            await api.post(`/finance/payments/${paymentId}/void`, { confirmPassword });
             await fetchPayments();
             toast.success('Payment voided');
             return true;
@@ -192,10 +195,10 @@ export function useFinance() {
         }
     }, []);
 
-    const createCreditNote = async (invoiceId: string, reason: string) => {
+    const createCreditNote = async (invoiceId: string, reason: string, confirmPassword: string) => {
         setIsLoading(true);
         try {
-            await api.post('/credit-notes', { invoiceId, reason });
+            await api.post('/credit-notes', { invoiceId, reason, confirmPassword });
             await fetchCreditNotes();
             await fetchInvoices();
             toast.success('Credit note created, invoice voided');
@@ -270,16 +273,6 @@ export function useFinance() {
         window.open(`${api.getBaseUrl()}${url}`, '_blank');
     };
 
-    const retryFailedCbms = async () => {
-        try {
-            await api.post('/finance/accounting/cbms/retry-failed', {});
-            toast.success('Retry initiated for failed CBMS syncs');
-            await fetchInvoices();
-        } catch (err: any) {
-            toast.error(err?.message || 'Failed to retry CBMS syncs');
-        }
-    };
-
     return {
         // State
         invoices,
@@ -291,7 +284,6 @@ export function useFinance() {
         // Invoices
         fetchInvoices,
         generateInvoice,
-        syncInvoiceCbms,
         // Payments
         fetchPayments,
         recordPayment,
@@ -305,7 +297,78 @@ export function useFinance() {
         endShift,
         // Accounting
         exportTally,
-        exportAnnex5,
-        retryFailedCbms
+        exportAnnex5
+    };
+}
+
+export interface FinanceDashboardSummary {
+    totalRevenueMtd: number;
+    accountsReceivable: number;
+    accountsPayable: number;
+    cashBankBalance: number;
+    recentInvoices: Invoice[];
+    recentPayments: Payment[];
+    revenueTrend: any[];
+}
+
+export function useFinanceDashboard() {
+    const [summary, setSummary] = useState<FinanceDashboardSummary | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchDashboardData = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const [tbRes, revRes, invRes, payRes] = await Promise.allSettled([
+                api.get('/finance/gl/trial-balance'),
+                api.get('/analytics/revenue?days=30'),
+                api.get('/invoices?limit=5'),
+                api.get('/finance/payments?limit=5')
+            ]);
+
+            const tbData = tbRes.status === 'fulfilled' ? tbRes.value.data : [];
+            const revData: any = revRes.status === 'fulfilled' ? revRes.value.data : {};
+            const invoices = invRes.status === 'fulfilled' ? invRes.value.data : [];
+            const payments = payRes.status === 'fulfilled' ? payRes.value.data : [];
+
+            // Calculate AR, AP, Cash from Trial Balance (mocked logic based on typical CoA naming)
+            let ar = 0;
+            let ap = 0;
+            let cash = 0;
+
+            if (Array.isArray(tbData)) {
+                tbData.forEach((account: any) => {
+                    const name = account.account_name?.toLowerCase() || '';
+                    const balance = Number(account.balance) || 0;
+                    
+                    if (name.includes('receivable')) ar += balance;
+                    if (name.includes('payable')) ap += Math.abs(balance);
+                    if (name.includes('cash') || name.includes('bank')) cash += balance;
+                });
+            }
+
+            setSummary({
+                totalRevenueMtd: revData?.totalRevenue || 0,
+                accountsReceivable: ar,
+                accountsPayable: ap,
+                cashBankBalance: cash,
+                recentInvoices: Array.isArray(invoices) ? invoices : [],
+                recentPayments: Array.isArray(payments) ? payments : [],
+                revenueTrend: revData?.trend || []
+            });
+        } catch (err: any) {
+            setError(err?.message || 'Failed to fetch dashboard data');
+            toast.error('Failed to load dashboard data');
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    return {
+        summary,
+        isLoading,
+        error,
+        fetchDashboardData
     };
 }

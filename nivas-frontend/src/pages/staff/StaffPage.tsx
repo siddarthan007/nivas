@@ -2,12 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import { useAuth } from '@/lib/contexts/AuthContext';
 import { useStaff } from '@/lib/hooks/useStaff';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Modal from '@/components/ui/Modal';
+import { usePasswordConfirm } from '@/components/ui/usePasswordConfirm';
 import Select from '@/components/ui/Select';
+import SearchableSelect from '@/components/ui/SearchableSelect';
+import DatePicker from '@/components/ui/DatePicker';
 import Pagination from '@/components/ui/Pagination';
+import { useHR } from '@/lib/hooks/useHR';
+import { SkeletonList } from '@/components/ui/Skeleton';
 import {
     Users,
     Plus,
@@ -19,8 +25,12 @@ import {
     UserCog,
     CheckCircle2,
     XCircle,
-    AlertTriangle
+    AlertTriangle,
+    DollarSign,
+    Briefcase,
+    Clock
 } from 'lucide-react';
+import AttendancePage from './AttendancePage';
 import type { CreateUserPayload, UpdateUserPayload, User } from '@/lib/types/api.types';
 
 function ConfirmDialog({
@@ -53,7 +63,7 @@ function ConfirmDialog({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                backgroundColor: 'var(--notion-overlay)',
             }}
             onClick={onClose}
         >
@@ -113,13 +123,15 @@ function StaffFormModal({
     onClose,
     onSubmit,
     roles,
-    initialData
+    initialData,
+    currentUserLevel = 0
 }: {
     isOpen: boolean;
     onClose: () => void;
     onSubmit: (data: any) => Promise<boolean>;
-    roles: { id: number; name: string }[];
+    roles: { id: number; name: string; level: number }[];
     initialData?: User | null;
+    currentUserLevel?: number;
 }) {
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState<CreateUserPayload>({
@@ -156,7 +168,6 @@ function StaffFormModal({
         e.preventDefault();
         setLoading(true);
         try {
-            // If editing, don't send empty password unless changed
             const payload = { ...formData };
             if (initialData && !payload.password) {
                 delete (payload as any).password;
@@ -191,7 +202,7 @@ function StaffFormModal({
                         value={formData.email}
                         onChange={e => setFormData({ ...formData, email: e.target.value })}
                         icon={<Mail size={14} />}
-                        disabled={!!initialData} // Prevent email change usually
+                        disabled={!!initialData}
                     />
                 </div>
 
@@ -211,8 +222,15 @@ function StaffFormModal({
                     <Select
                         value={formData.roleId.toString()}
                         onChange={e => setFormData({ ...formData, roleId: Number(e.target.value) })}
-                        options={roles.map(r => ({ value: r.id.toString(), label: r.name }))}
+                        options={roles
+                            .filter(r => r.level >= currentUserLevel)
+                            .map(r => ({ value: r.id.toString(), label: `${r.name} (Level ${r.level})` }))}
                     />
+                    {roles.some(r => r.level < currentUserLevel) && (
+                        <p style={{ fontSize: '11px', color: 'var(--notion-text-muted)', marginTop: '4px' }}>
+                            Higher-level roles are hidden based on your access level.
+                        </p>
+                    )}
                 </div>
 
                 {!initialData && (
@@ -250,7 +268,14 @@ function StaffFormModal({
 }
 
 export default function StaffPage() {
-    const { users, roles, isLoading, fetchUsers, fetchRoles, createUser, updateUser, toggleUserStatus } = useStaff();
+    const { confirm: pwConfirm, modal: pwModal } = usePasswordConfirm();
+    const { user } = useAuth();
+    const { users, roles, isLoading: isStaffLoading, fetchUsers, fetchRoles, createUser, updateUser, toggleUserStatus } = useStaff();
+    const { payroll, isLoading: isPayrollLoading, generatePayroll, processPayment } = useHR();
+    const currentUserRoleLevel = user?.role?.level ?? 0;
+    
+    const [activeTab, setActiveTab] = useState<'directory' | 'payroll' | 'attendance'>('directory');
+    
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
@@ -258,6 +283,16 @@ export default function StaffPage() {
     const [isToggling, setIsToggling] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [pageLimit, setPageLimit] = useState(20);
+
+    const [isPayrollModalOpen, setIsPayrollModalOpen] = useState(false);
+    const [newPayroll, setNewPayroll] = useState({
+        employeeId: '',
+        periodStart: '',
+        periodEnd: '',
+        baseSalary: 0,
+        deductions: 0,
+        bonuses: 0
+    });
 
     useEffect(() => {
         fetchUsers();
@@ -272,6 +307,13 @@ export default function StaffPage() {
     const handleAddNew = () => {
         setSelectedUser(null);
         setIsModalOpen(true);
+    };
+
+    const handleGeneratePayroll = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await generatePayroll(newPayroll);
+        setIsPayrollModalOpen(false);
+        setNewPayroll({ employeeId: '', periodStart: '', periodEnd: '', baseSalary: 0, deductions: 0, bonuses: 0 });
     };
 
     const handleToggleStatus = (user: User) => {
@@ -292,169 +334,226 @@ export default function StaffPage() {
         (u.role?.name || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    // Pagination
     const totalPages = Math.ceil(filteredUsers.length / pageLimit);
     const paginatedUsers = filteredUsers.slice((currentPage - 1) * pageLimit, currentPage * pageLimit);
 
     return (
         <DashboardLayout>
+            {pwModal}
             <div style={{ padding: 'var(--space-8)' }}>
                 {/* Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
                     <div>
                         <h1 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', fontSize: '24px', fontWeight: '600', color: 'var(--notion-text)' }}>
                             <Users size={28} />
-                            Staff Management
+                            HR & Staff Management
                         </h1>
                         <p style={{ fontSize: '14px', color: 'var(--notion-text-secondary)', marginTop: '4px' }}>
-                            Manage employees, roles, and access
+                            Manage employees, roles, access, and payroll.
                         </p>
                     </div>
-                    <Button onClick={handleAddNew} variant="primary">
-                        <Plus size={14} style={{ marginRight: '8px' }} /> Add Staff
-                    </Button>
+                    <div>
+                        {activeTab === 'directory' ? (
+                            <Button onClick={handleAddNew} variant="primary">
+                                <Plus size={14} style={{ marginRight: '8px' }} /> Add Staff
+                            </Button>
+                        ) : (
+                            <Button onClick={() => setIsPayrollModalOpen(true)} variant="primary">
+                                <Plus size={14} style={{ marginRight: '8px' }} /> Generate Payroll
+                            </Button>
+                        )}
+                    </div>
                 </div>
 
-                {/* Search */}
-                <div style={{ marginBottom: 'var(--space-6)', maxWidth: '400px', position: 'relative' }}>
-                    <Search style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--notion-text-secondary)' }} size={16} />
-                    <input
-                        type="text"
-                        placeholder="Search staff..."
-                        value={searchQuery}
-                        onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                        style={{
-                            width: '100%',
-                            padding: '8px 12px 8px 36px',
-                            fontSize: '14px',
-                            border: '1px solid var(--notion-border)',
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: 'var(--notion-bg-secondary)',
-                            color: 'var(--notion-text)'
-                        }}
-                    />
+                {/* Tabs */}
+                <div style={{ display: 'flex', gap: 'var(--space-1)', borderBottom: '1px solid var(--notion-divider)', marginBottom: 'var(--space-6)' }}>
+                    <button onClick={() => setActiveTab('directory')} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3) var(--space-4)', fontSize: '14px', fontWeight: activeTab === 'directory' ? '600' : '400', color: activeTab === 'directory' ? 'var(--notion-text)' : 'var(--notion-text-secondary)', backgroundColor: 'transparent', border: 'none', borderBottom: activeTab === 'directory' ? '2px solid var(--notion-blue)' : '2px solid transparent', cursor: 'pointer' }}>
+                        <Briefcase size={16} /> Directory
+                    </button>
+                    <button onClick={() => setActiveTab('payroll')} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3) var(--space-4)', fontSize: '14px', fontWeight: activeTab === 'payroll' ? '600' : '400', color: activeTab === 'payroll' ? 'var(--notion-text)' : 'var(--notion-text-secondary)', backgroundColor: 'transparent', border: 'none', borderBottom: activeTab === 'payroll' ? '2px solid var(--notion-blue)' : '2px solid transparent', cursor: 'pointer' }}>
+                        <DollarSign size={16} /> Payroll
+                    </button>
+                    <button onClick={() => setActiveTab('attendance')} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3) var(--space-4)', fontSize: '14px', fontWeight: activeTab === 'attendance' ? '600' : '400', color: activeTab === 'attendance' ? 'var(--notion-text)' : 'var(--notion-text-secondary)', backgroundColor: 'transparent', border: 'none', borderBottom: activeTab === 'attendance' ? '2px solid var(--notion-blue)' : '2px solid transparent', cursor: 'pointer' }}>
+                        <Clock size={16} /> Attendance
+                    </button>
                 </div>
 
-                {/* Staff List */}
-                <div style={{
-                    backgroundColor: 'var(--notion-bg)',
-                    border: '1px solid var(--notion-border)',
-                    borderRadius: 'var(--radius-lg)',
-                    overflow: 'hidden'
-                }}>
-                    <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
-                        <thead style={{
-                            backgroundColor: 'var(--notion-bg-secondary)',
-                            borderBottom: '1px solid var(--notion-border)',
-                            color: 'var(--notion-text-secondary)'
-                        }}>
-                            <tr>
-                                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Name</th>
-                                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Contact</th>
-                                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Role</th>
-                                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Status</th>
-                                <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '500' }}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody style={{ borderTop: '1px solid var(--notion-border)' }}>
-                            {isLoading ? (
-                                <tr>
-                                    <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>Loading...</td>
-                                </tr>
-                            ) : filteredUsers.length === 0 ? (
-                                <tr>
-                                    <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>No staff found.</td>
-                                </tr>
-                            ) : (
-                                paginatedUsers.map(user => (
-                                    <tr key={user.id} style={{ borderBottom: '1px solid var(--notion-border)' }}>
-                                        <td style={{ padding: '12px 16px', fontWeight: '500' }}>{user.fullName}</td>
-                                        <td style={{ padding: '12px 16px' }}>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '13px' }}>
-                                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                    <Mail size={12} className="text-[var(--notion-text-secondary)]" /> {user.email}
-                                                </span>
-                                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                    <Phone size={12} className="text-[var(--notion-text-secondary)]" /> {user.phone}
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td style={{ padding: '12px 16px' }}>
-                                            <span style={{
-                                                padding: '2px 8px',
-                                                borderRadius: '12px',
-                                                fontSize: '12px',
-                                                backgroundColor: 'var(--notion-blue-bg)',
-                                                color: 'var(--notion-blue)',
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                                gap: '4px'
-                                            }}>
-                                                <Shield size={10} />
-                                                {user.role?.name || 'No Role'}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: '12px 16px' }}>
-                                            {user.isActive ? (
-                                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--notion-green)', fontSize: '13px' }}>
-                                                    <CheckCircle2 size={14} /> Active
-                                                </span>
-                                            ) : (
-                                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--notion-red)', fontSize: '13px' }}>
-                                                    <XCircle size={14} /> Inactive
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                                <Button size="sm" variant="secondary" onClick={() => handleEdit(user)}>Edit</Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="secondary"
-                                                    onClick={() => handleToggleStatus(user)}
-                                                    style={{ color: user.isActive ? 'var(--notion-red)' : 'var(--notion-green)' }}
-                                                >
-                                                    {user.isActive ? 'Deactivate' : 'Activate'}
-                                                </Button>
-                                            </div>
-                                        </td>
+                {activeTab === 'directory' && (
+                    <>
+                        <div style={{ marginBottom: 'var(--space-6)', maxWidth: '400px' }}>
+                            <Input
+                                placeholder="Search staff..."
+                                value={searchQuery}
+                                onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                                icon={<Search size={16} />}
+                            />
+                        </div>
+
+                        <div style={{ backgroundColor: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                            <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
+                                <thead style={{ backgroundColor: 'var(--notion-bg-secondary)', borderBottom: '1px solid var(--notion-border)', color: 'var(--notion-text-secondary)' }}>
+                                    <tr>
+                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Name</th>
+                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Contact</th>
+                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Role</th>
+                                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Status</th>
+                                        <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '500' }}>Actions</th>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                    <Pagination
-                        page={currentPage}
-                        totalPages={totalPages}
-                        total={filteredUsers.length}
-                        limit={pageLimit}
-                        onPageChange={setCurrentPage}
-                        onLimitChange={(l) => { setPageLimit(l); setCurrentPage(1); }}
-                    />
-                </div>
+                                </thead>
+                                <tbody style={{ borderTop: '1px solid var(--notion-border)' }}>
+                                    {isStaffLoading ? (
+                                        <tr><td colSpan={5} style={{ padding: '32px' }}><SkeletonList items={3} /></td></tr>
+                                    ) : filteredUsers.length === 0 ? (
+                                        <tr><td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>No staff found.</td></tr>
+                                    ) : (
+                                        paginatedUsers.map(user => (
+                                            <tr key={user.id} style={{ borderBottom: '1px solid var(--notion-border)' }}>
+                                                <td style={{ padding: '12px 16px', fontWeight: '500' }}>{user.fullName}</td>
+                                                <td style={{ padding: '12px 16px' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '13px' }}>
+                                                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Mail size={12} className="text-[var(--notion-text-secondary)]" /> {user.email}</span>
+                                                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Phone size={12} className="text-[var(--notion-text-secondary)]" /> {user.phone}</span>
+                                                    </div>
+                                                </td>
+                                                <td style={{ padding: '12px 16px' }}>
+                                                    <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '12px', backgroundColor: 'var(--notion-blue-bg)', color: 'var(--notion-blue)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Shield size={10} />{user.role?.name || 'No Role'}</span>
+                                                </td>
+                                                <td style={{ padding: '12px 16px' }}>
+                                                    {user.isActive ? (
+                                                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--notion-green)', fontSize: '13px' }}><CheckCircle2 size={14} /> Active</span>
+                                                    ) : (
+                                                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--notion-red)', fontSize: '13px' }}><XCircle size={14} /> Inactive</span>
+                                                    )}
+                                                </td>
+                                                <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                                                        <Button size="sm" variant="secondary" onClick={() => handleEdit(user)}>Edit</Button>
+                                                        <Button size="sm" variant="secondary" onClick={() => handleToggleStatus(user)} style={{ color: user.isActive ? 'var(--notion-red)' : 'var(--notion-green)' }}>{user.isActive ? 'Deactivate' : 'Activate'}</Button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                            <Pagination page={currentPage} totalPages={totalPages} total={filteredUsers.length} limit={pageLimit} onPageChange={setCurrentPage} onLimitChange={(l) => { setPageLimit(l); setCurrentPage(1); }} />
+                        </div>
+                    </>
+                )}
 
-                <StaffFormModal
-                    isOpen={isModalOpen}
-                    onClose={() => setIsModalOpen(false)}
-                    onSubmit={selectedUser ? (data) => updateUser(selectedUser.id, data) : createUser}
-                    roles={roles}
-                    initialData={selectedUser}
-                />
+                {activeTab === 'payroll' && (
+                    <div style={{ backgroundColor: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                        <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
+                            <thead style={{ backgroundColor: 'var(--notion-bg-secondary)', borderBottom: '1px solid var(--notion-border)', color: 'var(--notion-text-secondary)' }}>
+                                <tr>
+                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Employee</th>
+                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Period</th>
+                                    <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '500' }}>Base</th>
+                                    <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '500' }}>Adjustments</th>
+                                    <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '500' }}>Net Pay</th>
+                                    <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '500' }}>Status</th>
+                                    <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '500' }}>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody style={{ borderTop: '1px solid var(--notion-border)' }}>
+                                {isPayrollLoading ? (
+                                    <tr><td colSpan={7} style={{ padding: '32px' }}><SkeletonList items={3} /></td></tr>
+                                ) : payroll.length === 0 ? (
+                                    <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>No payroll records found.</td></tr>
+                                ) : (
+                                    payroll.map(p => (
+                                        <tr key={p.id} style={{ borderBottom: '1px solid var(--notion-border)' }}>
+                                            <td style={{ padding: '12px 16px', fontWeight: '500' }}>{p.employeeName}</td>
+                                            <td style={{ padding: '12px 16px', color: 'var(--notion-text-secondary)' }}>{p.periodStart} to {p.periodEnd}</td>
+                                            <td style={{ padding: '12px 16px', textAlign: 'right' }}>${p.baseSalary.toFixed(2)}</td>
+                                            <td style={{ padding: '12px 16px', textAlign: 'right', color: p.bonuses - p.deductions >= 0 ? 'var(--notion-green)' : 'var(--notion-red)' }}>
+                                                {p.bonuses - p.deductions >= 0 ? '+' : '-'}${Math.abs(p.bonuses - p.deductions).toFixed(2)}
+                                            </td>
+                                            <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600' }}>${p.netPay.toFixed(2)}</td>
+                                            <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                                <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '12px', backgroundColor: p.status === 'PAID' ? 'var(--notion-green-bg)' : 'var(--notion-yellow-bg)', color: p.status === 'PAID' ? 'var(--notion-green)' : 'var(--notion-yellow)' }}>
+                                                    {p.status}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                                                {p.status === 'PENDING' && (
+                                                    <Button size="sm" variant="primary" onClick={async () => { const pw = await pwConfirm('Pay payroll', 'Re-enter your password to record this payroll payment.'); if (pw) await processPayment(p.id, pw); }}>Pay Now</Button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
 
-                <ConfirmDialog
-                    isOpen={!!confirmTarget}
-                    onClose={() => setConfirmTarget(null)}
-                    onConfirm={handleConfirmToggle}
-                    title={confirmTarget?.isActive ? 'Deactivate Staff' : 'Activate Staff'}
-                    message={
-                        confirmTarget?.isActive
-                            ? `Are you sure you want to deactivate ${confirmTarget.fullName}? They will lose access to the system.`
-                            : `Are you sure you want to activate ${confirmTarget?.fullName}? They will regain access to the system.`
-                    }
-                    confirmLabel={confirmTarget?.isActive ? 'Deactivate' : 'Activate'}
-                    confirmColor={confirmTarget?.isActive ? 'var(--notion-red)' : 'var(--notion-green)'}
-                    isLoading={isToggling}
-                />
+                {activeTab === 'attendance' && (
+                    <AttendancePage />
+                )}
+
+                <StaffFormModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSubmit={selectedUser ? (data) => updateUser(selectedUser.id, data) : createUser} roles={roles} initialData={selectedUser} currentUserLevel={currentUserRoleLevel} />
+
+                <Modal isOpen={isPayrollModalOpen} onClose={() => setIsPayrollModalOpen(false)} title="Generate Payroll">
+                    <form onSubmit={handleGeneratePayroll} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                        <div>
+                            <SearchableSelect
+                                label="Employee"
+                                value={newPayroll.employeeId || null}
+                                onChange={val => setNewPayroll({...newPayroll, employeeId: String(val)})}
+                                placeholder="Select employee..."
+                                searchPlaceholder="Search employees..."
+                                options={users.map(u => ({ value: u.id, label: u.fullName, subtitle: u.role?.name || '' }))}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
+                            <div style={{ flex: 1 }}>
+                                <DatePicker
+                                    label="Period Start"
+                                    selected={newPayroll.periodStart ? new Date(newPayroll.periodStart) : null}
+                                    onChange={(date: Date | null) => {
+                                        const str = date instanceof Date ? date.toISOString().split('T')[0]! : '';
+                                        setNewPayroll(prev => ({...prev, periodStart: str}));
+                                    }}
+                                    placeholder="Select start date"
+                                    required
+                                />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <DatePicker
+                                    label="Period End"
+                                    selected={newPayroll.periodEnd ? new Date(newPayroll.periodEnd) : null}
+                                    onChange={(date: Date | null) => {
+                                        const str = date instanceof Date ? date.toISOString().split('T')[0]! : '';
+                                        setNewPayroll(prev => ({...prev, periodEnd: str}));
+                                    }}
+                                    placeholder="Select end date"
+                                    required
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Base Salary</label>
+                            <Input type="number" min="0" step="0.01" value={newPayroll.baseSalary.toString()} onChange={e => setNewPayroll({...newPayroll, baseSalary: parseFloat(e.target.value) || 0})} required />
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
+                            <div style={{ flex: 1 }}>
+                                <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Bonuses</label>
+                                <Input type="number" min="0" step="0.01" value={newPayroll.bonuses.toString()} onChange={e => setNewPayroll({...newPayroll, bonuses: parseFloat(e.target.value) || 0})} />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Deductions</label>
+                                <Input type="number" min="0" step="0.01" value={newPayroll.deductions.toString()} onChange={e => setNewPayroll({...newPayroll, deductions: parseFloat(e.target.value) || 0})} />
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
+                            <Button type="button" variant="secondary" onClick={() => setIsPayrollModalOpen(false)}>Cancel</Button>
+                            <Button type="submit">Generate</Button>
+                        </div>
+                    </form>
+                </Modal>
+
+                <ConfirmDialog isOpen={!!confirmTarget} onClose={() => setConfirmTarget(null)} onConfirm={handleConfirmToggle} title={confirmTarget?.isActive ? 'Deactivate Staff' : 'Activate Staff'} message={confirmTarget?.isActive ? `Are you sure you want to deactivate ${confirmTarget.fullName}? They will lose access to the system.` : `Are you sure you want to activate ${confirmTarget?.fullName}? They will regain access to the system.`} confirmLabel={confirmTarget?.isActive ? 'Deactivate' : 'Activate'} confirmColor={confirmTarget?.isActive ? 'var(--notion-red)' : 'var(--notion-green)'} isLoading={isToggling} />
             </div>
         </DashboardLayout>
     );

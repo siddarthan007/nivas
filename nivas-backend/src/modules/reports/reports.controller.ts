@@ -5,6 +5,15 @@ import { ExportService } from '../../utils/export.service';
 import { ReportsService } from './reports.service';
 import { createResponse } from '../../utils/response.helper';
 import { ValidationError } from '../../utils/errors';
+import { PdfService } from '../../utils/pdf.service';
+import { db } from '../../db';
+import { hotels } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+
+const reportRange = (q: any) => ({
+    from: (q.from || `${new Date().getFullYear()}-01-01`) as string,
+    to: (q.to || new Date().toISOString().split('T')[0]!) as string,
+});
 
 export const reportsController = new Elysia({ prefix: '/reports' })
     .use(authMiddleware)
@@ -12,7 +21,7 @@ export const reportsController = new Elysia({ prefix: '/reports' })
     // ===================================
     // DAILY SALES REPORT
     // ===================================
-    .get('/dsr', async ({ user, query }: { user: any, query: any }) => {
+    .get('/dsr', async ({ user, query }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
         const today = new Date().toISOString().split('T')[0];
         const dateStr = (query.date || today)!;
@@ -26,9 +35,63 @@ export const reportsController = new Elysia({ prefix: '/reports' })
     })
 
     // ===================================
+    // PER-TYPE REPORT DATA (Sales / Payment Collection / Purchase-Expense)
+    // ===================================
+    .get('/data', async ({ user, query }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const { from, to } = reportRange(query);
+        const data = await ReportsService.getReportData(user.hotelId, query.type || 'sales', from, to);
+        return createResponse(data, 'Report data fetched');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.REPORTS.VIEW_SALES,
+        query: t.Object({ type: t.Optional(t.String()), from: t.Optional(t.String()), to: t.Optional(t.String()) }),
+        detail: { summary: 'Tabular report data', tags: ['Reports'] }
+    })
+    // Server-rendered PDF of the same report.
+    .get('/pdf', async ({ user, query, set }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const { from, to } = reportRange(query);
+        const data = await ReportsService.getReportData(user.hotelId, query.type || 'sales', from, to);
+        const hotel = await db.query.hotels.findFirst({ where: eq(hotels.id, user.hotelId), columns: { name: true } });
+        const def = PdfService.generateReportDefinition({ hotelName: hotel?.name || 'Hotel', ...data });
+        const buffer = await PdfService.generatePdf(def);
+        set.headers['content-type'] = 'application/pdf';
+        set.headers['content-disposition'] = `attachment; filename="${data.type}-${from}_${to}.pdf"`;
+        return buffer;
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.REPORTS.VIEW_SALES,
+        query: t.Object({ type: t.Optional(t.String()), from: t.Optional(t.String()), to: t.Optional(t.String()) }),
+        detail: { summary: 'Report PDF', tags: ['Reports'] }
+    })
+
+    // ===================================
+    // WAITER KOT REPORT
+    // ===================================
+    .get('/waiter-kot', async ({ user, query }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const data = await ReportsService.getWaiterKotReport(user.hotelId, {
+            waiterId: query.waiterId,
+            status: query.status,
+            date: query.date,
+        });
+        return createResponse(data, 'Waiter KOT report fetched successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.ORDERS.READ,
+        query: t.Object({
+            waiterId: t.Optional(t.String()),
+            status: t.Optional(t.String()),
+            date: t.Optional(t.String()),
+        }),
+        detail: { summary: 'Waiter KOT report', tags: ['Analytics'] }
+    })
+
+    // ===================================
     // HOUSEKEEPING EFFICIENCY
     // ===================================
-    .get('/housekeeping-efficiency', async ({ user, query }: { user: any, query: any }) => {
+    .get('/housekeeping-efficiency', async ({ user, query }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
         const days = parseInt(query.days || '7');
         const data = await ReportsService.getHousekeepingEfficiency(user.hotelId, days);
@@ -43,9 +106,9 @@ export const reportsController = new Elysia({ prefix: '/reports' })
     // ===================================
     // ARRIVALS REPORT
     // ===================================
-    .get('/arrivals', async ({ user, query }: { user: any, query: any }) => {
+    .get('/arrivals', async ({ user, query }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
-        const dateStr = query.date || new Date().toISOString().split('T')[0];
+        const dateStr = (query.date || new Date().toISOString().split('T')[0]) as string;
         const data = await ReportsService.getArrivalsReport(user.hotelId, dateStr);
 
         if (query.format === 'csv') {
@@ -55,7 +118,7 @@ export const reportsController = new Elysia({ prefix: '/reports' })
         }
 
         if (query.format === 'excel') {
-            return new Response(new Blob([ExportService.toExcel(data, 'Arrivals') as any]), {
+            return new Response(new Blob([ExportService.toExcel(data, 'Arrivals')]), {
                 headers: ExportService.excelHeaders(`arrivals-${dateStr}.xlsx`)
             });
         }
@@ -74,9 +137,9 @@ export const reportsController = new Elysia({ prefix: '/reports' })
     // ===================================
     // DEPARTURES REPORT
     // ===================================
-    .get('/departures', async ({ user, query }: { user: any, query: any }) => {
+    .get('/departures', async ({ user, query }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
-        const dateStr = query.date || new Date().toISOString().split('T')[0];
+        const dateStr = (query.date || new Date().toISOString().split('T')[0]) as string;
         const data = await ReportsService.getDeparturesReport(user.hotelId, dateStr);
 
         if (query.format === 'csv') {
@@ -86,7 +149,7 @@ export const reportsController = new Elysia({ prefix: '/reports' })
         }
 
         if (query.format === 'excel') {
-            return new Response(new Blob([ExportService.toExcel(data, 'Departures') as any]), {
+            return new Response(new Blob([ExportService.toExcel(data, 'Departures')]), {
                 headers: ExportService.excelHeaders(`departures-${dateStr}.xlsx`)
             });
         }
@@ -105,7 +168,7 @@ export const reportsController = new Elysia({ prefix: '/reports' })
     // ===================================
     // CANCELLATIONS & NO-SHOWS
     // ===================================
-    .get('/cancellations', async ({ user, query }: { user: any, query: any }) => {
+    .get('/cancellations', async ({ user, query }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
         const days = parseInt(query.days || '30');
         const { cancellationData, noShowData } = await ReportsService.getCancellationsAndNoShows(user.hotelId, days);
@@ -122,7 +185,7 @@ export const reportsController = new Elysia({ prefix: '/reports' })
             return new Response(new Blob([ExportService.toExcelMultiSheet([
                 { name: 'Cancellations', data: cancellationData },
                 { name: 'No-Shows', data: noShowData }
-            ]) as any]), {
+            ])]), {
                 headers: ExportService.excelHeaders(`cancellations-noshows.xlsx`)
             });
         }
@@ -149,7 +212,7 @@ export const reportsController = new Elysia({ prefix: '/reports' })
     // ===================================
     // NATIONALITIES REPORT
     // ===================================
-    .get('/nationalities', async ({ user, query }: { user: any, query: any }) => {
+    .get('/nationalities', async ({ user, query }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
         const days = parseInt(query.days || '30');
         const { data, totalGuests, startDate } = await ReportsService.getNationalitiesReport(user.hotelId, days);
@@ -161,7 +224,7 @@ export const reportsController = new Elysia({ prefix: '/reports' })
         }
 
         if (query.format === 'excel') {
-            return new Response(new Blob([ExportService.toExcel(data, 'Nationalities') as any]), {
+            return new Response(new Blob([ExportService.toExcel(data, 'Nationalities')]), {
                 headers: ExportService.excelHeaders(`nationalities.xlsx`)
             });
         }
@@ -184,7 +247,7 @@ export const reportsController = new Elysia({ prefix: '/reports' })
     // ===================================
     // IN-HOUSE GUESTS
     // ===================================
-    .get('/in-house', async ({ user, query }: { user: any, query: any }) => {
+    .get('/in-house', async ({ user, query }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
         const data = await ReportsService.getInHouseGuests(user.hotelId);
 
@@ -195,7 +258,7 @@ export const reportsController = new Elysia({ prefix: '/reports' })
         }
 
         if (query.format === 'excel') {
-            return new Response(new Blob([ExportService.toExcel(data, 'In-House Guests') as any]), {
+            return new Response(new Blob([ExportService.toExcel(data, 'In-House Guests')]), {
                 headers: ExportService.excelHeaders(`in-house-guests.xlsx`)
             });
         }

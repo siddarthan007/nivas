@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { backgroundJobs, hotels } from '../../db/schema';
-import { eq, and, lte, asc } from 'drizzle-orm';
+import { eq, and, lte, lt, asc } from 'drizzle-orm';
 import { NotificationChannelService } from '../notifications/notification-channel.service';
 
 /**
@@ -33,6 +33,13 @@ export const JobService = {
     async processPendingJobs(maxRetries: number = 3) {
         const now = new Date();
         const results = [];
+
+        // Reap stuck jobs: a crash between claim and completion leaves a job
+        // PROCESSING forever (never re-selected). Re-queue any held >10 min.
+        const stuckBefore = new Date(now.getTime() - 10 * 60 * 1000);
+        await db.update(backgroundJobs)
+            .set({ status: 'PENDING', updatedAt: now })
+            .where(and(eq(backgroundJobs.status, 'PROCESSING'), lt(backgroundJobs.updatedAt, stuckBefore)));
 
         // 1. Fetch potential candidates (simple select, lock in loop/transaction)
         // Note: Full "SKIP LOCKED" support depends on driver. 
@@ -76,7 +83,8 @@ export const JobService = {
                         await this.handleChannelSync(currentJob);
                         break;
                     default:
-                        console.warn(`[JobService] Unknown job type: ${currentJob.type}, marking as completed`);
+                        // Unknown type → fail (was silently marked COMPLETED, dropping the job).
+                        throw new Error(`Unknown job type: ${currentJob.type}`);
                 }
 
                 // 4. Success: Mark as COMPLETED

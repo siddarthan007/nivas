@@ -60,9 +60,9 @@ export default function ConfirmationModal({
                             style={{
                                 width: "100%",
                                 maxWidth: "400px",
-                                background: "#1e1e1e",
-                                borderRadius: "16px",
-                                border: "1px solid rgba(255,255,255,0.1)",
+                                background: "var(--notion-bg)",
+                                borderRadius: "12px",
+                                border: "1px solid var(--notion-border)",
                                 padding: "24px",
                                 boxShadow: "0 20px 40px rgba(0,0,0,0.4)",
                                 pointerEvents: "auto",
@@ -78,7 +78,7 @@ export default function ConfirmationModal({
                                     right: "16px",
                                     background: "transparent",
                                     border: "none",
-                                    color: "#666",
+                                    color: "var(--notion-text-secondary)",
                                     cursor: "pointer"
                                 }}
                             >
@@ -100,10 +100,10 @@ export default function ConfirmationModal({
                             </div>
 
                             {/* Text */}
-                            <h3 style={{ color: "white", fontSize: "18px", fontWeight: "600", marginBottom: "8px" }}>
+                            <h3 style={{ color: "var(--notion-text)", fontSize: "18px", fontWeight: "600", marginBottom: "8px" }}>
                                 {title}
                             </h3>
-                            <p style={{ color: "#888", fontSize: "14px", lineHeight: "1.5", marginBottom: "24px" }}>
+                            <p style={{ color: "var(--notion-text-secondary)", fontSize: "14px", lineHeight: "1.5", marginBottom: "24px" }}>
                                 {message}
                             </p>
 
@@ -114,9 +114,9 @@ export default function ConfirmationModal({
                                     style={{
                                         padding: "10px 16px",
                                         borderRadius: "8px",
-                                        background: "rgba(255,255,255,0.05)",
-                                        border: "1px solid rgba(255,255,255,0.1)",
-                                        color: "white",
+                                        background: "var(--notion-bg-secondary)",
+                                        border: "1px solid var(--notion-border)",
+                                        color: "var(--notion-text)",
                                         fontSize: "14px",
                                         fontWeight: "500",
                                         cursor: "pointer"
@@ -131,7 +131,7 @@ export default function ConfirmationModal({
                                         borderRadius: "8px",
                                         background: isDangerous ? "#ff4d4d" : "#2383e2",
                                         border: "none",
-                                        color: "white",
+                                        color: "var(--foreground-inverse)",
                                         fontSize: "14px",
                                         fontWeight: "500",
                                         cursor: "pointer",

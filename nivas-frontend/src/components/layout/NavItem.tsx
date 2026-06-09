@@ -104,7 +104,7 @@ export default function NavItem({
                     }}
                     className="hover-bg"
                 >
-                    <Icon size={18} strokeWidth={1.5} />
+                    <Icon size={isCollapsed ? 20 : 18} strokeWidth={isCollapsed ? 2 : 1.5} />
 
                     {!isCollapsed && <span>{label}</span>}
 

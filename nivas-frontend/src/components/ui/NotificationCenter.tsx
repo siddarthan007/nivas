@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/lib/api";
+import { useWebSocket } from "@/lib/contexts/WebSocketContext";
+import { useAuth } from "@/lib/contexts/AuthContext";
+import { useRouter } from "@/lib/router";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
 import {
     Bell,
     CheckSquare,
@@ -18,13 +22,68 @@ import {
 
 interface Notification {
     id: string;
-    type: "task" | "message" | "leave" | "attendance" | "system" | "booking" | "alert";
+    type: "task" | "message" | "leave" | "attendance" | "system" | "booking" | "alert" | "order" | "inventory" | "payment";
     title: string;
     description?: string;
     time: string;
     createdAt?: string;
     read: boolean;
     href?: string;
+    metadata?: any;
+}
+
+/**
+ * Resolve a notification to a destination route that actually exists in the app.
+ * Type-driven first (reliable), then metadata-id fallback. Never builds detail
+ * routes that have no matching handler (which previously 404'd on click).
+ */
+function deriveHref(type?: string, metadata?: any): string | undefined {
+    const m = metadata || {};
+    if (m.href || m.path) return m.href || m.path;
+    const t = (type || "").toUpperCase();
+
+    // Type-driven routing
+    if (t.startsWith("LICENSE") || t.includes("PAYMENT") || t.startsWith("TRIAL")) return "/hotel/billing";
+    if (t.includes("KITCHEN")) return "/hotel/kitchen";
+    if (t.includes("ORDER")) return "/hotel/orders";
+    if (t.includes("HOUSEKEEPING") || t.includes("CHECKOUT_ROOM")) return "/hotel/housekeeping";
+    if (t.includes("CHECKOUT_REQUEST") || t.includes("BOOKING")) return "/hotel/bookings";
+    if (t.includes("NIGHT_AUDIT")) return "/hotel/finance";
+    if (t.includes("DND")) return "/hotel/rooms";
+    if (t.includes("INVENTORY")) return "/hotel/inventory";
+    if (t.includes("MESSAGE")) return "/hotel/messages";
+
+    // Metadata-id fallback (only routes that exist)
+    if (m.guestId) return `/hotel/guests/${m.guestId}`;
+    if (m.bookingId) return "/hotel/bookings";
+    if (m.orderId) return "/hotel/orders";
+    if (m.tableId) return "/hotel/operations/tables";
+    if (m.invoiceId || m.paymentId) return "/hotel/finance";
+    if (m.taskId) return "/hotel/housekeeping";
+    if (m.roomId) return "/hotel/rooms";
+    return undefined;
+}
+
+/**
+ * Collapse duplicate notifications: by id, and by metadata.dedupeKey (keeping the
+ * newest). Input is expected newest-first. Prevents managers/owners — who receive
+ * every role's copy of the same underlying event — from seeing duplicates.
+ */
+function dedupeNotifications(list: Notification[]): Notification[] {
+    const seenIds = new Set<string>();
+    const seenKeys = new Set<string>();
+    const out: Notification[] = [];
+    for (const n of list) {
+        if (seenIds.has(n.id)) continue;
+        const key = n.metadata?.dedupeKey;
+        if (key) {
+            if (seenKeys.has(key)) continue;
+            seenKeys.add(key);
+        }
+        seenIds.add(n.id);
+        out.push(n);
+    }
+    return out;
 }
 
 const formatNotificationTime = (timeStr: string) => {
@@ -46,41 +105,130 @@ const formatNotificationTime = (timeStr: string) => {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+function playNotificationSound() {
+    try {
+        const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        // Subtle soft two-note chime — gentle attack, low volume, smooth decay.
+        const t = ctx.currentTime;
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(660, t);
+        osc.frequency.setValueAtTime(880, t + 0.09);
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.06, t + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+        osc.start(t);
+        osc.stop(t + 0.42);
+    } catch { /* ignore */ }
+}
+
 export default function NotificationCenter() {
     const [isOpen, setIsOpen] = useState(false);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [loading, setLoading] = useState(true);
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [isShaking, setIsShaking] = useState(false);
     const panelRef = useRef<HTMLDivElement>(null);
+    // Tracks alert keys already toasted so the same underlying event (delivered to
+    // multiple roles) only chimes once.
+    const seenRef = useRef<Set<string>>(new Set());
+    const { status: wsStatus, on } = useWebSocket();
+    const { user } = useAuth();
+    const isSuperAdmin = user?.userType === 'SUPER_ADMIN';
+    const router = useRouter();
+
+    const mapApiNotification = useCallback((n: any): Notification => ({
+        id: n.id,
+        type: n.type?.toLowerCase() || 'system',
+        title: n.title || 'Notification',
+        description: n.message || n.description,
+        time: n.time || formatNotificationTime(n.createdAt || ''),
+        createdAt: n.createdAt,
+        read: !!n.isRead,
+        href: n.metadata?.href || n.metadata?.path || deriveHref(n.type, n.metadata),
+        metadata: n.metadata,
+    }), []);
 
     const fetchNotifications = useCallback(async () => {
+        if (isSuperAdmin) return; // no hotel-scoped notifications for platform admin
         try {
             const res = await api.get("/notifications");
             if (res.data) {
-                const items = (res.data as any[]).map((n: any) => ({
-                    ...n,
-                    time: n.time || formatNotificationTime(n.createdAt || ''),
-                }));
-                setNotifications(items);
+                const fetched = dedupeNotifications((res.data as any[]).map(mapApiNotification));
+                // Merge: prefer fetched read state, keep WS real-time items not yet in DB
+                setNotifications(prev => {
+                    const fetchedIds = new Set(fetched.map(n => n.id));
+                    const wsExtras = prev.filter(n => !fetchedIds.has(n.id));
+                    return dedupeNotifications([...fetched, ...wsExtras]);
+                });
             }
         } catch {
             // Keep existing notifications on error
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [mapApiNotification, isSuperAdmin]);
 
     useEffect(() => {
         fetchNotifications();
-        // Poll every 10 seconds for near-realtime
-        const interval = setInterval(fetchNotifications, 10000);
-        return () => clearInterval(interval);
     }, [fetchNotifications]);
 
-    // Refresh on open
+    // Slow fallback poll when WS disconnected
+    useEffect(() => {
+        if (wsStatus === 'connected') return;
+        const interval = setInterval(fetchNotifications, 60000);
+        return () => clearInterval(interval);
+    }, [wsStatus, fetchNotifications]);
+
+    // Refresh on open but merge instead of replace
     useEffect(() => {
         if (isOpen) fetchNotifications();
     }, [isOpen, fetchNotifications]);
+
+    // WebSocket: initial state + real-time bell notifications only.
+    // Live-data events (KITCHEN_NEW_ORDER, DND_UPDATE, ...) are intentionally NOT
+    // handled here — they are consumed by WebSocketProvider for cache invalidation.
+    useEffect(() => {
+        const unsubConnected = on('CONNECTED', (payload: any) => {
+            if (payload?.latestNotifications) {
+                setNotifications(dedupeNotifications(payload.latestNotifications.map(mapApiNotification)));
+            }
+            setLoading(false);
+        });
+
+        const unsubNotif = on('NOTIFICATION', (record: any) => {
+            if (!record) return;
+            const newNotif = mapApiNotification(record);
+            newNotif.time = 'Just now';
+            if (!newNotif.createdAt) newNotif.createdAt = new Date().toISOString();
+
+            const alertKey = newNotif.metadata?.dedupeKey || newNotif.id;
+            const alreadyAlerted = seenRef.current.has(alertKey);
+            seenRef.current.add(alertKey);
+
+            setNotifications(prev => {
+                if (prev.some(n => n.id === newNotif.id)) return prev;
+                return dedupeNotifications([newNotif, ...prev]);
+            });
+
+            if (!alreadyAlerted) {
+                playNotificationSound();
+                setIsShaking(true);
+                setTimeout(() => setIsShaking(false), 1500);
+                toast.info(newNotif.title, { description: newNotif.description });
+            }
+        });
+
+        return () => {
+            unsubConnected();
+            unsubNotif();
+        };
+    }, [on, mapApiNotification]);
 
     const markAsRead = async (id: string) => {
         setNotifications(prev =>
@@ -100,9 +248,14 @@ export default function NotificationCenter() {
 
     const handleClick = (notification: Notification) => {
         markAsRead(notification.id);
-        if (notification.href) {
-            window.location.href = notification.href;
+        const href = notification.href || deriveHref(notification.type, notification.metadata);
+        if (href) {
             setIsOpen(false);
+            if (href.startsWith('http')) {
+                window.open(href, '_blank');
+            } else {
+                router.push(href);
+            }
         }
     };
 
@@ -133,12 +286,31 @@ export default function NotificationCenter() {
             case "attendance": return <Clock size={14} style={{ color: "#0f9d58" }} />;
             case "booking": return <Calendar size={14} style={{ color: "#529cca" }} />;
             case "alert": return <AlertCircle size={14} style={{ color: "#eb5757" }} />;
+            case "order": return <CheckSquare size={14} style={{ color: "var(--notion-orange)" }} />;
+            case "inventory": return <CheckSquare size={14} style={{ color: "var(--notion-purple)" }} />;
+            case "payment": return <CheckSquare size={14} style={{ color: "var(--notion-green)" }} />;
             default: return <Bell size={14} style={{ color: "var(--notion-text-muted)" }} />;
         }
     };
 
     return (
         <div ref={panelRef} style={{ position: "relative" }}>
+            <style>{`
+                @keyframes bellShake {
+                    0% { transform: rotate(0deg); }
+                    20% { transform: rotate(6deg); }
+                    40% { transform: rotate(-5deg); }
+                    60% { transform: rotate(3deg); }
+                    80% { transform: rotate(-2deg); }
+                    100% { transform: rotate(0deg); }
+                }
+                .bell-shake {
+                    animation: bellShake 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+                    animation-iteration-count: 1;
+                    transform-origin: top center;
+                }
+                @media (prefers-reduced-motion: reduce) { .bell-shake { animation: none; } }
+            `}</style>
             {/* Bell Button */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
@@ -155,7 +327,7 @@ export default function NotificationCenter() {
                     alignItems: "center",
                     justifyContent: "center",
                 }}
-                className="hover-bg"
+                className={isShaking ? 'bell-shake hover-bg' : 'hover-bg'}
             >
                 <Bell size={16} />
                 {unreadCount > 0 && (
@@ -167,7 +339,7 @@ export default function NotificationCenter() {
                         height: "14px",
                         borderRadius: "50%",
                         background: "#eb5757",
-                        color: "#fff",
+                        color: "var(--foreground-inverse)",
                         fontSize: "9px",
                         fontWeight: 600,
                         display: "flex",
@@ -177,6 +349,19 @@ export default function NotificationCenter() {
                     }}>
                         {unreadCount > 99 ? "99+" : unreadCount}
                     </span>
+                )}
+                {/* WS connection status dot — hidden for super-admin (no hotel live
+                    feed, so it would always show red/offline). */}
+                {!isSuperAdmin && (
+                    <span style={{
+                        position: "absolute",
+                        bottom: "2px",
+                        left: "2px",
+                        width: "6px",
+                        height: "6px",
+                        borderRadius: "50%",
+                        background: wsStatus === 'connected' ? '#0f9d58' : wsStatus === 'connecting' ? '#f2994a' : '#eb5757',
+                    }} title={wsStatus === 'connected' ? 'Live' : wsStatus === 'connecting' ? 'Connecting…' : 'Offline'} />
                 )}
             </button>
 

@@ -55,12 +55,13 @@ export const SaasBillingService = {
             hotelId,
             userId,
             data.amount,
-            data.currency ?? 'USD',
+            data.currency ?? 'NPR',
             data.billingCycle ?? 'MONTHLY',
             data.paymentMethod,
             data.transactionId,
             data.packageId,
-            ipAddress
+            ipAddress,
+            data.invoiceNumber
         );
     },
 
@@ -133,6 +134,7 @@ export const SaasBillingService = {
         } else if (billingCycle === '3_YEAR') {
             amount = (pkg.annualPrice ? Number(pkg.annualPrice) : Number(pkg.monthlyPrice) * 12) * 3 * 0.8;
         }
+        amount = Math.round(amount * 100) / 100; // avoid binary-float cents (e.g. 13344.59999998)
 
         let subscription = await LicenseService.getSubscription(hotelId);
         if (!subscription) {
@@ -172,19 +174,41 @@ export const SaasBillingService = {
     async generateInvoicePdf(paymentId: string) {
         const payment = await this.getPayment(paymentId);
         const hotel = await LicenseService.getHotel(payment.hotelId);
+        const subscription = await LicenseService.getSubscription(payment.hotelId);
+
+        const amount = parseFloat(payment.amount as string);
+        if (isNaN(amount)) {
+            throw new BusinessLogicError(`Invalid payment amount: ${payment.amount}`);
+        }
+
+        const taxRate = parseFloat((hotel.taxRate as string) || '13');
+        const serviceChargeRate = parseFloat((hotel.serviceChargeRate as string) || '10');
 
         const data = {
-            hotelName: hotel.name,
+            hotelName: hotel.name || 'Unknown',
             address: hotel.address || 'N/A',
             panNumber: hotel.panNumber || 'N/A',
+            vatNumber: hotel.vatNumber || 'N/A',
+            licenseKey: hotel.licenseKey || 'N/A',
             invoiceNumber: payment.invoiceNumber || `INV-${payment.id.slice(0, 8).toUpperCase()}`,
             date: payment.createdAt ? payment.createdAt.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
             paymentMethod: payment.paymentMethod || 'PENDING',
-            description: 'Subscription Payment',
-            amount: Number(payment.amount)
+            description: payment.notes || 'Subscription Payment',
+            amount,
+            currency: payment.currency || 'NPR',
+            taxRate,
+            serviceChargeRate,
+            packageName: subscription?.package?.name || 'Subscription',
+            billingCycle: subscription?.billingCycle || 'MONTHLY',
+            periodStart: payment.periodStart ? payment.periodStart.toISOString().split('T')[0] : '',
+            periodEnd: payment.periodEnd ? payment.periodEnd.toISOString().split('T')[0] : ''
         };
 
-        const docDefinition = PdfService.generateSaasInvoiceDefinition(data);
-        return PdfService.generatePdf(docDefinition);
+        try {
+            const docDefinition = PdfService.generateSaasInvoiceDefinition(data);
+            return await PdfService.generatePdf(docDefinition);
+        } catch (err: any) {
+            throw new BusinessLogicError(`PDF generation failed: ${err.message}`);
+        }
     }
 };

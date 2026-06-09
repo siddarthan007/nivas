@@ -8,6 +8,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import ImageUpload from '@/components/ui/ImageUpload';
 import CustomDatePicker from '@/components/ui/DatePicker';
 import Select from '@/components/ui/Select';
 import {
@@ -26,7 +27,6 @@ import {
     MoreVertical,
     History,
     CreditCard,
-    ShieldAlert,
     Users,
     Key,
     Clock,
@@ -40,7 +40,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import DatePicker from '../../components/ui/DatePicker';
-import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal'; // Import
 import ChangePasswordModal from '@/components/modals/ChangePasswordModal';
 import { useAuth } from '@/lib/contexts/AuthContext'; // Maybe useful for manage users if needed or just use api
 
@@ -164,6 +163,14 @@ function TenantCard({
     const expiryDate = tenant.licenseExpiry ? new Date(tenant.licenseExpiry) : null;
     const isExpired = expiryDate && expiryDate < new Date();
 
+    // Brief storage usage shown on the card (server-cached, so cheap on re-render).
+    const [usage, setUsage] = useState<{ database: { totalRows: number }; storage: { pretty: string } } | null>(null);
+    useEffect(() => {
+        let alive = true;
+        api.get<any>(`/saas-admin/tenants/${tenant.id}/usage`).then(r => { if (alive) setUsage(r.data); }).catch(() => {});
+        return () => { alive = false; };
+    }, [tenant.id]);
+
     return (
         <div style={{
             backgroundColor: 'var(--notion-bg-secondary)',
@@ -191,8 +198,11 @@ function TenantCard({
                         alignItems: 'center',
                         justifyContent: 'center',
                         color: 'var(--notion-blue)',
+                        overflow: 'hidden',
                     }}>
-                        <Building2 size={22} />
+                        {tenant.logoUrl
+                            ? <img src={tenant.logoUrl} alt={tenant.name || 'logo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <Building2 size={22} />}
                     </div>
                     <div>
                         <div style={{
@@ -211,6 +221,11 @@ function TenantCard({
                         }}>
                             <span>/{tenant?.slug?.replace(/^\/+/, '') || 'no-slug'}</span>
                         </div>
+                        {usage && (
+                            <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)', marginTop: '3px' }}>
+                                {usage.database.totalRows.toLocaleString()} records · {usage.storage.pretty} files
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -310,8 +325,8 @@ function TenantCard({
                 <Button size="sm" variant="secondary" onClick={() => onMoreActions('USERS')} style={{ flex: 1 }} title="Manage Users">
                     <Users size={14} />
                 </Button>
-                <Button size="sm" variant="secondary" onClick={() => onMoreActions('REVOKE')} style={{ flex: 1, color: 'var(--notion-red)' }} title="Revoke License">
-                    <ShieldAlert size={14} />
+                <Button size="sm" variant="secondary" onClick={() => window.location.href = '/admin/licenses'} style={{ flex: 1 }} title="Manage License">
+                    <Key size={14} />
                 </Button>
             </div>
             {/* Actions Row 2 */}
@@ -324,7 +339,7 @@ function TenantCard({
                     <DollarSign size={14} style={{ marginRight: '4px' }} />
                     <span style={{ fontSize: '11px' }}>Finances</span>
                 </Button>
-                <Button size="sm" onClick={() => onMoreActions('IMPERSONATE')} style={{ flex: 1, backgroundColor: 'var(--notion-blue)', color: '#fff' }} title="View Dashboard as Hotel Owner">
+                <Button size="sm" onClick={() => onMoreActions('IMPERSONATE')} style={{ flex: 1, backgroundColor: 'var(--notion-blue)', color: 'var(--foreground-inverse)' }} title="View Dashboard as Hotel Owner">
                     <Eye size={14} style={{ marginRight: '4px' }} />
                     <span style={{ fontSize: '11px' }}>View as Owner</span>
                 </Button>
@@ -355,30 +370,49 @@ function TenantFormModal({
     const [formData, setFormData] = useState<{
         name: string;
         slug: string;
+        ownerName: string;
         email: string;
         phone: string;
         address: string;
+        website: string;
+        logoUrl: string;
+        panNumber: string;
+        vatNumber: string;
+        serviceChargeRate: string;
+        taxRate: string;
+        maxRooms: string;
+        maxUsers: string;
         planType: string;
         packageId: number | null;
         ownerPassword: string;
         licenseDuration: string;
-    }>({ name: '', slug: '', email: '', phone: '', address: '', planType: '', packageId: null, ownerPassword: '', licenseDuration: 'trial' });
+    }>({ name: '', slug: '', ownerName: '', email: '', phone: '', address: '', website: '', logoUrl: '', panNumber: '', vatNumber: '', serviceChargeRate: '10', taxRate: '13', maxRooms: '50', maxUsers: '10', planType: '', packageId: null, ownerPassword: '', licenseDuration: 'trial' });
 
     useEffect(() => {
         if (initialData) {
             setFormData({
                 name: initialData.name || '',
                 slug: initialData.slug || '',
+                ownerName: initialData.ownerName || '',
                 email: initialData.email || '',
                 phone: initialData.phone || '',
                 address: initialData.address || '',
+                website: initialData.website || '',
+                logoUrl: initialData.logoUrl || '',
+                panNumber: initialData.panNumber || '',
+                vatNumber: initialData.vatNumber || '',
+                // Stored as decimals (0.10); show as percent (10) in the % field.
+                serviceChargeRate: String(Math.round((Number(initialData.serviceChargeRate ?? 0.10)) * 1000) / 10),
+                taxRate: String(Math.round((Number(initialData.taxRate ?? 0.13)) * 1000) / 10),
+                maxRooms: String(initialData.maxRooms ?? '50'),
+                maxUsers: String(initialData.maxUsers ?? '10'),
                 planType: initialData.planType || '',
                 packageId: null,
                 ownerPassword: '',
                 licenseDuration: 'trial',
             });
         } else {
-            setFormData({ name: '', slug: '', email: '', phone: '', address: '', planType: '', packageId: null, ownerPassword: '', licenseDuration: 'trial' });
+            setFormData({ name: '', slug: '', ownerName: '', email: '', phone: '', address: '', website: '', logoUrl: '', panNumber: '', vatNumber: '', serviceChargeRate: '10', taxRate: '13', maxRooms: '50', maxUsers: '10', planType: '', packageId: null, ownerPassword: '', licenseDuration: 'trial' });
         }
     }, [initialData, isOpen]);
 
@@ -389,16 +423,31 @@ function TenantFormModal({
         setIsSubmitting(true);
         try {
             const payload: any = { ...formData };
-            // Compute trial days from licenseDuration selection
+            // Map license duration to billingCycle or trialDays
             const durationMap: Record<string, number> = { trial: 14, '1year': 365, '2year': 730, '3year': 1095 };
+            const cycleMap: Record<string, 'MONTHLY' | 'ANNUAL' | '2_YEAR' | '3_YEAR'> = {
+                trial: 'MONTHLY', '1year': 'ANNUAL', '2year': '2_YEAR', '3year': '3_YEAR'
+            };
             if (!isEdit && payload.licenseDuration) {
-                payload.trialDays = durationMap[payload.licenseDuration] || 14;
+                if (payload.licenseDuration === 'trial') {
+                    payload.trialDays = durationMap[payload.licenseDuration] || 14;
+                } else {
+                    payload.billingCycle = cycleMap[payload.licenseDuration] || 'MONTHLY';
+                }
             }
             delete payload.licenseDuration;
             if (!payload.ownerPassword) delete payload.ownerPassword;
             if (!payload.packageId) delete payload.packageId;
+            // Convert numeric string fields to numbers; keep decimal fields as strings
+            payload.maxRooms = payload.maxRooms ? parseInt(payload.maxRooms, 10) : undefined;
+            payload.maxUsers = payload.maxUsers ? parseInt(payload.maxUsers, 10) : undefined;
+            // On EDIT the rate fields are entered as percent (10) → store as decimal (0.10).
+            if (isEdit) {
+                if (payload.serviceChargeRate) payload.serviceChargeRate = String((parseFloat(payload.serviceChargeRate) || 0) / 100);
+                if (payload.taxRate) payload.taxRate = String((parseFloat(payload.taxRate) || 0) / 100);
+            }
             await onSubmit(payload);
-            if (!isEdit) setFormData({ name: '', slug: '', email: '', phone: '', address: '', planType: '', packageId: null, ownerPassword: '', licenseDuration: 'trial' });
+            if (!isEdit) setFormData({ name: '', slug: '', ownerName: '', email: '', phone: '', address: '', website: '', logoUrl: '', panNumber: '', vatNumber: '', serviceChargeRate: '10', taxRate: '13', maxRooms: '50', maxUsers: '10', planType: '', packageId: null, ownerPassword: '', licenseDuration: 'trial' });
             onClose();
         } finally {
             setIsSubmitting(false);
@@ -415,7 +464,7 @@ function TenantFormModal({
     };
 
     const activePlans = plans.filter(p => p.isActive);
-    const planOptions = activePlans.map(p => ({ value: p.code, label: `${p.name} (₹${parseFloat(p.monthlyPrice || '0').toLocaleString()}/mo)` }));
+    const planOptions = activePlans.map(p => ({ value: p.code, label: `${p.name} (Rs ${parseFloat(p.monthlyPrice || '0').toLocaleString()}/mo)` }));
 
     const handlePlanChange = (planCode: string) => {
         const selected = activePlans.find(p => p.code === planCode);
@@ -426,42 +475,90 @@ function TenantFormModal({
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={isEdit ? "Edit Tenant Details" : "Onboard New Tenant"}>
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                <div>
-                    <label style={labelStyle}>Hotel Name *</label>
-                    <Input value={formData.name} onChange={(e: any) => handleNameChange(e.target.value)} required placeholder="Everest Grand Hotel" />
-                </div>
-                <div>
-                    <label style={labelStyle}>Slug *</label>
-                    <Input value={formData.slug} onChange={(e: any) => setFormData({ ...formData, slug: e.target.value })} required disabled={isEdit} placeholder="everest-grand" />
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxHeight: '70vh', overflowY: 'auto', paddingRight: 'var(--space-2)' }}>
+                {/* Section: Hotel Details */}
+                <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--notion-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 'var(--space-1)' }}>Hotel Details</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                    <div>
+                        <label style={labelStyle}>Hotel Name *</label>
+                        <Input value={formData.name} onChange={(e: any) => handleNameChange(e.target.value)} required placeholder="Everest Grand Hotel" />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Slug *</label>
+                        <Input value={formData.slug} onChange={(e: any) => setFormData({ ...formData, slug: e.target.value })} required disabled={isEdit} placeholder="everest-grand" />
+                    </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                     <div>
-                        <label style={labelStyle}>{isEdit ? 'Owner Email (Read-Only)' : 'Owner Email *'}</label>
-                        <Input type="email" value={formData.email} onChange={(e: any) => setFormData({ ...formData, email: e.target.value })} required disabled={isEdit} placeholder="owner@hotel.com" />
+                        <label style={labelStyle}>Website</label>
+                        <Input type="url" value={formData.website} onChange={(e: any) => setFormData({ ...formData, website: e.target.value })} placeholder="https://hotel.com" />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Logo</label>
+                        <ImageUpload value={formData.logoUrl} onChange={(url: string) => setFormData({ ...formData, logoUrl: url })} />
+                    </div>
+                </div>
+                <div>
+                    <label style={labelStyle}>Address</label>
+                    <Input value={formData.address} onChange={(e: any) => setFormData({ ...formData, address: e.target.value })} placeholder="Kathmandu, Nepal" />
+                </div>
+
+                {/* Section: Admin Account */}
+                <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--notion-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>Admin Account</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                    <div>
+                        <label style={labelStyle}>Admin Name *</label>
+                        <Input value={formData.ownerName} onChange={(e: any) => setFormData({ ...formData, ownerName: e.target.value })} required placeholder="Ram Sharma" />
                     </div>
                     <div>
                         <label style={labelStyle}>Phone</label>
                         <Input value={formData.phone} onChange={(e: any) => setFormData({ ...formData, phone: e.target.value })} placeholder="98XXXXXXXX" />
                     </div>
                 </div>
-
+                <div>
+                    <label style={labelStyle}>{isEdit ? 'Admin Email (Read-Only)' : 'Admin Email *'}</label>
+                    <Input type="email" value={formData.email} onChange={(e: any) => setFormData({ ...formData, email: e.target.value })} required disabled={isEdit} placeholder="admin@hotel.com" />
+                </div>
                 {!isEdit && (
                     <div>
-                        <label style={labelStyle}>Owner Password *</label>
+                        <label style={labelStyle}>Admin Password *</label>
                         <Input type="password" value={formData.ownerPassword} onChange={(e: any) => setFormData({ ...formData, ownerPassword: e.target.value })} placeholder="Min 6 characters" required />
                     </div>
                 )}
 
-                <div>
-                    <label style={labelStyle}>Address</label>
-                    <Input value={formData.address} onChange={(e: any) => setFormData({ ...formData, address: e.target.value })} placeholder="Kathmandu, Nepal" />
-                </div>
+                {/* Section: Business & Tax (shown for both onboard + edit) */}
+                {(
+                    <>
+                        <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--notion-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>Business & Tax</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                            <div>
+                                <label style={labelStyle}>PAN Number</label>
+                                <Input value={formData.panNumber} onChange={(e: any) => setFormData({ ...formData, panNumber: e.target.value })} placeholder="302415654" />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>VAT Number</label>
+                                <Input value={formData.vatNumber} onChange={(e: any) => setFormData({ ...formData, vatNumber: e.target.value })} placeholder="123456789" />
+                            </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                            <div>
+                                <label style={labelStyle}>Service Charge (%)</label>
+                                <Input type="number" value={formData.serviceChargeRate} onChange={(e: any) => setFormData({ ...formData, serviceChargeRate: e.target.value })} placeholder="10" />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Tax Rate (%)</label>
+                                <Input type="number" value={formData.taxRate} onChange={(e: any) => setFormData({ ...formData, taxRate: e.target.value })} placeholder="13" />
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {/* Section: Plan & Limits */}
+                <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--notion-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>Plan & Limits</div>
                 <div>
                     <label style={labelStyle}>Subscription Plan</label>
                     <Select value={formData.planType} onChange={(e: any) => handlePlanChange(e.target.value)} options={[{ value: '', label: 'Select Plan...' }, ...planOptions]} />
                 </div>
-
                 {!isEdit && (
                     <div>
                         <label style={labelStyle}>License Duration</label>
@@ -494,6 +591,16 @@ function TenantFormModal({
                         </div>
                     </div>
                 )}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                    <div>
+                        <label style={labelStyle}>Max Rooms</label>
+                        <Input type="number" value={formData.maxRooms} onChange={(e: any) => setFormData({ ...formData, maxRooms: e.target.value })} placeholder="50" />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>Max Users</label>
+                        <Input type="number" value={formData.maxUsers} onChange={(e: any) => setFormData({ ...formData, maxUsers: e.target.value })} placeholder="10" />
+                    </div>
+                </div>
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-4)' }}>
                     <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</Button>
@@ -547,14 +654,19 @@ function ExtendLicenseModal({ isOpen, onClose, tenant, onExtend }: any) {
 // Payment Modal
 function PaymentModal({ isOpen, onClose, tenant, onRecord }: any) {
     const { plans } = usePlans();
-    const [amount, setAmount] = useState<number | ''>(''); // Allow empty
+    const [amount, setAmount] = useState<number | ''>('');
     const [cycle, setCycle] = useState('MONTHLY');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [result, setResult] = useState<any>(null);
+
+    useEffect(() => {
+        if (!isOpen) setResult(null);
+    }, [isOpen]);
 
     // Auto-fill amount based on tenant plan
     useEffect(() => {
         if (tenant?.planType && plans.length > 0) {
-            const plan = plans.find(p => p.code === tenant.planType);
+            const plan = plans.find((p: any) => p.code === tenant.planType);
             if (plan) {
                 if (cycle === 'MONTHLY') setAmount(parseFloat(plan.monthlyPrice));
                 if (cycle === 'ANNUAL' && plan.annualPrice) setAmount(parseFloat(plan.annualPrice));
@@ -565,36 +677,127 @@ function PaymentModal({ isOpen, onClose, tenant, onRecord }: any) {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
-        await onRecord(tenant.id, Number(amount), cycle);
+        const plan = plans.find((p: any) => p.code === tenant.planType);
+        const paymentResult = await onRecord(tenant.id, Number(amount), cycle, plan?.id);
         setIsSubmitting(false);
-        onClose();
+        if (paymentResult) {
+            setResult(paymentResult);
+        }
+    };
+
+    const handleDownloadInvoice = () => {
+        if (result?.id) {
+            window.open(`/api/v1/saas-billing/payments/${result.id}/pdf`, '_blank');
+        }
     };
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Record Payment: ${tenant?.name}`}>
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Amount (INR) *</label>
-                    <Input type="number" value={amount} onChange={(e: any) => setAmount(e.target.value === '' ? '' : Number(e.target.value))} required min={1} />
+            {result ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', alignItems: 'center', padding: 'var(--space-4)' }}>
+                    <div style={{ fontSize: '48px', color: 'var(--notion-green)' }}>✓</div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: 'var(--notion-text)' }}>Payment Recorded</div>
+                    <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', textAlign: 'center' }}>
+                        Invoice <strong style={{ color: 'var(--notion-text)' }}>{result.invoiceNumber}</strong> generated.<br />
+                        License active until {result.periodEnd ? new Date(result.periodEnd).toLocaleDateString() : 'N/A'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 'var(--space-3)', width: '100%' }}>
+                        <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>Close</Button>
+                        <Button type="button" onClick={handleDownloadInvoice} style={{ flex: 1 }}>Download Invoice</Button>
+                    </div>
                 </div>
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Billing Cycle</label>
-                    <Select value={cycle} onChange={(e: any) => setCycle(e.target.value)} options={[{ value: 'MONTHLY', label: 'Monthly' }, { value: 'ANNUAL', label: 'Annual' }]} />
-                </div>
-                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                    <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</Button>
-                    <Button type="submit" disabled={isSubmitting || !amount || amount <= 0 || (typeof amount === 'number' && isNaN(amount))} style={{ flex: 1 }}>Record Payment</Button>
-                </div>
-            </form>
+            ) : (
+                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Amount (NPR) *</label>
+                        <Input type="number" value={amount} onChange={(e: any) => setAmount(e.target.value === '' ? '' : Number(e.target.value))} required min={1} />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Billing Cycle</label>
+                        <Select value={cycle} onChange={(e: any) => setCycle(e.target.value)} options={[{ value: 'MONTHLY', label: 'Monthly' }, { value: 'ANNUAL', label: 'Annual' }]} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                        <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</Button>
+                        <Button type="submit" disabled={isSubmitting || !amount || amount <= 0 || (typeof amount === 'number' && isNaN(amount))} style={{ flex: 1 }}>Record Payment</Button>
+                    </div>
+                </form>
+            )}
         </Modal>
     );
 }
 
 
+// Platform-wide SMS / Email gateway shared by all tenants (super-admin).
+function PlatformMessagingPanel() {
+    const [open, setOpen] = useState(false);
+    const [sms, setSms] = useState({ provider: '', senderId: '', apiKey: '', apiSecret: '' });
+    const [email, setEmail] = useState({ smtpHost: '', smtpPort: 587, smtpUser: '', smtpFromEmail: '', smtpFromName: '', smtpPassword: '' });
+    const [flags, setFlags] = useState({ apiKeySet: false, smtpPasswordSet: false });
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        if (!open) return;
+        api.get<any>('/saas-admin/platform-messaging').then(r => {
+            const d = r.data; if (!d) return;
+            setSms(s => ({ ...s, provider: d.sms?.provider || '', senderId: d.sms?.senderId || '' }));
+            setEmail(e => ({ ...e, smtpHost: d.email?.smtpHost || '', smtpPort: d.email?.smtpPort || 587, smtpUser: d.email?.smtpUser || '', smtpFromEmail: d.email?.smtpFromEmail || '', smtpFromName: d.email?.smtpFromName || '' }));
+            setFlags({ apiKeySet: !!d.sms?.apiKeySet, smtpPasswordSet: !!d.email?.smtpPasswordSet });
+        }).catch(() => {});
+    }, [open]);
+
+    const save = async () => {
+        setSaving(true);
+        try {
+            const payload: any = { sms: { provider: sms.provider, senderId: sms.senderId }, email: { smtpHost: email.smtpHost, smtpPort: email.smtpPort, smtpUser: email.smtpUser, smtpFromEmail: email.smtpFromEmail, smtpFromName: email.smtpFromName } };
+            if (sms.apiKey) payload.sms.apiKey = sms.apiKey;
+            if (sms.apiSecret) payload.sms.apiSecret = sms.apiSecret;
+            if (email.smtpPassword) payload.email.smtpPassword = email.smtpPassword;
+            await api.patch('/saas-admin/platform-messaging', payload);
+            toast.success('Platform messaging saved');
+            setSms(s => ({ ...s, apiKey: '', apiSecret: '' })); setEmail(e => ({ ...e, smtpPassword: '' }));
+        } catch (e: any) { toast.error(e?.message || 'Failed'); } finally { setSaving(false); }
+    };
+
+    const inp: React.CSSProperties = { padding: '8px 10px', border: '1px solid var(--notion-border)', borderRadius: 6, background: 'var(--notion-bg)', color: 'var(--notion-text)', fontSize: 13, width: '100%' };
+
+    return (
+        <div style={{ marginBottom: 'var(--space-6)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+            <button onClick={() => setOpen(o => !o)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-4)', background: 'var(--notion-bg-secondary)', border: 'none', cursor: 'pointer', color: 'var(--notion-text)', fontSize: 14, fontWeight: 600 }}>
+                <span>Platform SMS & Email Gateway (shared by all tenants)</span>
+                <span>{open ? '−' : '+'}</span>
+            </button>
+            {open && (
+                <div style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--notion-text-muted)' }}>Default provider for every hotel. A hotel's own settings, if filled, override these.</div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>SMS Gateway</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <select value={sms.provider} onChange={e => setSms({ ...sms, provider: e.target.value })} style={inp}>
+                            <option value="">Select provider…</option><option value="SPARROW">Sparrow SMS</option><option value="AAKASH">Aakash SMS</option><option value="TWILIO">Twilio</option>
+                        </select>
+                        <input style={inp} placeholder="Sender ID" value={sms.senderId} onChange={e => setSms({ ...sms, senderId: e.target.value })} />
+                        <input style={inp} type="password" placeholder={flags.apiKeySet ? '•••• (set)' : 'API key'} value={sms.apiKey} onChange={e => setSms({ ...sms, apiKey: e.target.value })} />
+                        <input style={inp} type="password" placeholder="API secret (Twilio)" value={sms.apiSecret} onChange={e => setSms({ ...sms, apiSecret: e.target.value })} />
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>Email (SMTP)</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8 }}>
+                        <input style={inp} placeholder="SMTP host" value={email.smtpHost} onChange={e => setEmail({ ...email, smtpHost: e.target.value })} />
+                        <input style={inp} type="number" placeholder="Port" value={email.smtpPort} onChange={e => setEmail({ ...email, smtpPort: Number(e.target.value) })} />
+                        <input style={inp} placeholder="SMTP username" value={email.smtpUser} onChange={e => setEmail({ ...email, smtpUser: e.target.value })} />
+                        <input style={inp} type="password" placeholder={flags.smtpPasswordSet ? '•••• (set)' : 'SMTP password'} value={email.smtpPassword} onChange={e => setEmail({ ...email, smtpPassword: e.target.value })} />
+                        <input style={inp} placeholder="From email" value={email.smtpFromEmail} onChange={e => setEmail({ ...email, smtpFromEmail: e.target.value })} />
+                        <input style={inp} placeholder="From name" value={email.smtpFromName} onChange={e => setEmail({ ...email, smtpFromName: e.target.value })} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}><Button onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Gateway'}</Button></div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function TenantsPage() {
     const {
         tenants, stats, isLoading, fetchTenants, createTenant, updateTenant,
-        toggleTenantStatus, extendLicense, revokeLicense, recordPayment,
+        toggleTenantStatus, extendLicense, recordPayment,
         getPaymentHistory, impersonateOwner
     } = useTenants();
 
@@ -607,7 +810,6 @@ export default function TenantsPage() {
     const [extendModal, setExtendModal] = useState<{ isOpen: boolean, tenant: any }>({ isOpen: false, tenant: null });
     const [paymentModal, setPaymentModal] = useState<{ isOpen: boolean, tenant: any }>({ isOpen: false, tenant: null });
     const [usersModal, setUsersModal] = useState<{ isOpen: boolean, tenant: any }>({ isOpen: false, tenant: null });
-    const [revokeModal, setRevokeModal] = useState<{ isOpen: boolean, tenant: any }>({ isOpen: false, tenant: null });
     const [financesModal, setFinancesModal] = useState<{ isOpen: boolean, tenant: any, payments: any[] }>({ isOpen: false, tenant: null, payments: [] });
 
     useEffect(() => {
@@ -639,7 +841,6 @@ export default function TenantsPage() {
     const handleMoreActions = async (tenant: any, action: string) => {
         if (action === 'EXTEND') setExtendModal({ isOpen: true, tenant });
         if (action === 'PAYMENT') setPaymentModal({ isOpen: true, tenant });
-        if (action === 'REVOKE') setRevokeModal({ isOpen: true, tenant });
         if (action === 'USERS') setUsersModal({ isOpen: true, tenant });
         if (action === 'FINANCES') {
             // Fetch payment history and show modal
@@ -669,12 +870,6 @@ export default function TenantsPage() {
         }
     };
 
-    const handleRevokeConfirm = async () => {
-        if (revokeModal.tenant) {
-            await revokeLicense(revokeModal.tenant.id);
-            setRevokeModal({ isOpen: false, tenant: null });
-        }
-    };
 
     return (
         <DashboardLayout>
@@ -694,6 +889,8 @@ export default function TenantsPage() {
                         <Button onClick={() => { setEditingTenant(undefined); setIsFormOpen(true); }}><Plus size={14} style={{ marginRight: '6px' }} />Add Tenant</Button>
                     </div>
                 </div>
+
+                <PlatformMessagingPanel />
 
                 {/* Stats */}
                 <div style={{ display: 'flex', gap: 'var(--space-6)', marginBottom: 'var(--space-6)', padding: 'var(--space-4)', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)' }}>
@@ -763,17 +960,6 @@ export default function TenantsPage() {
                 />
             )}
 
-            {revokeModal.tenant && (
-                <SecurityConfirmModal
-                    isOpen={revokeModal.isOpen}
-                    onClose={() => setRevokeModal({ isOpen: false, tenant: null })}
-                    onConfirm={handleRevokeConfirm}
-                    title="Revoke License Access"
-                    message={`Are you sure you want to REVOKE access for ${revokeModal.tenant.name}? This will immediately stop all operations for this hotel. This action requires authorization.`}
-                    confirmText="Revoke Access"
-                    isDestructive
-                />
-            )}
 
             {/* View Finances Modal */}
             {financesModal.tenant && (
@@ -807,7 +993,7 @@ export default function TenantsPage() {
                                     <div>
                                         <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Total Payments</div>
                                         <div style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-green)' }}>
-                                            ₹{financesModal.payments.reduce((sum: number, p: any) => sum + parseFloat(p.amount || '0'), 0).toLocaleString()}
+                                            Rs {financesModal.payments.reduce((sum: number, p: any) => sum + parseFloat(p.amount || '0'), 0).toLocaleString()}
                                         </div>
                                     </div>
                                     <div>
@@ -835,7 +1021,7 @@ export default function TenantsPage() {
                                                     {new Date(payment.createdAt).toLocaleDateString()}
                                                 </td>
                                                 <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: '500', color: 'var(--notion-green)' }}>
-                                                    ₹{parseFloat(payment.amount).toLocaleString()}
+                                                    Rs {parseFloat(payment.amount).toLocaleString()}
                                                 </td>
                                                 <td style={{ padding: '10px 8px', color: 'var(--notion-text-secondary)' }}>
                                                     {payment.billingCycle || 'N/A'}

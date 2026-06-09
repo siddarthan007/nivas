@@ -17,15 +17,15 @@ export const notificationsController = new Elysia({ prefix: '/notifications' })
         detail: { summary: 'Get unread notifications', tags: ['Notifications'] }
     })
     .patch('/:id/read', async ({ params, user }) => {
-        await NotificationsService.markAsRead(params.id, user!.id);
+        await NotificationsService.markAsRead(params.id, user!.hotelId!, user!.id, user!.role?.name || '');
         return createResponse(null, 'Notification marked as read');
     }, {
         isSignedIn: true,
         params: t.Object({ id: t.String() }),
         detail: { summary: 'Mark notification as read', tags: ['Notifications'] }
     })
-    .post('/read-all', async ({ user }) => {
-        await NotificationsService.markAllRead(user!.id, user!.role?.name || '');
+    .patch('/read-all', async ({ user }) => {
+        await NotificationsService.markAllRead(user!.id, user!.hotelId!, user!.role?.name || '');
         return createResponse(null, 'All notifications marked as read');
     }, {
         isSignedIn: true,

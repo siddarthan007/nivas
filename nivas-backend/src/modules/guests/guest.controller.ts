@@ -17,7 +17,8 @@ export const guestController = new Elysia({ prefix: '/guests' })
             isBanned: query.isBanned ? query.isBanned === 'true' : undefined,
             nationality: query.nationality,
             roomNumber: query.roomNumber,
-            dateOfStay: query.dateOfStay
+            dateOfStay: query.dateOfStay,
+            customerType: query.customerType
         };
 
         const results = await GuestService.findGuests(user.hotelId, filters);
@@ -31,7 +32,8 @@ export const guestController = new Elysia({ prefix: '/guests' })
             isBanned: t.Optional(t.String()),
             nationality: t.Optional(t.String()),
             roomNumber: t.Optional(t.String()),
-            dateOfStay: t.Optional(t.String())
+            dateOfStay: t.Optional(t.String()),
+            customerType: t.Optional(t.String())
         })
     })
 
@@ -61,14 +63,27 @@ export const guestController = new Elysia({ prefix: '/guests' })
         isSignedIn: true,
         hasPermission: PERMISSIONS.GUESTS.MANAGE_PROFILES,
         body: t.Object({
+            firstName: t.Optional(t.String()),
+            lastName: t.Optional(t.String()),
             fullName: t.String(),
+            uniqueId: t.Optional(t.String()),
             phone: t.Optional(t.String()),
             email: t.Optional(t.String()),
+            fatherName: t.Optional(t.String()),
+            dob: t.Optional(t.String()),
+            occupation: t.Optional(t.String()),
+            nationality: t.Optional(t.String()),
+            address: t.Optional(t.String()),
+            city: t.Optional(t.String()),
+            country: t.Optional(t.String()),
             idType: t.Optional(t.String()),
             idNumber: t.Optional(t.String()),
-            address: t.Optional(t.String()),
-            notes: t.Optional(t.String()),
-            nationality: t.Optional(t.String())
+            panNumber: t.Optional(t.String()),
+            openingDueAmount: t.Optional(t.String()),
+            photoUrl: t.Optional(t.String()),
+            signatureUrl: t.Optional(t.String()),
+            customerType: t.Optional(t.Union([t.Literal('HOTEL_GUEST'), t.Literal('RESTAURANT_CUSTOMER'), t.Literal('BOTH')])),
+            notes: t.Optional(t.String())
         })
     })
 
@@ -80,14 +95,27 @@ export const guestController = new Elysia({ prefix: '/guests' })
         isSignedIn: true,
         hasPermission: PERMISSIONS.GUESTS.MANAGE_PROFILES,
         body: t.Partial(t.Object({
+            firstName: t.String(),
+            lastName: t.String(),
             fullName: t.String(),
+            uniqueId: t.String(),
             phone: t.String(),
             email: t.String(),
+            fatherName: t.String(),
+            dob: t.String(),
+            occupation: t.String(),
+            nationality: t.String(),
+            address: t.String(),
+            city: t.String(),
+            country: t.String(),
             idType: t.String(),
             idNumber: t.String(),
-            address: t.String(),
+            panNumber: t.String(),
+            openingDueAmount: t.String(),
+            photoUrl: t.String(),
+            signatureUrl: t.String(),
+            customerType: t.Union([t.Literal('HOTEL_GUEST'), t.Literal('RESTAURANT_CUSTOMER'), t.Literal('BOTH')]),
             notes: t.String(),
-            nationality: t.String(),
             isVip: t.Boolean(),
             isBanned: t.Boolean()
         }))

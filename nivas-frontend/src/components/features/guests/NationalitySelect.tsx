@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Search, X } from 'lucide-react';
 import { NATIONALITIES } from '@/lib/constants/nationalities';
 
@@ -13,19 +14,33 @@ interface NationalitySelectProps {
 export default function NationalitySelect({ value, onChange, placeholder = 'Select nationality...', label, style }: NationalitySelectProps) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
+    const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
     const wrapperRef = useRef<HTMLDivElement>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
     const searchRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
-            if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-                setOpen(false);
-                setSearch('');
+            const target = e.target as Node;
+            // Close if click is outside wrapper AND outside portal dropdown
+            if (wrapperRef.current && !wrapperRef.current.contains(target)) {
+                const portalDropdown = document.getElementById('nationality-dropdown-portal');
+                if (!portalDropdown || !portalDropdown.contains(target)) {
+                    setOpen(false);
+                    setSearch('');
+                }
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    useEffect(() => {
+        if (open && buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            setDropdownPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX, width: rect.width });
+        }
+    }, [open]);
 
     useEffect(() => {
         if (open && searchRef.current) {
@@ -45,6 +60,7 @@ export default function NationalitySelect({ value, onChange, placeholder = 'Sele
                 </label>
             )}
             <button
+                ref={buttonRef}
                 type="button"
                 onClick={() => setOpen(!open)}
                 style={{
@@ -81,18 +97,22 @@ export default function NationalitySelect({ value, onChange, placeholder = 'Sele
                 </div>
             </button>
 
-            {open && (
-                <div style={{
-                    position: 'absolute',
-                    zIndex: 9999,
-                    width: '100%',
-                    marginTop: '4px',
-                    backgroundColor: 'var(--notion-bg)',
-                    border: '1px solid var(--notion-border)',
-                    borderRadius: 'var(--radius-md)',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                    overflow: 'hidden',
-                }}>
+            {open && typeof document !== 'undefined' && createPortal(
+                <div
+                    id="nationality-dropdown-portal"
+                    style={{
+                        position: 'fixed',
+                        top: dropdownPos.top,
+                        left: dropdownPos.left,
+                        width: dropdownPos.width,
+                        zIndex: 99999,
+                        backgroundColor: 'var(--notion-bg)',
+                        border: '1px solid var(--notion-border)',
+                        borderRadius: 'var(--radius-md)',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                        overflow: 'hidden',
+                    }}
+                >
                     <div style={{ padding: '8px', borderBottom: '1px solid var(--notion-border)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 8px', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--notion-border)' }}>
                             <Search size={14} style={{ color: 'var(--notion-text-secondary)', flexShrink: 0 }} />
@@ -139,7 +159,8 @@ export default function NationalitySelect({ value, onChange, placeholder = 'Sele
                             ))
                         )}
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

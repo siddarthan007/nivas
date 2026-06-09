@@ -33,6 +33,7 @@ import Select from '@/components/ui/Select';
 // Import types from hook
 import type { Facility, ParkingSpace, CreateFacilityPayload, CreateParkingPayload } from '@/lib/hooks/useFacilities';
 
+import TimePicker from "@/components/ui/TimePicker";
 // Helpers
 const getFacilityIcon = (type: string) => {
     switch (type) {
@@ -632,18 +633,10 @@ export default function FacilitiesPage() {
                         <option value="OTHER">Other</option>
                     </Select>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
-                        <Input
-                            label="Open Time"
-                            type="time"
-                            value={facilityForm.openTime}
-                            onChange={e => setFacilityForm({ ...facilityForm, openTime: e.target.value })}
-                        />
-                        <Input
-                            label="Close Time"
-                            type="time"
-                            value={facilityForm.closeTime}
-                            onChange={e => setFacilityForm({ ...facilityForm, closeTime: e.target.value })}
-                        />
+                        <TimePicker label="Open Time"
+                            value={facilityForm.openTime} onChange={(v) => setFacilityForm({ ...facilityForm, openTime: v })} />
+                        <TimePicker label="Close Time"
+                            value={facilityForm.closeTime} onChange={(v) => setFacilityForm({ ...facilityForm, closeTime: v })} />
                     </div>
                     <Select
                         label="Status"

@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore, useMemo } from "react";
 
 /**
  * Lightweight router utilities for Bun + React
@@ -15,10 +15,8 @@ function getPathname() {
     return typeof window !== "undefined" ? window.location.pathname : "/";
 }
 
-function getSearchParams() {
-    return typeof window !== "undefined"
-        ? new URLSearchParams(window.location.search)
-        : new URLSearchParams();
+function getSearchString() {
+    return typeof window !== "undefined" ? window.location.search : "";
 }
 
 /**
@@ -30,9 +28,11 @@ export function usePathname(): string {
 
 /**
  * Hook to get search params
+ * Returns a stable URLSearchParams object that only changes when search string changes
  */
 export function useSearchParams(): URLSearchParams {
-    return useSyncExternalStore(subscribeToPathname, getSearchParams, () => new URLSearchParams());
+    const searchString = useSyncExternalStore(subscribeToPathname, getSearchString, () => "");
+    return useMemo(() => new URLSearchParams(searchString), [searchString]);
 }
 
 interface RouterInstance {

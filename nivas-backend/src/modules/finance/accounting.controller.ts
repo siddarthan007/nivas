@@ -6,7 +6,6 @@ import { authMiddleware } from '../../middlewares/auth.middleware';
 import { PERMISSIONS } from '../../config/permissions';
 import { AccountingService } from './accounting.service';
 import { TallyService } from './tally.service';
-import { CbmsService } from './cbms.service';
 import { createResponse } from '../../utils/response.helper';
 import { ValidationError } from '../../utils/errors';
 import { NepaliDate } from '../../utils/nepali-date.ts';
@@ -115,28 +114,6 @@ export const accountingController = new Elysia({ prefix: '/finance/accounting' }
             date: t.Optional(t.String())
         }),
         detail: { summary: 'Download IRD Annex 5 Purchase Register', tags: ['Finance'] }
-    })
-    /**
-     * Manually sync invoice to CBMS
-     */
-    .post('/cbms/sync/:invoiceId', async ({ params, user }) => {
-        const result = await CbmsService.syncInvoice(params.invoiceId, user!.hotelId!);
-        return createResponse(result, 'CBMS sync completed');
-    }, {
-        isSignedIn: true,
-        hasPermission: PERMISSIONS.FINANCE.GENERATE_INVOICE,
-        detail: { summary: 'Sync invoice to CBMS', tags: ['Finance'] }
-    })
-    /**
-     * Retry all failed CBMS syncs
-     */
-    .post('/cbms/retry-failed', async ({ user }) => {
-        const results = await CbmsService.retryFailedSyncs(user!.hotelId!);
-        return createResponse(results, 'Failed CBMS syncs retried');
-    }, {
-        isSignedIn: true,
-        hasPermission: PERMISSIONS.FINANCE.VIEW_RECORDS,
-        detail: { summary: 'Retry failed CBMS syncs', tags: ['Finance'] }
     })
     /**
      * Record invoice print and track reprints

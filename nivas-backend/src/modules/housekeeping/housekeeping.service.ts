@@ -1,7 +1,7 @@
 import { db } from '../../db';
-import { housekeepingTasks, rooms } from '../../db/schema';
-import { eq, and, desc } from 'drizzle-orm';
-import { NotFoundError, BusinessLogicError } from '../../utils/errors';
+import { housekeepingTasks, rooms, bookings } from '../../db/schema';
+import { eq, and, desc, or } from 'drizzle-orm';
+import { NotFoundError, BusinessLogicError, ValidationError } from '../../utils/errors';
 import { EventBus } from '../../shared/event-bus';
 import { AuditService } from '../system/audit.service';
 
@@ -28,6 +28,27 @@ export class HousekeepingService {
     }
 
     static async createTask(hotelId: number, userId: string, data: { roomId: number; assignedToId?: string; taskType: string; priority: string; notes?: string; bookingId?: string }) {
+        let resolvedBookingId = data.bookingId;
+
+        // Auto-link current booking for the room if not explicitly provided
+        if (!resolvedBookingId) {
+            const activeBooking = await db.query.bookings.findFirst({
+                where: and(
+                    eq(bookings.roomId, data.roomId),
+                    eq(bookings.hotelId, hotelId),
+                    or(
+                        eq(bookings.status, 'CHECKED_IN'),
+                        eq(bookings.status, 'CONFIRMED')
+                    )
+                ),
+                orderBy: [desc(bookings.checkIn)],
+                columns: { id: true }
+            });
+            if (activeBooking) {
+                resolvedBookingId = activeBooking.id;
+            }
+        }
+
         const newTask = await db.transaction(async (tx) => {
             const [task] = await tx.insert(housekeepingTasks).values({
                 hotelId,
@@ -36,7 +57,7 @@ export class HousekeepingService {
                 taskType: data.taskType,
                 priority: data.priority,
                 notes: data.notes,
-                bookingId: data.bookingId,
+                bookingId: resolvedBookingId,
                 status: 'PENDING',
                 createdById: userId
             }).returning();
@@ -81,7 +102,21 @@ export class HousekeepingService {
     }
 
     static async updateStatus(hotelId: number, userId: string, taskId: number, status: string) {
+        const ALLOWED = ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'DONE', 'CANCELLED'];
+        if (!ALLOWED.includes(status)) throw new ValidationError(`Invalid task status: ${status}`);
+
         const updatedTask = await db.transaction(async (tx) => {
+            // Block changes out of a terminal state (no re-opening a finalized task,
+            // and no re-running the room-free logic by re-completing).
+            const current = await tx.query.housekeepingTasks.findFirst({
+                where: and(eq(housekeepingTasks.id, taskId), eq(housekeepingTasks.hotelId, hotelId)),
+                columns: { status: true },
+            });
+            if (!current) return null;
+            if (['COMPLETED', 'DONE', 'CANCELLED'].includes(current.status || '')) {
+                throw new BusinessLogicError(`Task is already ${current.status?.toLowerCase()} and cannot be changed`);
+            }
+
             const [task] = await tx.update(housekeepingTasks)
                 .set({
                     status: status,
@@ -96,10 +131,21 @@ export class HousekeepingService {
 
             if (!task) return null;
 
-            if (status === 'COMPLETED' || status === 'DONE') {
-                await tx.update(rooms)
-                    .set({ status: 'AVAILABLE' })
-                    .where(eq(rooms.id, task.roomId));
+            if ((status === 'COMPLETED' || status === 'DONE') && task.roomId) {
+                // Only free the room if no guest is in-house. A mid-stay task
+                // (towels/amenities) must NOT mark an occupied room AVAILABLE.
+                const activeStay = await tx.query.bookings.findFirst({
+                    where: and(
+                        eq(bookings.roomId, task.roomId),
+                        eq(bookings.hotelId, hotelId),
+                        eq(bookings.status, 'CHECKED_IN')
+                    )
+                });
+                if (!activeStay) {
+                    await tx.update(rooms)
+                        .set({ status: 'AVAILABLE', updatedAt: new Date() })
+                        .where(eq(rooms.id, task.roomId));
+                }
             }
 
             return task;

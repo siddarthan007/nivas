@@ -28,34 +28,55 @@ export default function QuickNotesWidget() {
         <div style={{
             height: '100%',
             minHeight: '220px',
-            backgroundColor: '#fffbeb', // Very subtle yellow/cream
-            border: '1px solid #fcd34d', // Subtle yellow border
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-5)',
+            background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+            borderRadius: '2px',
+            padding: '20px',
             display: 'flex',
             flexDirection: 'column',
-            gap: 'var(--space-3)',
-            boxShadow: 'var(--shadow-sm)',
-            position: 'relative'
+            gap: '12px',
+            boxShadow: '2px 3px 8px rgba(0,0,0,0.15), 0 0 1px rgba(0,0,0,0.1)',
+            position: 'relative',
+            // Subtle sticky-note tilt
+            transform: 'rotate(-0.5deg)',
         }}>
+            {/* Tape strip at top */}
+            <div style={{
+                position: 'absolute',
+                top: '-10px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: '80px',
+                height: '24px',
+                background: 'rgba(255,255,255,0.45)',
+                borderRadius: '2px',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+                backdropFilter: 'blur(2px)',
+            }} />
+
+            {/* Header */}
             <div style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                color: '#92400e', // Darker yellow/brown text
-                marginBottom: '4px'
+                color: '#92400e',
+                marginBottom: '4px',
+                position: 'relative',
+                zIndex: 1,
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '14px' }}>
-                    <StickyNote size={16} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', fontSize: '13px', letterSpacing: '0.3px' }}>
+                    <StickyNote size={15} />
                     <span>Quick Notes</span>
                 </div>
-                {isSaving && (
+                {isSaving ? (
                     <span style={{ fontSize: '11px', opacity: 0.7, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        Saving...
+                        <Save size={12} /> Saving...
                     </span>
-                )}
+                ) : note ? (
+                    <span style={{ fontSize: '11px', opacity: 0.5 }}>Auto-saved</span>
+                ) : null}
             </div>
 
+            {/* Notebook-ruled textarea */}
             <textarea
                 value={note}
                 onChange={handleChange}
@@ -68,10 +89,13 @@ export default function QuickNotesWidget() {
                     resize: 'none',
                     outline: 'none',
                     fontSize: '14px',
-                    lineHeight: '1.6',
+                    lineHeight: '24px',
                     color: '#78350f',
-                    fontFamily: 'inherit',
-                    padding: 0
+                    fontFamily: "'Kalam', 'Comic Sans MS', cursive, sans-serif",
+                    padding: 0,
+                    // Ruled lines background
+                    backgroundImage: 'repeating-linear-gradient(transparent, transparent 23px, #d4b483 23px, #d4b483 24px)',
+                    backgroundAttachment: 'local',
                 }}
             />
         </div>

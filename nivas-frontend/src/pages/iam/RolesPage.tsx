@@ -84,6 +84,17 @@ function RoleCard({
                         }}>
                             {role.name}
                         </h3>
+                        <span style={{
+                            fontSize: '10px',
+                            padding: '2px 6px',
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: 'var(--notion-bg-tertiary)',
+                            color: 'var(--notion-text-secondary)',
+                            fontWeight: '500',
+                            border: '1px solid var(--notion-border)'
+                        }}>
+                            Level {role.level}
+                        </span>
                     </div>
                     {(role.name !== 'Super Admin' && role.name !== 'Owner') && (
                         <div style={{ display: 'flex', gap: '4px' }}>

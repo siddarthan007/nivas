@@ -17,21 +17,21 @@ export default function GlobalActionMenu() {
         window.dispatchEvent(new CustomEvent(`open-${action}-modal`));
     };
 
-    const userRole = user?.role;
+    const userRole = user?.role?.name;
     const isAdminOrManager = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "Owner" || user?.userType === "SUPER_ADMIN";
 
     return (
         <div className="relative">
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-[var(--notion-blue)] text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-opacity-90 transition-colors"
+                className="flex items-center gap-2 px-3 py-1.5 bg-[var(--notion-blue)] text-[var(--foreground-inverse)] rounded-[var(--radius-sm)] text-sm font-medium hover:bg-opacity-90 transition-colors"
                 style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
                     padding: '6px 12px',
                     backgroundColor: 'var(--notion-blue)',
-                    color: 'white',
+                    color: 'var(--foreground-inverse)',
                     borderRadius: 'var(--radius-sm)',
                     fontSize: '13px',
                     border: 'none',

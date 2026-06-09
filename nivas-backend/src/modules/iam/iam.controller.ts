@@ -5,6 +5,9 @@ import { IamService } from './iam.service';
 import { createResponse } from '../../utils/response.helper';
 import { ForbiddenError, UnauthorizedError } from '../../utils/errors';
 
+const ACCESS_TOKEN_EXP = '2h';   // short-lived access token (client auto-refreshes)
+const REFRESH_TOKEN_EXP = '30d'; // long-lived refresh token
+
 export const iamController = new Elysia({ prefix: '/iam' })
     .use(authMiddleware)
     .post('/login', async ({ body, jwt, cookie: { auth }, set, request }) => {
@@ -24,7 +27,17 @@ export const iamController = new Elysia({ prefix: '/iam' })
             id: user!.id,
             hotelId: user!.hotelId,
             type: user!.userType,
-            permissions: permissions as string[]
+            permissions: permissions as string[],
+            tokenVersion: (user as any)!.tokenVersion ?? 0,
+            exp: ACCESS_TOKEN_EXP,
+        });
+        // Long-lived refresh token (mobile): exchange at /iam/refresh for a new
+        // access token without re-entering credentials.
+        const refreshToken = await jwt.sign({
+            id: user!.id,
+            tokenUse: 'refresh',
+            tokenVersion: (user as any)!.tokenVersion ?? 0,
+            exp: REFRESH_TOKEN_EXP,
         });
 
         auth?.set({
@@ -37,6 +50,7 @@ export const iamController = new Elysia({ prefix: '/iam' })
 
         return createResponse({
             token,
+            refreshToken,
             user: {
                 id: user!.id,
                 name: user!.fullName,
@@ -53,6 +67,61 @@ export const iamController = new Elysia({ prefix: '/iam' })
             tags: ['Auth']
         }
     })
+    // Exchange a refresh token for a fresh access token (no credentials needed).
+    .post('/refresh', async ({ body, jwt, cookie: { auth }, set }) => {
+        const decoded: any = await jwt.verify(body.refreshToken);
+        if (!decoded || decoded.tokenUse !== 'refresh' || !decoded.id) {
+            set.status = 401;
+            throw new UnauthorizedError('Invalid or expired refresh token');
+        }
+
+        // Re-validate the user (revokes access for deactivated / deleted accounts).
+        const { user, permissions } = await IamService.refreshSession(decoded.id);
+
+        // Reject refresh tokens issued before a "log out all devices".
+        if ((decoded.tokenVersion ?? 0) !== ((user as any).tokenVersion ?? 0)) {
+            set.status = 401;
+            throw new UnauthorizedError('Session expired. Please sign in again.');
+        }
+        const tv = (user as any).tokenVersion ?? 0;
+
+        const token = await jwt.sign({
+            id: user.id,
+            hotelId: user.hotelId,
+            type: user.userType,
+            permissions: permissions as string[],
+            tokenVersion: tv,
+            exp: ACCESS_TOKEN_EXP,
+        });
+        // Rotate the refresh token too.
+        const refreshToken = await jwt.sign({
+            id: user.id,
+            tokenUse: 'refresh',
+            tokenVersion: tv,
+            exp: REFRESH_TOKEN_EXP,
+        });
+
+        auth?.set({
+            value: token,
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            path: '/',
+        });
+
+        return createResponse({ token, refreshToken }, 'Token refreshed');
+    }, {
+        body: t.Object({ refreshToken: t.String() }),
+        detail: { summary: 'Exchange a refresh token for a new access token', tags: ['Auth'] }
+    })
+    // Log out of every device/session: bumps the user's tokenVersion so all
+    // existing access + refresh tokens stop validating immediately.
+    .post('/logout-all', async ({ user, cookie: { auth } }) => {
+        if (!user?.id) throw new UnauthorizedError('Not signed in');
+        await IamService.logoutAllDevices(user.id);
+        auth?.remove();
+        return createResponse({ success: true }, 'Signed out of all devices');
+    }, { isSignedIn: true, detail: { summary: 'Log out of all devices', tags: ['Auth'] } })
     .post('/verify-otp', async ({ body, jwt, cookie: { auth }, request }) => {
         const ipAddress = request.headers.get('x-forwarded-for') || undefined;
         const { user, permissions } = await IamService.verifyOTP(body.userId, body.otp, ipAddress);
@@ -61,7 +130,15 @@ export const iamController = new Elysia({ prefix: '/iam' })
             id: user.id,
             hotelId: user.hotelId,
             type: user.userType,
-            permissions: permissions as string[]
+            permissions: permissions as string[],
+            tokenVersion: (user as any).tokenVersion ?? 0,
+            exp: ACCESS_TOKEN_EXP,
+        });
+        const refreshToken = await jwt.sign({
+            id: user.id,
+            tokenUse: 'refresh',
+            tokenVersion: (user as any).tokenVersion ?? 0,
+            exp: REFRESH_TOKEN_EXP,
         });
 
         auth?.set({
@@ -74,6 +151,7 @@ export const iamController = new Elysia({ prefix: '/iam' })
 
         return createResponse({
             token,
+            refreshToken,
             user: {
                 id: user.id,
                 name: user.fullName,

@@ -2,14 +2,96 @@ import { Elysia, t } from 'elysia';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { PERMISSIONS } from '../../config/permissions';
 import { KotService } from './kot.service';
+import { KotPrintService } from './kot-print.service';
 import { createResponse } from '../../utils/response.helper';
 import { ValidationError, NotFoundError } from '../../utils/errors';
 import { db } from '../../db';
-import { kotPrinters, orders } from '../../db/schema';
+import { kotPrinters, orders, restaurantTables } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
 
 export const kotController = new Elysia({ prefix: '/orders/kot' })
     .use(authMiddleware)
+    // List all printers for the hotel (management view).
+    .get('/printers', async ({ user }) => {
+        const list = await db.query.kotPrinters.findMany({
+            where: eq(kotPrinters.hotelId, user!.hotelId!),
+            orderBy: (p, { desc }) => [desc(p.isDefault), desc(p.createdAt)],
+        });
+        return createResponse(list, 'Printers fetched');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS,
+        detail: { summary: 'List KOT printers', tags: ['KOT'] }
+    })
+    // Create a printer.
+    .post('/printers', async ({ user, body }) => {
+        // Only one default printer per hotel.
+        if (body.isDefault) {
+            await db.update(kotPrinters)
+                .set({ isDefault: false })
+                .where(eq(kotPrinters.hotelId, user!.hotelId!));
+        }
+        const [printer] = await db.insert(kotPrinters).values({
+            hotelId: user!.hotelId!,
+            name: body.name,
+            printerType: body.printerType || 'THERMAL',
+            ipAddress: body.ipAddress,
+            port: body.port ?? 9100,
+            station: body.station,
+            categories: body.categories ?? [],
+            isDefault: body.isDefault ?? false,
+            isActive: body.isActive ?? true,
+        }).returning();
+        return createResponse(printer, 'Printer added');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS,
+        body: t.Object({
+            name: t.String(),
+            printerType: t.Optional(t.String()),
+            ipAddress: t.Optional(t.String()),
+            port: t.Optional(t.Number()),
+            station: t.Optional(t.String()),
+            categories: t.Optional(t.Array(t.String())),
+            isDefault: t.Optional(t.Boolean()),
+            isActive: t.Optional(t.Boolean()),
+        }),
+        detail: { summary: 'Create KOT printer', tags: ['KOT'] }
+    })
+    // Update a printer.
+    .patch('/printers/:id', async ({ params, user, body }) => {
+        const id = parseInt(params.id);
+        if (body.isDefault) {
+            await db.update(kotPrinters)
+                .set({ isDefault: false })
+                .where(eq(kotPrinters.hotelId, user!.hotelId!));
+        }
+        const updates: Record<string, unknown> = {};
+        for (const k of ['name', 'printerType', 'ipAddress', 'port', 'station', 'categories', 'isDefault', 'isActive'] as const) {
+            if (body[k] !== undefined) updates[k] = body[k];
+        }
+        const [printer] = await db.update(kotPrinters)
+            .set(updates)
+            .where(and(eq(kotPrinters.id, id), eq(kotPrinters.hotelId, user!.hotelId!)))
+            .returning();
+        if (!printer) throw new NotFoundError('Printer');
+        return createResponse(printer, 'Printer updated');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS,
+        params: t.Object({ id: t.String() }),
+        body: t.Object({
+            name: t.Optional(t.String()),
+            printerType: t.Optional(t.String()),
+            ipAddress: t.Optional(t.String()),
+            port: t.Optional(t.Number()),
+            station: t.Optional(t.String()),
+            categories: t.Optional(t.Array(t.String())),
+            isDefault: t.Optional(t.Boolean()),
+            isActive: t.Optional(t.Boolean()),
+        }),
+        detail: { summary: 'Update KOT printer', tags: ['KOT'] }
+    })
     .delete('/printers/:id', async ({ params, user }) => {
         await db.delete(kotPrinters)
             .where(and(
@@ -32,11 +114,17 @@ export const kotController = new Elysia({ prefix: '/orders/kot' })
             with: {
                 items: {
                     with: { menuItem: true }
-                }
+                },
+                room: true,
             }
         });
 
         if (!order) throw new NotFoundError('Order');
+
+        // restaurantTable has no relation defined → look it up directly for the ticket.
+        const table = (order as any).restaurantTableId
+            ? await db.query.restaurantTables.findFirst({ where: eq(restaurantTables.id, (order as any).restaurantTableId), columns: { tableNumber: true } })
+            : null;
 
         const printers = await db.query.kotPrinters.findMany({
             where: and(
@@ -84,8 +172,8 @@ export const kotController = new Elysia({ prefix: '/orders/kot' })
                 header: `=== KITCHEN ORDER TICKET ===`,
                 orderNumber: order.orderNumber,
                 orderType: order.orderType,
-                table: (order as any).tableNumber || 'N/A',
-                room: (order as any).roomNumber || 'N/A',
+                table: table?.tableNumber || 'N/A',
+                room: (order as any).room?.number || 'N/A',
                 time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
                 date: new Date().toLocaleDateString('en-US'),
                 items: r.items.map((item, idx) => ({
@@ -95,7 +183,7 @@ export const kotController = new Elysia({ prefix: '/orders/kot' })
                     notes: item.notes || ''
                 })),
                 footer: `--- END OF KOT ---`,
-                station: r.printer.stationName || r.printer.name
+                station: r.printer.station || r.printer.name
             },
             itemCount: r.items.length
         }));
@@ -123,16 +211,31 @@ export const kotController = new Elysia({ prefix: '/orders/kot' })
         });
 
         if (!printer) throw new NotFoundError('Printer');
+        if (!printer.ipAddress) throw new ValidationError('This printer has no IP address configured');
+
+        // Actually connect + print a test ticket (was previously a no-op fake).
+        await KotPrintService.testPrint(printer.ipAddress, printer.port || 9100, printer.name);
 
         return createResponse({
             printer: printer.name,
             ipAddress: printer.ipAddress,
             port: printer.port,
-            testResult: 'CONNECTION_OK',
-        }, 'Test print sent successfully');
+            testResult: 'PRINTED',
+        }, 'Test ticket sent — check the printer');
     }, {
         isSignedIn: true,
         hasPermission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS,
         params: t.Object({ id: t.String() }),
         detail: { summary: 'Test printer connection', tags: ['KOT'] }
+    })
+    .post('/print/:orderId', async ({ params, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const results = await KotPrintService.printOrderKots(user.hotelId, params.orderId);
+        const allOk = results.every(r => r.status === 'PRINTED');
+        return createResponse(results, allOk ? 'KOT printed successfully' : 'Some printers failed');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.ORDERS.CREATE,
+        params: t.Object({ orderId: t.String() }),
+        detail: { summary: 'Print KOT tickets for an order', tags: ['KOT'] }
     });

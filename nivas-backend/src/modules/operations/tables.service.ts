@@ -46,12 +46,17 @@ export const TablesService = {
         capacity: number;
         location: string;
         status: string;
+        layoutProps?: any;
     }>) {
+        const updateData: Record<string, any> = { updatedAt: new Date() };
+        if (data.tableNumber !== undefined) updateData.tableNumber = data.tableNumber;
+        if (data.capacity !== undefined) updateData.capacity = data.capacity;
+        if (data.location !== undefined) updateData.location = data.location;
+        if (data.status !== undefined) updateData.status = data.status;
+        if (data.layoutProps !== undefined) updateData.layoutProps = data.layoutProps;
+
         const [updated] = await db.update(restaurantTables)
-            .set({
-                ...data,
-                updatedAt: new Date()
-            })
+            .set(updateData)
             .where(and(
                 eq(restaurantTables.id, id),
                 eq(restaurantTables.hotelId, hotelId)

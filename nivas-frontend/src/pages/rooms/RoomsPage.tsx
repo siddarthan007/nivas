@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import BulkImportModal from "@/components/features/shared/BulkImportModal";
 import { useRooms } from '@/lib/hooks/useRooms';
 import { useRoomTypes, type RoomTypeItem } from '@/lib/hooks/useRoomTypes';
 import DashboardLayout from '@/components/layout/DashboardLayout';
@@ -22,9 +23,11 @@ import {
     X,
     Loader2,
     Settings2,
-} from 'lucide-react';
+    Upload,
+} from "lucide-react";
 import type { Room, RoomStatus, RoomType, CreateRoomPayload } from '@/lib/types/api.types';
 import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal';
+import ImageUpload from '@/components/ui/ImageUpload';
 import { toast } from 'sonner';
 
 // Status color mapping
@@ -34,7 +37,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
     OCCUPIED: { bg: 'var(--notion-blue-bg)', text: 'var(--notion-blue)', label: 'Occupied' },
     DIRTY: { bg: 'var(--notion-yellow-bg)', text: 'var(--notion-orange)', label: 'Dirty' },
     MAINTENANCE: { bg: 'var(--notion-red-bg)', text: 'var(--notion-red)', label: 'Maintenance' },
-    OUT_OF_ORDER: { bg: 'rgba(120,120,120,0.2)', text: '#666', label: 'Out of Order' },
+    OUT_OF_ORDER: { bg: 'var(--notion-bg-hover)', text: 'var(--notion-text-secondary)', label: 'Out of Order' },
 };
 
 const DEFAULT_STATUS_COLOR = { bg: 'var(--notion-green-bg)', text: 'var(--notion-green)', label: 'Available' };
@@ -103,6 +106,8 @@ function RoomCard({
                 <div style={{ position: 'relative' }}>
                     <button
                         onClick={() => setShowMenu(!showMenu)}
+                        aria-label={`Actions for room ${room.number}`}
+                        title="Room actions"
                         style={{
                             background: 'transparent',
                             border: 'none',
@@ -116,6 +121,9 @@ function RoomCard({
                     </button>
 
                     {showMenu && (
+                        <>
+                        {/* Click-away backdrop — closes the menu on touch/outside click (mouse-leave alone fails on mobile). */}
+                        <div onClick={(e) => { e.stopPropagation(); setShowMenu(false); }} style={{ position: 'fixed', inset: 0, zIndex: 9 }} />
                         <div style={{
                             position: 'absolute',
                             right: 0,
@@ -204,8 +212,27 @@ function RoomCard({
                                 <Trash2 size={14} /> Delete
                             </button>
                         </div>
+                        </>
                     )}
                 </div>
+            </div>
+
+            {/* Image */}
+            <div style={{
+                height: '120px',
+                background: room.imageUrl ? 'transparent' : 'linear-gradient(135deg, var(--notion-bg-tertiary), var(--notion-bg-secondary))',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                borderRadius: 'var(--radius-md)',
+                marginBottom: 'var(--space-3)',
+            }}>
+                {room.imageUrl ? (
+                    <img src={room.imageUrl} alt={room.name || `Room ${room.number}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                    <Bed size={32} style={{ color: 'var(--notion-text-secondary)', opacity: 0.5 }} />
+                )}
             </div>
 
             {/* Status Badge */}
@@ -236,24 +263,57 @@ function RoomCard({
             {/* Details */}
             <div style={{
                 display: 'flex',
+                flexWrap: 'wrap',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                gap: 'var(--space-2)',
                 paddingTop: 'var(--space-3)',
                 borderTop: '1px solid var(--notion-divider)',
             }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    {room.type && (
+                        <span style={{
+                            fontSize: '12px',
+                            color: 'var(--notion-text-secondary)',
+                            textTransform: 'capitalize',
+                            whiteSpace: 'nowrap',
+                        }}>
+                            {(room.type || '').toLowerCase().replace('_', ' ')}
+                        </span>
+                    )}
+                    {room.floorNumber && room.floorNumber > 0 && (
+                        <span style={{
+                            fontSize: '11px',
+                            padding: '2px 8px',
+                            backgroundColor: 'var(--notion-bg-tertiary)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: 'var(--notion-text-secondary)',
+                            whiteSpace: 'nowrap',
+                        }}>
+                            Floor {room.floorNumber}
+                        </span>
+                    )}
+                    {room.capacity && room.capacity > 0 && (
+                        <span style={{
+                            fontSize: '11px',
+                            padding: '2px 8px',
+                            backgroundColor: 'var(--notion-bg-tertiary)',
+                            borderRadius: 'var(--radius-sm)',
+                            color: 'var(--notion-text-secondary)',
+                            whiteSpace: 'nowrap',
+                        }}>
+                            {room.capacity} guests
+                        </span>
+                    )}
+                </div>
                 <span style={{
-                    fontSize: '12px',
-                    color: 'var(--notion-text-secondary)',
-                    textTransform: 'capitalize',
-                }}>
-                    {(room.type || '').toLowerCase().replace('_', ' ')}
-                </span>
-                <span style={{
-                    fontSize: '14px',
-                    fontWeight: '600',
+                    fontSize: '15px',
+                    fontWeight: '700',
                     color: 'var(--notion-text)',
+                    whiteSpace: 'nowrap',
+                    marginLeft: 'auto',
                 }}>
-                    ₹{(room.rate || 0).toLocaleString()}
+                    Rs {(room.rate || 0).toLocaleString()}
                 </span>
             </div>
         </div>
@@ -315,30 +375,39 @@ function RoomFormModal({
     roomTypes: RoomTypeItem[];
 }) {
     const defaultType = roomTypes.find(rt => rt.isActive)?.code || 'STANDARD';
-    const [formData, setFormData] = useState<CreateRoomPayload>({
-        number: initialData?.number ?? ('' as unknown as number),
-        name: initialData?.name || '',
-        type: initialData?.type || defaultType,
-        rate: initialData?.rate ?? ('' as unknown as number),
-    });
+    const [formData, setFormData] = useState<Partial<CreateRoomPayload>>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Reset form when initialData changes (switching between edit/create)
+    // Reset form when modal opens
     useEffect(() => {
-        setFormData({
-            number: initialData?.number ?? ('' as unknown as number),
-            name: initialData?.name || '',
-            type: initialData?.type || defaultType,
-            rate: initialData?.rate ?? ('' as unknown as number),
-        });
-    }, [initialData, defaultType]);
+        if (isOpen) {
+            const selectedType = roomTypes.find(rt => rt.code === (initialData?.type || defaultType));
+            setFormData({
+                number: initialData?.number ?? undefined,
+                name: initialData?.name || '',
+                type: initialData?.type || defaultType,
+                rate: initialData?.rate
+                    ? parseFloat(String(initialData.rate))
+                    : (selectedType?.baseRate ? parseFloat(selectedType.baseRate) : undefined),
+                floorNumber: initialData?.floorNumber ?? undefined,
+                capacity: initialData?.capacity ?? undefined,
+                imageUrl: initialData?.imageUrl || undefined,
+            });
+        }
+    }, [isOpen, initialData, defaultType, roomTypes]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!formData.number || formData.number <= 0) return;
+        if (!formData.rate || formData.rate <= 0) return;
         setIsSubmitting(true);
-        await onSubmit(formData);
+        await onSubmit(formData as CreateRoomPayload);
         setIsSubmitting(false);
         onClose();
+    };
+
+    const setField = (field: keyof CreateRoomPayload, value: any) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
     };
 
     return (
@@ -348,57 +417,99 @@ function RoomFormModal({
             title={initialData ? 'Edit Room' : 'Add New Room'}
         >
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Room Number *
-                    </label>
-                    <Input
-                        type="number"
-                        value={formData.number}
-                        onChange={e => setFormData({ ...formData, number: e.target.value === '' ? ('' as unknown as number) : parseInt(e.target.value) })}
-                        placeholder="101"
-                        required
-                    />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
+                            Room Number *
+                        </label>
+                        <Input
+                            type="number"
+                            value={formData.number ?? ''}
+                            onChange={e => setField('number', e.target.value === '' ? undefined : parseInt(e.target.value))}
+                            placeholder="101"
+                            required
+                        />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
+                            Floor
+                        </label>
+                        <Input
+                            type="number"
+                            value={formData.floorNumber ?? ''}
+                            onChange={e => setField('floorNumber', e.target.value === '' ? undefined : parseInt(e.target.value))}
+                            placeholder="1"
+                        />
+                    </div>
                 </div>
 
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Room Name (Optional)
-                    </label>
-                    <Input
-                        type="text"
-                        value={formData.name || ''}
-                        onChange={e => setFormData({ ...formData, name: e.target.value })}
-                        placeholder="Honeymoon Suite"
-                    />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
+                            Room Name
+                        </label>
+                        <Input
+                            type="text"
+                            value={formData.name || ''}
+                            onChange={e => setField('name', e.target.value)}
+                            placeholder="Honeymoon Suite"
+                        />
+                    </div>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
+                            Capacity
+                        </label>
+                        <Input
+                            type="number"
+                            value={formData.capacity ?? ''}
+                            onChange={e => setField('capacity', e.target.value === '' ? undefined : parseInt(e.target.value))}
+                            placeholder="2"
+                        />
+                    </div>
                 </div>
 
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Room Type *
-                    </label>
-                    <Select
-                        value={formData.type}
-                        onChange={e => setFormData({ ...formData, type: e.target.value as RoomType })}
-                        options={roomTypes.filter(rt => rt.isActive).map(rt => ({
-                            value: rt.code,
-                            label: rt.name
-                        }))}
-                    />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
+                            Room Type *
+                        </label>
+                        <Select
+                            value={formData.type || defaultType}
+                            onChange={e => {
+                                const selectedCode = e.target.value;
+                                const selectedType = roomTypes.find(rt => rt.code === selectedCode);
+                                setFormData(prev => ({
+                                    ...prev,
+                                    type: selectedCode as RoomType,
+                                    rate: selectedType?.baseRate ? parseFloat(selectedType.baseRate) : prev.rate
+                                }));
+                            }}
+                            options={roomTypes.filter(rt => rt.isActive).map(rt => ({
+                                value: rt.code,
+                                label: `${rt.name} — Rs ${parseFloat(rt.baseRate || '0').toLocaleString()}`
+                            }))}
+                        />
+                    </div>
+
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
+                            Rate per Night (Rs ) *
+                        </label>
+                        <Input
+                            type="number"
+                            value={formData.rate ?? ''}
+                            onChange={e => setField('rate', e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                            placeholder="2500"
+                            required
+                        />
+                    </div>
                 </div>
 
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Rate per Night (₹) *
-                    </label>
-                    <Input
-                        type="number"
-                        value={formData.rate}
-                        onChange={e => setFormData({ ...formData, rate: e.target.value === '' ? ('' as unknown as number) : parseFloat(e.target.value) })}
-                        placeholder="2500"
-                        required
-                    />
-                </div>
+                <ImageUpload
+                    label="Room Image"
+                    value={formData.imageUrl || null}
+                    onChange={(url) => setField('imageUrl', url || undefined)}
+                />
 
                 <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
                     <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>
@@ -473,7 +584,7 @@ function RoomTypesManager({
 
     return (
         <div style={{
-            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+            position: 'fixed', inset: 0, backgroundColor: 'var(--notion-overlay)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
         }}>
             <div style={{
@@ -550,7 +661,7 @@ function RoomTypesManager({
                                         <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)', fontFamily: 'ui-monospace, monospace' }}>{rt.code}</div>
                                     </div>
                                     <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', fontWeight: '500' }}>
-                                        ₹{parseFloat(rt.baseRate || '0').toLocaleString()}
+                                        Rs {parseFloat(rt.baseRate || '0').toLocaleString()}
                                     </span>
                                     <button
                                         onClick={() => { setEditingId(rt.id); setEditName(rt.name); setEditRate(rt.baseRate || '0'); }}
@@ -600,6 +711,7 @@ export default function RoomsPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<RoomStatus | 'ALL'>('ALL');
     const [isFormOpen, setIsFormOpen] = useState(false);
+    const [isImportOpen, setIsImportOpen] = useState(false);
     const [editingRoom, setEditingRoom] = useState<Room | null>(null);
     const [showRoomTypes, setShowRoomTypes] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState<Room | null>(null);
@@ -680,12 +792,33 @@ export default function RoomsPage() {
                             <RefreshCw size={14} style={{ marginRight: '6px' }} />
                             Refresh
                         </Button>
+                        <Button variant="secondary" onClick={() => setIsImportOpen(true)}>
+                            <Upload size={14} style={{ marginRight: '6px' }} />
+                            Import CSV
+                        </Button>
                         <Button onClick={() => { setEditingRoom(null); setIsFormOpen(true); }}>
                             <Plus size={14} style={{ marginRight: '6px' }} />
                             Add Room
                         </Button>
                     </div>
                 </div>
+
+                <BulkImportModal
+                    isOpen={isImportOpen}
+                    onClose={() => setIsImportOpen(false)}
+                    title="Rooms"
+                    endpoint="/import/rooms"
+                    columns={[
+                        { key: 'number', required: true, hint: 'unique number' },
+                        { key: 'type', required: true },
+                        { key: 'rate', required: true, hint: 'per night' },
+                        { key: 'name', required: false },
+                        { key: 'capacity', required: false, hint: '1-30' },
+                        { key: 'floorNumber', required: false },
+                    ]}
+                    sampleRow={{ number: '101', type: 'Deluxe', rate: '3500', name: 'Garden View', capacity: '2', floorNumber: '1' }}
+                    onImported={() => fetchRooms()}
+                />
 
                 {/* Stats */}
                 <StatsBar stats={stats} />
@@ -725,7 +858,7 @@ export default function RoomsPage() {
                 {isLoading ? (
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
                         gap: 'var(--space-4)',
                     }}>
                         {Array.from({ length: 8 }).map((_, i) => (
@@ -754,7 +887,7 @@ export default function RoomsPage() {
                 ) : (
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
                         gap: 'var(--space-4)',
                     }}>
                         {filteredRooms.map(room => (

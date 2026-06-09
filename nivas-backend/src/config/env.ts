@@ -17,10 +17,6 @@ const envSchema = z.object({
     JWT_SECRET: z.string().min(32, 'JWT_SECRET should be at least 32 characters').default('nivas-secret-key-dev-only-change-in-production'),
     JWT_EXPIRY: z.string().default('7d'),
 
-    // CBMS (IRD Nepal) - Can be overridden, but defaults to official endpoints
-    CBMS_BILL_URL: z.string().url().default('https://cbapi.ird.gov.np/api/bill'),
-    CBMS_RETURN_URL: z.string().url().default('https://cbapi.ird.gov.np/api/billreturn'),
-
     // Guest Portal
     GUEST_PORTAL_URL: z.string().url().optional(),
 
@@ -62,11 +58,6 @@ export const config = {
 
     database: {
         url: env.DATABASE_URL
-    },
-
-    cbms: {
-        billUrl: env.CBMS_BILL_URL,
-        returnUrl: env.CBMS_RETURN_URL
     },
 
     app: {

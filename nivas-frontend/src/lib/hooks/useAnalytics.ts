@@ -8,6 +8,7 @@ import type {
     OccupancyAnalytics,
     KeyMetrics,
     SaaSOverview,
+    SaaSPayment,
 } from '@/lib/types/api.types';
 
 function isSuperAdminUser(): boolean {
@@ -15,7 +16,7 @@ function isSuperAdminUser(): boolean {
         const userStr = localStorage.getItem('nivas_user_data');
         if (!userStr) return false;
         const user = JSON.parse(userStr);
-        return user.userType === 'SUPER_ADMIN' || user.role === 'SUPER_ADMIN';
+        return user.userType === 'SUPER_ADMIN' || user.role?.name === 'SUPER_ADMIN' || user.role === 'SUPER_ADMIN';
     } catch {
         return false;
     }
@@ -56,6 +57,18 @@ export function useAnalytics() {
                     todayRevenue: raw.today?.revenue ?? raw.todayRevenue ?? 0,
                     occupancyRate: raw.realtime?.occupancyRate ?? raw.occupancyRate ?? 0,
                     lowStockItems: raw.lowStockItems ?? 0,
+                    // Nepali PMS metrics
+                    todayUnpaid: raw.today?.unpaid ?? raw.todayUnpaid ?? 0,
+                    todayDiscount: raw.today?.discount ?? raw.todayDiscount ?? 0,
+                    totalDue: raw.financials?.totalDue ?? raw.totalDue ?? 0,
+                    totalPurchase: raw.today?.totalPurchase ?? raw.totalPurchase ?? 0,
+                    totalOrders: raw.today?.totalOrders ?? raw.totalOrders ?? 0,
+                    qrOrders: raw.today?.qrOrders ?? raw.qrOrders ?? 0,
+                    totalMenuItems: raw.inventory?.totalMenuItems ?? raw.totalMenuItems ?? 0,
+                    totalEmployees: raw.staff?.totalEmployees ?? raw.totalEmployees ?? 0,
+                    totalAdvancePayments: raw.financials?.totalAdvancePayments ?? raw.totalAdvancePayments ?? 0,
+                    todayProfit: raw.today?.todayProfit ?? 0,
+                    bestHour: raw.today?.bestHour ?? '--',
                 };
                 setDashboardStats(mapped);
             }
@@ -138,6 +151,8 @@ export function useAnalytics() {
 
 export function useSaaSAnalytics() {
     const [overview, setOverview] = useState<SaaSOverview | null>(null);
+    const [payments, setPayments] = useState<SaaSPayment[]>([]);
+    const [tenants, setTenants] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -150,13 +165,16 @@ export function useSaaSAnalytics() {
         setIsLoading(true);
         setError(null);
         try {
-            const [tenantsRes, analyticsRes] = await Promise.all([
+            const [tenantsRes, analyticsRes, paymentsRes] = await Promise.all([
                 api.get<any[]>('/saas-admin/tenants'),
-                api.get<any>('/super-admin/analytics/sales')
+                api.get<any>('/super-admin/analytics/sales'),
+                api.get<{ data?: SaaSPayment[] }>('/saas-billing/payments?limit=100')
             ]);
 
             const tenants = tenantsRes.data || [];
+            setTenants(tenants);
             const analytics = analyticsRes.data || {};
+            const allPayments = (paymentsRes.data as any)?.data || paymentsRes.data || [];
 
             const now = new Date();
             const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -178,6 +196,24 @@ export function useSaaSAnalytics() {
                 revenueHistory: analytics.revenueHistory || [],
                 tenantGrowth: analytics.tenantGrowth || []
             });
+
+            setPayments(
+                (allPayments as any[]).map((p: any) => ({
+                    id: p.id,
+                    hotelId: p.hotelId,
+                    hotelName: p.hotel?.name || `Hotel #${p.hotelId}`,
+                    amount: p.amount,
+                    currency: p.currency || 'NPR',
+                    status: p.status || 'COMPLETED',
+                    paymentMethod: p.paymentMethod,
+                    transactionId: p.transactionId,
+                    invoiceNumber: p.invoiceNumber,
+                    periodStart: p.periodStart,
+                    periodEnd: p.periodEnd,
+                    notes: p.notes,
+                    createdAt: p.createdAt,
+                }))
+            );
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch SaaS overview');
         } finally {
@@ -191,6 +227,8 @@ export function useSaaSAnalytics() {
 
     return {
         overview,
+        payments,
+        tenants,
         isLoading,
         error,
         fetchOverview,

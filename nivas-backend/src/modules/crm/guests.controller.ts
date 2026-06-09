@@ -2,10 +2,11 @@ import { Elysia, t } from 'elysia';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { PERMISSIONS } from '../../config/permissions';
 import { GuestService } from './guest.service';
+import { CheckoutService } from '../finance/checkout.service';
 import { createResponse } from '../../utils/response.helper';
 import { ValidationError } from '../../utils/errors';
 
-export const guestsController = new Elysia({ prefix: '/guests' })
+export const guestsController = new Elysia({ prefix: '/crm/guests' })
     .use(authMiddleware)
     .get('/', async ({ user, query }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
@@ -54,6 +55,15 @@ export const guestsController = new Elysia({ prefix: '/guests' })
         isSignedIn: true,
         hasPermission: PERMISSIONS.GUESTS.VIEW_DETAILS,
         detail: { summary: 'Get guest stay history', tags: ['CRM'] }
+    })
+    .get('/:id/folio', async ({ params, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const folio = await CheckoutService.getGuestFolio(user.hotelId, params.id);
+        return createResponse(folio, 'Guest folio fetched successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.GUESTS.VIEW_DETAILS,
+        detail: { summary: 'Get guest folio (all charges, payments, invoices)', tags: ['CRM', 'Finance'] }
     })
     .patch('/:id', async ({ params, body, user }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');

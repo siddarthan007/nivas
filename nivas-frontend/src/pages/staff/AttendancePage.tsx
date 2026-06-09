@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, type ReactNode } from 'react';
+import { toLocalDateString } from "@/lib/utils/format";
 import { useAuth } from '@/lib/contexts/AuthContext';
-import DashboardLayout from '@/components/layout/DashboardLayout';
-import PageContainer from '@/components/layout/PageContainer';
+import { toast } from 'sonner';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import { useAttendance, type AttendanceEntry } from '@/lib/hooks/useAttendance';
+import DualDate from '@/components/ui/DualDate';
+import { usePermissions } from '@/lib/hooks/usePermissions';
+import CustomDatePicker from '@/components/ui/DatePicker';
+import Modal from '@/components/ui/Modal';
 import {
     Clock,
     Timer,
@@ -21,7 +25,11 @@ import {
     RefreshCw,
     Loader2,
     Users,
-    MoreVertical
+    MoreVertical,
+    Pencil,
+    Eye,
+    ChevronLeft,
+    ChevronRight
 } from 'lucide-react';
 
 // Status badge helper
@@ -102,7 +110,7 @@ function ClockWidget({ isClocked, clockInTime, onClockIn, onClockOut, isLoading 
                 </div>
                 <div>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>
-                        {time.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                        <DualDate date={time} format="full" />
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
                         {isClocked ? `Clocked in for ${elapsedTime}` : 'Not clocked in'}
@@ -222,11 +230,38 @@ function UserAvatar({ name }: { name: string }) {
 
 export default function AttendancePage() {
     const { user } = useAuth();
-    const { entries, stats, currentEntry, isClocked, isLoading, error, refresh, clockIn, clockOut } = useAttendance();
+    const { can } = usePermissions();
+    const {
+        entries, stats, currentEntry, isClocked, isLoading, error, refresh, clockIn, clockOut,
+        historyEntries, isHistoryLoading, fetchHistory,
+        staffSummary, isSummaryLoading, fetchStaffSummary,
+        markAttendance
+    } = useAttendance();
 
+    const [activeSubTab, setActiveSubTab] = useState<'today' | 'history'>('today');
     const [searchQuery, setSearchQuery] = useState('');
     const [filterDept, setFilterDept] = useState('ALL');
     const [isClocking, setIsClocking] = useState(false);
+    const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
+    const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+
+    // History filters
+    const [historySearch, setHistorySearch] = useState('');
+    const [historyStatusFilter, setHistoryStatusFilter] = useState('ALL');
+    const [historyDateFrom, setHistoryDateFrom] = useState('');
+    const [historyDateTo, setHistoryDateTo] = useState('');
+
+    // Staff summary modal
+    const [summaryModalOpen, setSummaryModalOpen] = useState(false);
+    const [summaryUserId, setSummaryUserId] = useState<string | null>(null);
+    const [summaryMonth, setSummaryMonth] = useState(new Date().getMonth() + 1);
+    const [summaryYear, setSummaryYear] = useState(new Date().getFullYear());
+
+    const handleActionClick = useCallback((recordId: string, el: HTMLButtonElement) => {
+        const rect = el.getBoundingClientRect();
+        setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+        setOpenActionMenu(openActionMenu === recordId ? null : recordId);
+    }, [openActionMenu]);
 
     // Departments from entries
     const departments = useMemo(
@@ -255,9 +290,46 @@ export default function AttendancePage() {
         setIsClocking(false);
     };
 
+    const handleMark = async (record: AttendanceEntry, status: 'PRESENT' | 'ABSENT' | 'LATE') => {
+        const today = new Date().toISOString().split('T')[0] || '';
+        await markAttendance(record.staffId, today, status);
+        setOpenActionMenu(null);
+    };
+
+    // History filtered data
+    const filteredHistory = useMemo(() => {
+        return historyEntries.filter(record => {
+            const matchesSearch = (record.staffName || '').toLowerCase().includes(historySearch.toLowerCase());
+            const matchesStatus = historyStatusFilter === 'ALL' || record.status === historyStatusFilter;
+            return matchesSearch && matchesStatus;
+        });
+    }, [historyEntries, historySearch, historyStatusFilter]);
+
+    // Fetch history when tab/filters change
+    useEffect(() => {
+        if (activeSubTab === 'history') {
+            fetchHistory(historyDateFrom || undefined, historyDateTo || undefined);
+        }
+    }, [activeSubTab, historyDateFrom, historyDateTo, fetchHistory]);
+
+    // Fetch staff summary when modal opens
+    useEffect(() => {
+        if (summaryModalOpen && summaryUserId) {
+            fetchStaffSummary(summaryUserId, summaryYear, summaryMonth);
+        }
+    }, [summaryModalOpen, summaryUserId, summaryYear, summaryMonth, fetchStaffSummary]);
+
+    const openStaffSummary = (staffId: string) => {
+        setSummaryUserId(staffId);
+        setSummaryMonth(new Date().getMonth() + 1);
+        setSummaryYear(new Date().getFullYear());
+        setSummaryModalOpen(true);
+    };
+
+    const daysInMonth = (year: number, month: number) => new Date(year, month, 0).getDate();
+
     return (
-        <DashboardLayout>
-            <PageContainer>
+            <>
                 <div style={{ padding: 'var(--space-6)', maxWidth: '1200px', margin: '0 auto' }}>
                     {/* Header */}
                     <div style={{
@@ -326,6 +398,48 @@ export default function AttendancePage() {
                         </div>
                     </div>
 
+                    {/* Sub Tabs */}
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)', borderBottom: '1px solid var(--notion-border)' }}>
+                        <button
+                            onClick={() => setActiveSubTab('today')}
+                            style={{
+                                padding: '8px 16px',
+                                fontSize: '14px',
+                                fontWeight: 500,
+                                color: activeSubTab === 'today' ? 'var(--notion-text)' : 'var(--notion-text-secondary)',
+                                borderBottom: activeSubTab === 'today' ? '2px solid var(--notion-blue)' : '2px solid transparent',
+                                background: 'none',
+                                border: 'none',
+                                borderBottomWidth: '2px',
+                                borderBottomStyle: 'solid',
+                                borderBottomColor: activeSubTab === 'today' ? 'var(--notion-blue)' : 'transparent',
+                                cursor: 'pointer',
+                            }}
+                        >
+                            Today
+                        </button>
+                        <button
+                            onClick={() => setActiveSubTab('history')}
+                            style={{
+                                padding: '8px 16px',
+                                fontSize: '14px',
+                                fontWeight: 500,
+                                color: activeSubTab === 'history' ? 'var(--notion-text)' : 'var(--notion-text-secondary)',
+                                background: 'none',
+                                border: 'none',
+                                borderBottomWidth: '2px',
+                                borderBottomStyle: 'solid',
+                                borderBottomColor: activeSubTab === 'history' ? 'var(--notion-blue)' : 'transparent',
+                                cursor: 'pointer',
+                            }}
+                        >
+                            History
+                        </button>
+                    </div>
+
+                    {/* Today View */}
+                    {activeSubTab === 'today' && (
+                        <>
                     {/* Table Section */}
                     <div style={{
                         backgroundColor: 'var(--notion-bg)',
@@ -357,7 +471,7 @@ export default function AttendancePage() {
                                 <Select
                                     value={filterDept}
                                     onChange={e => setFilterDept(e.target.value)}
-                                    options={departments.map(dept => ({ value: dept, label: dept }))}
+                                    options={departments.map(dept => ({ value: dept || '', label: dept || '' }))}
                                     fullWidth
                                 />
                             </div>
@@ -456,7 +570,12 @@ export default function AttendancePage() {
                                                         </span>
                                                     </td>
                                                     <td style={{ padding: '12px 20px', textAlign: 'right' }}>
-                                                        <Button variant="ghost" size="sm" icon={<MoreVertical size={16} />} />
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            icon={<MoreVertical size={16} />}
+                                                            onClick={(e) => handleActionClick(record.id, e.currentTarget as HTMLButtonElement)}
+                                                        />
                                                     </td>
                                                 </tr>
                                             );
@@ -466,8 +585,142 @@ export default function AttendancePage() {
                             </table>
                         </div>
                     </div>
+
+                {/* Fixed-position action menu dropdown — rendered outside table to escape overflow clipping */}
+                {openActionMenu && menuPos && (
+                    <>
+                        <div style={{ position: 'fixed', inset: 0, zIndex: 50 }} onClick={() => setOpenActionMenu(null)} />
+                        <div style={{
+                            position: 'fixed',
+                            top: menuPos.top,
+                            right: menuPos.right,
+                            zIndex: 60,
+                            backgroundColor: 'var(--notion-bg)',
+                            border: '1px solid var(--notion-border)',
+                            borderRadius: 'var(--radius-md)',
+                            boxShadow: 'var(--shadow-popover)',
+                            minWidth: '160px',
+                            padding: '4px 0',
+                        }}>
+                            {(() => {
+                                const record = filteredEntries.find(e => e.id === openActionMenu);
+                                if (!record) return null;
+                                return (
+                                    <>
+                                        <button onClick={() => { openStaffSummary(record.staffId); setOpenActionMenu(null); }} style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: '13px', color: 'var(--notion-text)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--notion-bg-hover)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}><Calendar size={14} /> View Calendar</button>
+                                        {can('users:update') && (
+                                            <>
+                                                <button onClick={() => handleMark(record, 'PRESENT')} style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: '13px', color: 'var(--notion-text)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--notion-bg-hover)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}><CheckCircle2 size={14} /> Mark Present</button>
+                                                <button onClick={() => handleMark(record, 'ABSENT')} style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: '13px', color: 'var(--notion-text)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--notion-bg-hover)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}><XCircle size={14} /> Mark Absent</button>
+                                                <button onClick={() => handleMark(record, 'LATE')} style={{ width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: '13px', color: 'var(--notion-text)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--notion-bg-hover)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}><Clock size={14} /> Mark Late</button>
+                                            </>
+                                        )}
+                                    </>
+                                );
+                            })()}
+                        </div>
+                    </>
+                )}
+                        </>
+                    )}
+
+                    {/* History View */}
+                    {activeSubTab === 'history' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                            <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', alignItems: 'center', padding: 'var(--space-3)', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)' }}>
+                                <div style={{ flex: 1, minWidth: '200px' }}>
+                                    <Input type="text" placeholder="Search staff..." value={historySearch} onChange={e => setHistorySearch(e.target.value)} icon={<Search size={16} />} />
+                                </div>
+                                <Select value={historyStatusFilter} onChange={e => setHistoryStatusFilter(e.target.value)} options={[{ value: 'ALL', label: 'All Status' }, { value: 'PRESENT', label: 'Present' }, { value: 'ABSENT', label: 'Absent' }, { value: 'LATE', label: 'Late' }]} />
+                                <CustomDatePicker selected={historyDateFrom ? new Date(historyDateFrom) : null} onChange={d => setHistoryDateFrom(toLocalDateString(d as Date))} placeholder="From" fullWidth={false} />
+                                <CustomDatePicker selected={historyDateTo ? new Date(historyDateTo) : null} onChange={d => setHistoryDateTo(toLocalDateString(d as Date))} placeholder="To" fullWidth={false} />
+                                <Button variant="secondary" onClick={() => { setHistorySearch(''); setHistoryStatusFilter('ALL'); setHistoryDateFrom(''); setHistoryDateTo(''); }}>Clear</Button>
+                            </div>
+                            <div style={{ backgroundColor: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                        <thead><tr style={{ backgroundColor: 'var(--notion-bg-secondary)', borderBottom: '1px solid var(--notion-border)' }}>
+                                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Date</th>
+                                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Staff</th>
+                                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Dept</th>
+                                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Clock In</th>
+                                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Clock Out</th>
+                                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Duration</th>
+                                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Status</th>
+                                            <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '13px', fontWeight: '600', color: 'var(--notion-text-secondary)' }}>Action</th>
+                                        </tr></thead>
+                                        <tbody>
+                                            {isHistoryLoading ? <tr><td colSpan={8} style={{ padding: '24px' }}><TableSkeleton /></td></tr>
+                                            : filteredHistory.length === 0 ? <tr><td colSpan={8} style={{ padding: '60px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}><Users size={40} style={{ opacity: 0.2 }} /><div>No history records found</div></td></tr>
+                                            : filteredHistory.map(record => {
+                                                const statusStyle = getStatusStyle(record.status);
+                                                const StatusIcon = statusStyle.icon;
+                                                return (
+                                                    <tr key={record.id} style={{ borderBottom: '1px solid var(--notion-divider)' }}>
+                                                        <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--notion-text)' }}>{record.date}</td>
+                                                        <td style={{ padding: '12px 20px' }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserAvatar name={record.staffName || 'Unknown'} /><div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--notion-text)' }}>{record.staffName || 'Unknown Staff'}</div></div></td>
+                                                        <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--notion-text)' }}>{record.department || 'General'}</td>
+                                                        <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--notion-text)' }}>{record.clockIn ? new Date(record.clockIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '--:--'}</td>
+                                                        <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--notion-text)' }}>{record.clockOut ? new Date(record.clockOut).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '--:--'}</td>
+                                                        <td style={{ padding: '12px 20px', fontSize: '13px', color: 'var(--notion-text)' }}>{record.duration ? `${Math.floor(record.duration / 60)}h ${record.duration % 60}m` : '-'}</td>
+                                                        <td style={{ padding: '12px 20px' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', fontSize: '12px', fontWeight: '500', borderRadius: 'var(--radius-full)', backgroundColor: statusStyle.bg, color: statusStyle.text }}><StatusIcon size={12} />{record.status}</span></td>
+                                                        <td style={{ padding: '12px 20px', textAlign: 'right' }}><Button variant="ghost" size="sm" icon={<Calendar size={16} />} onClick={() => openStaffSummary(record.staffId)} title="View calendar" /></td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Staff Monthly Summary Modal */}
+                    <Modal isOpen={summaryModalOpen} onClose={() => setSummaryModalOpen(false)} title={staffSummary ? `${staffSummary.staffName} — Attendance` : 'Staff Attendance'} size="xl">
+                        {isSummaryLoading ? <div style={{ padding: '40px', textAlign: 'center' }}><Loader2 size={24} className="animate-spin" /></div>
+                        : staffSummary && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ fontSize: '14px', color: 'var(--notion-text-secondary)' }}>{staffSummary.department} &middot; {staffSummary.year}-{String(staffSummary.month).padStart(2, '0')}</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                                        <button onClick={() => { const d = new Date(staffSummary.year, staffSummary.month - 2); setSummaryMonth(d.getMonth() + 1); setSummaryYear(d.getFullYear()); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text)', padding: '4px' }}><ChevronLeft size={18} /></button>
+                                        <button onClick={() => { const d = new Date(staffSummary.year, staffSummary.month); setSummaryMonth(d.getMonth() + 1); setSummaryYear(d.getFullYear()); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text)', padding: '4px' }}><ChevronRight size={18} /></button>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+                                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                                        <div key={d} style={{ textAlign: 'center', fontSize: '11px', fontWeight: '600', color: 'var(--notion-text-secondary)', padding: '6px' }}>{d}</div>
+                                    ))}
+                                    {(() => {
+                                        const totalDays = daysInMonth(staffSummary.year, staffSummary.month);
+                                        const firstDay = new Date(staffSummary.year, staffSummary.month - 1, 1).getDay();
+                                        const cells: ReactNode[] = [];
+                                        for (let i = 0; i < firstDay; i++) cells.push(<div key={`empty-${i}`} />);
+                                        for (let day = 1; day <= totalDays; day++) {
+                                            const dateStr = `${staffSummary.year}-${String(staffSummary.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                            const record = staffSummary.attendanceMap[dateStr];
+                                            const isPresent = record?.status === 'PRESENT';
+                                            const isAbsent = record?.status === 'ABSENT';
+                                            cells.push(
+                                                <div key={day} style={{ padding: '6px', textAlign: 'center', borderRadius: 'var(--radius-sm)', backgroundColor: isPresent ? 'var(--notion-green-bg)' : isAbsent ? 'var(--notion-red-bg)' : 'var(--notion-bg-secondary)', border: '1px solid var(--notion-border)', minHeight: '48px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+                                                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--notion-text)' }}>{day}</div>
+                                                    {isPresent && <CheckCircle2 size={12} style={{ color: 'var(--notion-green)' }} />}
+                                                    {isAbsent && <XCircle size={12} style={{ color: 'var(--notion-red)' }} />}
+                                                </div>
+                                            );
+                                        }
+                                        return cells;
+                                    })()}
+                                </div>
+                                <div style={{ display: 'flex', gap: 'var(--space-4)', fontSize: '13px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: 'var(--notion-green)' }} /><span>Present</span></div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: 'var(--notion-red)' }} /><span>Absent</span></div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: 'var(--notion-bg-secondary)', border: '1px solid var(--notion-border)' }} /><span>No Record</span></div>
+                                </div>
+                            </div>
+                        )}
+                    </Modal>
                 </div>
-            </PageContainer>
-        </DashboardLayout>
+            </>
     );
 }

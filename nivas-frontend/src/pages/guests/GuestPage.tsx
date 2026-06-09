@@ -13,7 +13,8 @@ import {
     type GuestSearchResult,
     type GuestDetails,
     type GuestFilters,
-    type GuestFinancials
+    type GuestFinancials,
+    type CustomerType
 } from '@/lib/services/guest.service';
 import {
     Users,
@@ -39,15 +40,26 @@ import {
     DollarSign,
     Home,
     Trash2,
+    Eye,
+    Receipt,
+    Hash,
+    Download,
 } from 'lucide-react';
+import { useRouter } from '@/lib/router';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { exportObjectsToCsv } from '@/lib/utils/export';
+import { useTableSort } from '@/lib/hooks/useTableSort';
+import SortableTh from '@/components/ui/SortableTh';
 import Pagination from '@/components/ui/Pagination';
 import NationalitySelect from '@/components/features/guests/NationalitySelect';
 import RecordPaymentModal from '@/components/features/payments/RecordPaymentModal';
 import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal';
+import { useModuleConfig } from '@/lib/hooks/useModuleConfig';
 
+import DateField from "@/components/ui/DateField";
 export default function GuestPage() {
+    const router = useRouter();
     const [guests, setGuests] = useState<GuestSearchResult[]>([]);
     const [loading, setLoading] = useState(false);
     const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
@@ -100,30 +112,70 @@ export default function GuestPage() {
 
     const [createNationality, setCreateNationality] = useState('');
 
+    const { config } = useModuleConfig();
+    const isHotelEnabled = config.enableHotel;
+    const isFbEnabled = config.enableFoodAndBeverage;
+    const isMixed = isHotelEnabled && isFbEnabled;
+    const isRestaurantOnly = !isHotelEnabled && isFbEnabled;
+
     const handleCreateGuest = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const formData = new FormData(e.currentTarget);
+        const firstName = formData.get('firstName') as string;
+        const lastName = formData.get('lastName') as string;
         try {
             await GuestService.create({
-                fullName: formData.get('fullName') as string,
+                firstName,
+                lastName,
+                fullName: `${firstName} ${lastName}`.trim(),
+                uniqueId: formData.get('uniqueId') as string,
                 phone: formData.get('phone') as string,
                 email: formData.get('email') as string,
-                notes: formData.get('notes') as string,
+                fatherName: formData.get('fatherName') as string || undefined,
+                dob: formData.get('dob') as string || undefined,
+                occupation: formData.get('occupation') as string || undefined,
                 nationality: createNationality || undefined,
-                idNumber: formData.get('idNumber') as string,
+                city: formData.get('city') as string || undefined,
+                country: formData.get('country') as string || undefined,
+                idType: formData.get('idType') as string || undefined,
+                idNumber: formData.get('idNumber') as string || undefined,
+                panNumber: formData.get('panNumber') as string || undefined,
+                openingDueAmount: formData.get('openingDueAmount') as string || undefined,
+                customerType: (formData.get('customerType') as CustomerType) || (isRestaurantOnly ? 'RESTAURANT_CUSTOMER' : 'HOTEL_GUEST'),
+                notes: formData.get('notes') as string || undefined,
             });
-            toast.success('Guest created');
+            toast.success('Customer created');
             setIsCreateOpen(false);
             setCreateNationality('');
             fetchGuests();
         } catch (error) {
-            toast.error('Failed to create guest');
+            toast.error('Failed to create customer');
         }
     };
 
     const clearFilters = () => {
         setFilters({});
         setSearchQuery('');
+    };
+
+    const { sorted: sortedGuests, sortField, sortDir, toggleSort } = useTableSort(guests, undefined, 'asc');
+
+    const handleExport = () => {
+        if (guests.length === 0) {
+            toast.error('No customers to export');
+            return;
+        }
+        exportObjectsToCsv('customers.csv', [
+            { header: 'Unique ID', value: g => g.uniqueId || '' },
+            { header: 'Name', value: g => g.fullName },
+            { header: 'Phone', value: g => g.phone || '' },
+            { header: 'Email', value: g => g.email || '' },
+            { header: 'PAN', value: g => g.panNumber || '' },
+            { header: 'Type', value: g => g.customerType },
+            { header: 'VIP', value: g => (g.isVip ? 'Yes' : 'No') },
+            { header: 'Banned', value: g => (g.isBanned ? 'Yes' : 'No') },
+        ], guests);
+        toast.success(`Exported ${guests.length} customers`);
     };
 
     return (
@@ -134,19 +186,42 @@ export default function GuestPage() {
                     <div>
                         <h1 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', fontSize: '24px', fontWeight: '600', color: 'var(--notion-text)' }}>
                             <Users size={28} />
-                            Guest Management
+                            {isRestaurantOnly ? 'Customer Management' : 'Customer & Guest Management'}
                         </h1>
                         <p style={{ fontSize: '14px', color: 'var(--notion-text-secondary)', marginTop: '4px' }}>
-                            Search, view, and manage guest profiles
+                            {isRestaurantOnly ? 'Search, view, and manage customer profiles' : 'Search, view, and manage hotel guests and restaurant customers'}
                         </p>
                     </div>
                     <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                         <Button variant="secondary" onClick={() => fetchGuests()} disabled={loading}>
                             <RefreshCw size={14} style={{ marginRight: '8px' }} /> Refresh
                         </Button>
-                        <Button onClick={() => setIsCreateOpen(true)} variant="primary">
-                            <Plus size={14} style={{ marginRight: '8px' }} /> Add Guest
+                        <Button variant="secondary" onClick={handleExport} disabled={loading}>
+                            <Download size={14} style={{ marginRight: '8px' }} /> Export
                         </Button>
+                        <Button onClick={() => setIsCreateOpen(true)} variant="primary">
+                            <Plus size={14} style={{ marginRight: '8px' }} /> {isRestaurantOnly ? 'Add Customer' : 'Add Customer / Guest'}
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Stats */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
+                    <div style={{ padding: 'var(--space-4)', background: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total</div>
+                        <div style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-blue)', marginTop: '4px' }}>{guests.length}</div>
+                    </div>
+                    <div style={{ padding: 'var(--space-4)', background: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>VIP</div>
+                        <div style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-yellow)', marginTop: '4px' }}>{guests.filter(g => g.isVip).length}</div>
+                    </div>
+                    <div style={{ padding: 'var(--space-4)', background: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Hotel Guests</div>
+                        <div style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-green)', marginTop: '4px' }}>{guests.filter(g => g.customerType === 'HOTEL_GUEST' || g.customerType === 'BOTH').length}</div>
+                    </div>
+                    <div style={{ padding: 'var(--space-4)', background: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Restaurant</div>
+                        <div style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-orange)', marginTop: '4px' }}>{guests.filter(g => g.customerType === 'RESTAURANT_CUSTOMER').length}</div>
                     </div>
                 </div>
 
@@ -235,6 +310,18 @@ export default function GuestPage() {
                             value={filters.nationality || ''}
                             onChange={(val: string) => setFilters(prev => ({ ...prev, nationality: val || undefined }))}
                         />
+                        <Select
+                            label="Customer Type"
+                            value={filters.customerType || ''}
+                            onChange={e => setFilters(prev => ({ ...prev, customerType: (e.target.value as CustomerType) || undefined }))}
+                            fullWidth
+                            options={[
+                                { value: '', label: 'All Types' },
+                                { value: 'HOTEL_GUEST', label: 'Hotel Guest' },
+                                { value: 'RESTAURANT_CUSTOMER', label: 'Restaurant Customer' },
+                                { value: 'BOTH', label: 'Both' },
+                            ]}
+                        />
                         <div>
                             <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: 'var(--notion-text-secondary)', marginBottom: '6px' }}>
                                 Room Number
@@ -273,9 +360,11 @@ export default function GuestPage() {
                                 color: 'var(--notion-text-secondary)'
                             }}>
                                 <tr>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Guest</th>
+                                    <SortableTh field="uniqueId" label="Unique ID" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
+                                    <SortableTh field="fullName" label="Name" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                                     <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Contact</th>
-                                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Nationality</th>
+                                    <SortableTh field="panNumber" label="PAN" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
+                                    <SortableTh field="customerType" label="Type" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                                     <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Status</th>
                                     <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Actions</th>
                                 </tr>
@@ -283,7 +372,7 @@ export default function GuestPage() {
                             <tbody style={{ borderTop: '1px solid var(--notion-border)' }}>
                                 {loading ? (
                                     <tr>
-                                        <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
+                                        <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
                                             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
                                                 <Loader2 className="animate-spin" size={20} /> Loading...
                                             </div>
@@ -291,13 +380,16 @@ export default function GuestPage() {
                                     </tr>
                                 ) : guests.length === 0 ? (
                                     <tr>
-                                        <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
-                                            No guests found matching your criteria.
+                                        <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
+                                            No customers found matching your criteria.
                                         </td>
                                     </tr>
                                 ) : (
-                                    guests.map(guest => (
-                                        <tr key={guest.id} style={{ borderBottom: '1px solid var(--notion-border)' }}>
+                                    sortedGuests.map(guest => (
+                                        <tr key={guest.id} style={{ borderBottom: '1px solid var(--notion-border)', cursor: 'pointer' }} onClick={() => router.push(`/hotel/guests/${guest.id}`)}>
+                                            <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
+                                                {guest.uniqueId || '—'}
+                                            </td>
                                             <td style={{ padding: '12px 16px' }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                                     <div style={{
@@ -331,15 +423,25 @@ export default function GuestPage() {
                                                     )}
                                                 </div>
                                             </td>
-                                            <td style={{ padding: '12px 16px', color: 'var(--notion-text-secondary)' }}>
-                                                {guest.nationality || '—'}
+                                            <td style={{ padding: '12px 16px', color: 'var(--notion-text-secondary)', fontSize: '13px' }}>
+                                                {guest.panNumber || '—'}
+                                            </td>
+                                            <td style={{ padding: '12px 16px' }}>
+                                                <span style={{
+                                                    display: 'inline-flex', padding: '2px 8px', borderRadius: '4px',
+                                                    fontSize: '11px', fontWeight: '500',
+                                                    backgroundColor: guest.customerType === 'RESTAURANT_CUSTOMER' ? 'var(--notion-orange-bg)' : guest.customerType === 'BOTH' ? 'var(--notion-purple-bg)' : 'var(--notion-blue-bg)',
+                                                    color: guest.customerType === 'RESTAURANT_CUSTOMER' ? 'var(--notion-orange)' : guest.customerType === 'BOTH' ? 'var(--notion-purple)' : 'var(--notion-blue)'
+                                                }}>
+                                                    {guest.customerType === 'RESTAURANT_CUSTOMER' ? 'Restaurant' : guest.customerType === 'BOTH' ? 'Both' : 'Hotel Guest'}
+                                                </span>
                                             </td>
                                             <td style={{ padding: '12px 16px' }}>
                                                 {guest.isBanned ? (
                                                     <span style={{
                                                         display: 'inline-flex', alignItems: 'center', gap: '4px',
                                                         padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500',
-                                                        backgroundColor: 'rgba(235, 87, 87, 0.1)', color: 'var(--notion-red)'
+                                                        backgroundColor: 'var(--notion-red-bg)', color: 'var(--notion-red)'
                                                     }}>
                                                         <Ban size={10} /> Banned
                                                     </span>
@@ -347,7 +449,7 @@ export default function GuestPage() {
                                                     <span style={{
                                                         display: 'inline-flex', alignItems: 'center', gap: '4px',
                                                         padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500',
-                                                        backgroundColor: 'rgba(235, 179, 13, 0.1)', color: 'var(--notion-yellow)'
+                                                        backgroundColor: 'var(--notion-yellow-bg)', color: 'var(--notion-yellow)'
                                                     }}>
                                                         <Star size={10} /> VIP
                                                     </span>
@@ -361,9 +463,15 @@ export default function GuestPage() {
                                                 )}
                                             </td>
                                             <td style={{ padding: '12px 16px' }}>
-                                                <div style={{ display: 'flex', gap: '6px' }}>
+                                                <div style={{ display: 'flex', gap: '6px' }} onClick={(e: any) => e.stopPropagation()}>
+                                                    <Button size="sm" variant="secondary" onClick={() => router.push(`/hotel/guests/${guest.id}`)}>
+                                                        <Eye size={14} style={{ marginRight: '4px' }} /> View
+                                                    </Button>
+                                                    <Button size="sm" variant="secondary" onClick={() => window.open(`/hotel/finance/customer-ledger?guestId=${encodeURIComponent(guest.id)}`, '_blank')}>
+                                                        <Receipt size={14} style={{ marginRight: '4px' }} /> Ledger
+                                                    </Button>
                                                     <Button size="sm" variant="secondary" onClick={() => setSelectedGuestId(guest.id)}>
-                                                        View Details
+                                                        <Edit3 size={14} style={{ marginRight: '4px' }} /> Edit
                                                     </Button>
                                                     <Button size="sm" variant="secondary" onClick={() => setDeleteTarget(guest)}
                                                         style={{ color: 'var(--notion-red)', padding: '4px 8px' }}>
@@ -417,21 +525,119 @@ export default function GuestPage() {
                 )}
 
                 {/* Create Modal */}
-                <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Add New Guest">
-                    <form onSubmit={handleCreateGuest} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                        <Input name="fullName" label="Full Name *" required placeholder="John Doe" icon={<Users size={14} />} />
+                <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title={isRestaurantOnly ? 'Add New Customer' : 'Add New Customer / Guest'} size="lg" onSubmit={() => { (document.getElementById('guest-create-form') as HTMLFormElement)?.requestSubmit(); }}>
+                    <form id="guest-create-form" onSubmit={handleCreateGuest} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                        {/* Basic fields (always shown) */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                            <Input name="phone" label="Phone" placeholder="+91 9876543210" icon={<Phone size={14} />} />
-                            <Input name="email" label="Email" type="email" placeholder="john@example.com" icon={<Mail size={14} />} />
+                            <Input name="firstName" label="First Name *" required placeholder="Chandra" icon={<Users size={14} />} />
+                            <Input name="lastName" label="Last Name *" required placeholder="Karki" icon={<Users size={14} />} />
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                            <NationalitySelect
-                                label="Nationality"
-                                value={createNationality}
-                                onChange={setCreateNationality}
-                            />
-                            <Input name="idNumber" label="ID Number" placeholder="XXXX-XXXX" />
+                            <Input name="uniqueId" label="Unique ID *" required placeholder="260607X3W9" icon={<Shield size={14} />} />
+                            <Input name="phone" label="Phone Number" placeholder="9851187548" icon={<Phone size={14} />} />
                         </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                            <Input name="email" label="Email Address" type="email" placeholder="john@example.com" icon={<Mail size={14} />} />
+                            <Input name="city" label="City" placeholder="kathmandu" icon={<MapPin size={14} />} />
+                        </div>
+                        <Input name="country" label="Country" placeholder="Nepal" icon={<Globe size={14} />} />
+
+                        {/* Full fields (hidden for restaurant-only basic mode) */}
+                        {!isRestaurantOnly && (
+                            <>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                                    <Input name="fatherName" label="Father Name" placeholder="Father Name" icon={<Users size={14} />} />
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>DOB</label>
+                                        <input
+                                            name="dob"
+                                            type="date"
+                                            style={{
+                                                width: '100%', padding: '8px', backgroundColor: 'var(--notion-bg)',
+                                                border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)',
+                                                fontSize: '14px', outline: 'none', color: 'var(--notion-text)'
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                                    <Input name="occupation" label="Occupation" placeholder="Occupation" />
+                                    <NationalitySelect
+                                        label="Nationality"
+                                        value={createNationality}
+                                        onChange={setCreateNationality}
+                                    />
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                                    <Input name="panNumber" label="PAN" placeholder="PAN" />
+                                    <Input name="openingDueAmount" label="Opening Due Amount" type="number" placeholder="0.00" icon={<DollarSign size={14} />} />
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>ID Type</label>
+                                        <select
+                                            name="idType"
+                                            defaultValue=""
+                                            style={{
+                                                width: '100%', padding: '8px', backgroundColor: 'var(--notion-bg)',
+                                                border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)',
+                                                fontSize: '14px', outline: 'none', color: 'var(--notion-text)'
+                                            }}
+                                        >
+                                            <option value="">Select ID Type</option>
+                                            <option value="Citizenship">Citizenship</option>
+                                            <option value="Passport">Passport</option>
+                                            <option value="Voter ID">Voter ID</option>
+                                            <option value="National ID">National ID</option>
+                                            <option value="Driver's License">Driver's License</option>
+                                            <option value="Aadhar Card">Aadhar Card</option>
+                                        </select>
+                                    </div>
+                                    <Input name="idNumber" label="ID Number" placeholder="ID number" />
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>Photo</label>
+                                        <input
+                                            name="photoUrl"
+                                            type="file"
+                                            accept="image/*"
+                                            style={{ width: '100%', fontSize: '13px', color: 'var(--notion-text)' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>Signature</label>
+                                        <input
+                                            name="signatureUrl"
+                                            type="file"
+                                            accept="image/*"
+                                            style={{ width: '100%', fontSize: '13px', color: 'var(--notion-text)' }}
+                                        />
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {/* Customer type selector for mixed properties */}
+                        {isMixed && (
+                            <div>
+                                <label style={{ display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>Customer Type</label>
+                                <select
+                                    name="customerType"
+                                    defaultValue="HOTEL_GUEST"
+                                    style={{
+                                        width: '100%', padding: '8px', backgroundColor: 'var(--notion-bg)',
+                                        border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)',
+                                        fontSize: '14px', outline: 'none', color: 'var(--notion-text)'
+                                    }}
+                                >
+                                    <option value="HOTEL_GUEST">Hotel Guest</option>
+                                    <option value="RESTAURANT_CUSTOMER">Restaurant Customer</option>
+                                    <option value="BOTH">Both</option>
+                                </select>
+                            </div>
+                        )}
+
                         <div>
                             <label style={{ display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>Notes</label>
                             <textarea
@@ -447,12 +653,14 @@ export default function GuestPage() {
                                     outline: 'none',
                                     color: 'var(--notion-text)'
                                 }}
-                                placeholder="Allergies, preferences..."
+                                placeholder="Allergies, preferences, special requests..."
                             ></textarea>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', paddingTop: 'var(--space-2)' }}>
                             <Button type="button" variant="secondary" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
-                            <Button type="submit" variant="primary">Create Guest</Button>
+                            <Button type="submit" variant="primary">
+                                <Save size={14} style={{ marginRight: '6px' }} /> {isRestaurantOnly ? 'Create Customer' : 'Create Customer'}
+                            </Button>
                         </div>
                     </form>
                 </Modal>
@@ -522,12 +730,23 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
             setFinancials(financialsData);
             if (detailsData) {
                 setEditForm({
+                    firstName: detailsData.firstName || '',
+                    lastName: detailsData.lastName || '',
                     fullName: detailsData.fullName || '',
+                    uniqueId: detailsData.uniqueId || '',
                     phone: detailsData.phone || '',
                     email: detailsData.email || '',
+                    fatherName: detailsData.fatherName || '',
+                    dob: detailsData.dob || '',
+                    occupation: detailsData.occupation || '',
                     nationality: detailsData.nationality || '',
+                    city: detailsData.city || '',
+                    country: detailsData.country || '',
                     idType: detailsData.idType || '',
                     idNumber: detailsData.idNumber || '',
+                    panNumber: detailsData.panNumber || '',
+                    openingDueAmount: detailsData.openingDueAmount || '',
+                    customerType: detailsData.customerType || 'HOTEL_GUEST',
                     address: detailsData.address || '',
                     notes: detailsData.notes || '',
                     isVip: detailsData.isVip || false,
@@ -588,8 +807,8 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                         <div style={{ flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--notion-text)', margin: 0 }}>{details.fullName}</h2>
-                                {details.isVip && <span style={{ fontSize: '11px', backgroundColor: 'rgba(235, 179, 13, 0.1)', color: 'var(--notion-yellow)', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}><Star size={10} /> VIP</span>}
-                                {details.isBanned && <span style={{ fontSize: '11px', backgroundColor: 'rgba(235, 87, 87, 0.1)', color: 'var(--notion-red)', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}><Ban size={10} /> Banned</span>}
+                                {details.isVip && <span style={{ fontSize: '11px', backgroundColor: 'var(--notion-yellow-bg)', color: 'var(--notion-yellow)', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}><Star size={10} /> VIP</span>}
+                                {details.isBanned && <span style={{ fontSize: '11px', backgroundColor: 'var(--notion-red-bg)', color: 'var(--notion-red)', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}><Ban size={10} /> Banned</span>}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '4px', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
                                 {details.phone && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Phone size={12} /> {details.phone}</span>}
@@ -616,7 +835,7 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                         display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px',
                                         fontSize: '12px', fontWeight: '500', backgroundColor: 'var(--notion-blue)',
                                         border: 'none', borderRadius: 'var(--radius-md)',
-                                        cursor: 'pointer', color: '#fff',
+                                        cursor: 'pointer', color: 'var(--foreground-inverse)',
                                     }}
                                 >
                                     <CreditCard size={12} /> Record Payment
@@ -628,8 +847,8 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                     {/* Active Booking Alert */}
                     {activeBooking && (
                         <div style={{
-                            padding: '10px 14px', backgroundColor: 'rgba(68,131,97,0.06)',
-                            border: '1px solid rgba(68,131,97,0.2)', borderRadius: 'var(--radius-md)',
+                            padding: '10px 14px', backgroundColor: 'var(--notion-green-bg)',
+                            border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)',
                             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                         }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -659,7 +878,7 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                 }}
                                 onClick={() => setActiveTab(tab)}
                             >
-                                {tab === 'history' ? 'Bookings & Orders' : tab === 'financials' ? 'Financial Ledger' : 'Profile'}
+                                {tab === 'history' ? 'Bookings & Orders' : tab === 'financials' ? 'Customer Folio' : 'Profile'}
                             </button>
                         ))}
                     </div>
@@ -673,8 +892,16 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                                             <div>
-                                                <label style={labelStyle}>Full Name *</label>
-                                                <Input value={editForm.fullName} onChange={(e: any) => setEditForm({ ...editForm, fullName: e.target.value })} />
+                                                <label style={labelStyle}>First Name</label>
+                                                <Input value={editForm.firstName} onChange={(e: any) => setEditForm({ ...editForm, firstName: e.target.value, fullName: `${e.target.value} ${editForm.lastName}`.trim() })} />
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>Last Name</label>
+                                                <Input value={editForm.lastName} onChange={(e: any) => setEditForm({ ...editForm, lastName: e.target.value, fullName: `${editForm.firstName} ${e.target.value}`.trim() })} />
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>Unique ID</label>
+                                                <Input value={editForm.uniqueId} onChange={(e: any) => setEditForm({ ...editForm, uniqueId: e.target.value })} />
                                             </div>
                                             <div>
                                                 <label style={labelStyle}>Phone</label>
@@ -685,16 +912,60 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                 <Input type="email" value={editForm.email} onChange={(e: any) => setEditForm({ ...editForm, email: e.target.value })} />
                                             </div>
                                             <div>
+                                                <label style={labelStyle}>Father Name</label>
+                                                <Input value={editForm.fatherName} onChange={(e: any) => setEditForm({ ...editForm, fatherName: e.target.value })} />
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>DOB</label>
+                                                <DateField value={editForm.dob} onChange={(v) => setEditForm({ ...editForm, dob: v })} />
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>Occupation</label>
+                                                <Input value={editForm.occupation} onChange={(e: any) => setEditForm({ ...editForm, occupation: e.target.value })} />
+                                            </div>
+                                            <div>
                                                 <label style={labelStyle}>Nationality</label>
                                                 <Input value={editForm.nationality} onChange={(e: any) => setEditForm({ ...editForm, nationality: e.target.value })} />
                                             </div>
                                             <div>
+                                                <label style={labelStyle}>City</label>
+                                                <Input value={editForm.city} onChange={(e: any) => setEditForm({ ...editForm, city: e.target.value })} />
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>Country</label>
+                                                <Input value={editForm.country} onChange={(e: any) => setEditForm({ ...editForm, country: e.target.value })} />
+                                            </div>
+                                            <div>
                                                 <label style={labelStyle}>ID Type</label>
-                                                <Input value={editForm.idType} onChange={(e: any) => setEditForm({ ...editForm, idType: e.target.value })} placeholder="Passport, Citizenship, etc." />
+                                                <select
+                                                    value={editForm.idType || ''}
+                                                    onChange={(e: any) => setEditForm({ ...editForm, idType: e.target.value })}
+                                                    style={{
+                                                        width: '100%', padding: '8px', backgroundColor: 'var(--notion-bg)',
+                                                        border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)',
+                                                        fontSize: '14px', outline: 'none', color: 'var(--notion-text)'
+                                                    }}
+                                                >
+                                                    <option value="">Select ID Type</option>
+                                                    <option value="Citizenship">Citizenship</option>
+                                                    <option value="Passport">Passport</option>
+                                                    <option value="Voter ID">Voter ID</option>
+                                                    <option value="National ID">National ID</option>
+                                                    <option value="Driver's License">Driver's License</option>
+                                                    <option value="Aadhar Card">Aadhar Card</option>
+                                                </select>
                                             </div>
                                             <div>
                                                 <label style={labelStyle}>ID Number</label>
                                                 <Input value={editForm.idNumber} onChange={(e: any) => setEditForm({ ...editForm, idNumber: e.target.value })} />
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>PAN Number</label>
+                                                <Input value={editForm.panNumber} onChange={(e: any) => setEditForm({ ...editForm, panNumber: e.target.value })} />
+                                            </div>
+                                            <div>
+                                                <label style={labelStyle}>Opening Due</label>
+                                                <Input value={editForm.openingDueAmount} onChange={(e: any) => setEditForm({ ...editForm, openingDueAmount: e.target.value })} />
                                             </div>
                                         </div>
                                         <div>
@@ -723,7 +994,7 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                         </div>
                                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                                             <Button variant="secondary" onClick={() => setIsEditing(false)}>Cancel</Button>
-                                            <Button onClick={handleSave} disabled={isSaving || !editForm.fullName?.trim()}>
+                                            <Button onClick={handleSave} disabled={isSaving || !editForm.firstName?.trim() || !editForm.lastName?.trim()}>
                                                 <Save size={14} style={{ marginRight: '4px' }} />
                                                 {isSaving ? 'Saving...' : 'Save Changes'}
                                             </Button>
@@ -733,37 +1004,81 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                     /* View Mode */
                                     <>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
-                                            {[
-                                                { label: 'Email', value: details.email, icon: <Mail size={14} /> },
-                                                { label: 'Phone', value: details.phone, icon: <Phone size={14} /> },
-                                                { label: 'Nationality', value: details.nationality, icon: <Globe size={14} /> },
-                                                { label: 'ID Details', value: details.idType ? `${details.idType}: ${details.idNumber}` : null, icon: <Shield size={14} /> },
-                                                { label: 'Address', value: details.address, icon: <MapPin size={14} /> },
-                                                { label: 'Member Since', value: details.createdAt ? format(new Date(details.createdAt), 'MMM d, yyyy') : null, icon: <Calendar size={14} /> },
-                                            ].map((field, i) => (
-                                                <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                    <label style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>{field.label}</label>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--notion-text)' }}>
-                                                        {field.icon && <span style={{ color: 'var(--notion-text-muted)' }}>{field.icon}</span>}
-                                                        {field.value || '—'}
-                                                    </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <label style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Email</label>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--notion-text)' }}>
+                                                    <span style={{ color: 'var(--notion-text-muted)' }}><Mail size={14} /></span>
+                                                    {details.email || '—'}
                                                 </div>
-                                            ))}
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <label style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Phone</label>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--notion-text)' }}>
+                                                    <span style={{ color: 'var(--notion-text-muted)' }}><Phone size={14} /></span>
+                                                    {details.phone || '—'}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <label style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Nationality</label>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--notion-text)' }}>
+                                                    <span style={{ color: 'var(--notion-text-muted)' }}><Globe size={14} /></span>
+                                                    {details.nationality || '—'}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <label style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>ID</label>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--notion-text)' }}>
+                                                    <span style={{ color: 'var(--notion-text-muted)' }}><Shield size={14} /></span>
+                                                    {details.idType ? `${details.idType}: ${details.idNumber}` : '—'}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <label style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>PAN</label>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--notion-text)' }}>
+                                                    <span style={{ color: 'var(--notion-text-muted)' }}><Shield size={14} /></span>
+                                                    {details.panNumber || '—'}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <label style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Unique ID</label>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--notion-text)' }}>
+                                                    <span style={{ color: 'var(--notion-text-muted)' }}><Shield size={14} /></span>
+                                                    {details.uniqueId || '—'}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <label style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Address</label>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--notion-text)' }}>
+                                                    <span style={{ color: 'var(--notion-text-muted)' }}><MapPin size={14} /></span>
+                                                    {details.address || '—'}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <label style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Member Since</label>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--notion-text)' }}>
+                                                    <span style={{ color: 'var(--notion-text-muted)' }}><Calendar size={14} /></span>
+                                                    {details.createdAt ? format(new Date(details.createdAt), 'MMM d, yyyy') : '—'}
+                                                </div>
+                                            </div>
                                         </div>
 
                                         {/* Stats summary */}
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
                                             <div style={{ padding: '12px', backgroundColor: 'var(--notion-bg-tertiary)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
                                                 <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--notion-text)' }}>{details.bookings?.length || 0}</div>
-                                                <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Total Stays</div>
+                                                <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Stays</div>
                                             </div>
                                             <div style={{ padding: '12px', backgroundColor: 'var(--notion-bg-tertiary)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                                                <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--notion-text)' }}>₹{(financials?.stats.totalInvoiced || 0).toLocaleString()}</div>
+                                                <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--notion-text)' }}>{details.orders?.length || 0}</div>
+                                                <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Orders</div>
+                                            </div>
+                                            <div style={{ padding: '12px', backgroundColor: 'var(--notion-bg-tertiary)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+                                                <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--notion-text)' }}>Rs {(financials?.stats.totalInvoiced || 0).toLocaleString()}</div>
                                                 <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Total Spend</div>
                                             </div>
                                             <div style={{ padding: '12px', backgroundColor: 'var(--notion-bg-tertiary)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
                                                 <div style={{ fontSize: '20px', fontWeight: '700', color: (financials?.stats.balance || 0) > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>
-                                                    ₹{(financials?.stats.balance || 0).toLocaleString()}
+                                                    Rs {(financials?.stats.balance || 0).toLocaleString()}
                                                 </div>
                                                 <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Balance</div>
                                             </div>
@@ -795,9 +1110,9 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                             const isActive = booking.status === 'CHECKED_IN' || booking.status === 'CONFIRMED';
                                             return (
                                                 <div key={booking.id} style={{
-                                                    border: `1px solid ${isActive ? 'rgba(68,131,97,0.3)' : 'var(--notion-border)'}`,
+                                                    border: `1px solid ${isActive ? 'var(--notion-border)' : 'var(--notion-border)'}`,
                                                     borderRadius: 'var(--radius-md)', padding: '12px',
-                                                    backgroundColor: isActive ? 'rgba(68,131,97,0.04)' : 'transparent',
+                                                    backgroundColor: isActive ? 'var(--notion-green-bg)' : 'transparent',
                                                 }}>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -832,7 +1147,7 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                     </div>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
                                                         <span>{format(new Date(booking.checkIn), 'MMM d, yyyy')} – {format(new Date(booking.checkOut), 'MMM d')}</span>
-                                                        <span style={{ fontWeight: '600' }}>₹{Number(booking.totalAmount || 0).toLocaleString()}</span>
+                                                        <span style={{ fontWeight: '600' }}>Rs {Number(booking.totalAmount || 0).toLocaleString()}</span>
                                                     </div>
                                                     {/* Orders under this booking */}
                                                     {booking.orders && booking.orders.length > 0 && (
@@ -847,7 +1162,7 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                                     color: 'var(--notion-text-secondary)',
                                                                 }}>
                                                                     <span>#{order.orderNumber} — {order.items?.length || 0} items</span>
-                                                                    <span>₹{Number(order.totalAmount || 0).toLocaleString()}</span>
+                                                                    <span>Rs {Number(order.totalAmount || 0).toLocaleString()}</span>
                                                                 </div>
                                                             ))}
                                                             {booking.orders.length > 3 && (
@@ -865,6 +1180,67 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                             </div>
                         )}
 
+                        {activeTab === 'history' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+                                <h4 style={{ fontSize: '14px', fontWeight: '500', color: 'var(--notion-text)', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                                    <Calendar size={16} /> Direct Orders ({details.orders?.length || 0})
+                                </h4>
+                                {(!details.orders || details.orders.length === 0) ? (
+                                    <p style={{ fontSize: '14px', color: 'var(--notion-text-secondary)', padding: '16px', textAlign: 'center', border: '1px dashed var(--notion-border)', borderRadius: 'var(--radius-lg)' }}>
+                                        No direct orders found.
+                                    </p>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                        {details.orders.map((order: any) => (
+                                            <div key={order.id} style={{
+                                                border: '1px solid var(--notion-border)',
+                                                borderRadius: 'var(--radius-md)', padding: '12px',
+                                                backgroundColor: 'transparent',
+                                            }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span style={{ fontSize: '14px', fontWeight: '500', color: 'var(--notion-text)' }}>
+                                                            #{order.orderNumber} — {order.orderType?.replace('_', ' ')}
+                                                        </span>
+                                                    </div>
+                                                    <span style={{
+                                                        fontSize: '12px', padding: '2px 8px', borderRadius: '99px', fontWeight: '500',
+                                                        backgroundColor: 'var(--notion-bg-secondary)',
+                                                        color: 'var(--notion-text-secondary)',
+                                                    }}>
+                                                        {order.status}
+                                                    </span>
+                                                </div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
+                                                    <span>{order.createdAt ? format(new Date(order.createdAt), 'MMM d, yyyy h:mm a') : ''}</span>
+                                                    <span style={{ fontWeight: '600' }}>Rs {Number(order.totalAmount || 0).toLocaleString()}</span>
+                                                </div>
+                                                {order.items && order.items.length > 0 && (
+                                                    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--notion-divider)' }}>
+                                                        {order.items.slice(0, 3).map((item: any) => (
+                                                            <div key={item.id} style={{
+                                                                display: 'flex', justifyContent: 'space-between',
+                                                                fontSize: '12px', padding: '3px 0',
+                                                                color: 'var(--notion-text-secondary)',
+                                                            }}>
+                                                                <span>{item.quantity}× {item.menuItem?.name || 'Item'}</span>
+                                                                <span>Rs {Number(item.quantity * (item.price || 0)).toLocaleString()}</span>
+                                                            </div>
+                                                        ))}
+                                                        {order.items.length > 3 && (
+                                                            <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', marginTop: '2px' }}>
+                                                                +{order.items.length - 3} more items
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {activeTab === 'financials' && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', animation: 'fadeIn 0.2s ease-out' }}>
                                 {/* Financial Stats */}
@@ -872,16 +1248,16 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-4)' }}>
                                         <div style={{ padding: '16px', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)', textAlign: 'center' }}>
                                             <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Total Invoiced</div>
-                                            <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--notion-text)' }}>₹{financials.stats.totalInvoiced.toLocaleString()}</div>
+                                            <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--notion-text)' }}>Rs {financials.stats.totalInvoiced.toLocaleString()}</div>
                                         </div>
                                         <div style={{ padding: '16px', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)', textAlign: 'center' }}>
                                             <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Total Paid</div>
-                                            <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--notion-green)' }}>₹{financials.stats.totalPaid.toLocaleString()}</div>
+                                            <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--notion-green)' }}>Rs {financials.stats.totalPaid.toLocaleString()}</div>
                                         </div>
                                         <div style={{ padding: '16px', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)', textAlign: 'center' }}>
                                             <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Balance Due</div>
                                             <div style={{ fontSize: '18px', fontWeight: '700', color: financials.stats.balance > 0 ? 'var(--notion-red)' : 'var(--notion-text)' }}>
-                                                ₹{financials.stats.balance.toLocaleString()}
+                                                Rs {financials.stats.balance.toLocaleString()}
                                             </div>
                                         </div>
                                     </div>
@@ -894,12 +1270,12 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                         style={{
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                                             padding: '10px 16px', fontSize: '13px', fontWeight: '500',
-                                            backgroundColor: 'var(--notion-blue)', color: '#fff',
+                                            backgroundColor: 'var(--notion-blue)', color: 'var(--foreground-inverse)',
                                             border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer',
                                             width: '100%',
                                         }}
                                     >
-                                        <CreditCard size={14} /> Record Payment — ₹{financials.stats.balance.toLocaleString()} due
+                                        <CreditCard size={14} /> Record Payment — Rs {financials.stats.balance.toLocaleString()} due
                                     </button>
                                 )}
 
@@ -951,9 +1327,9 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                             <th style={{ padding: '10px 12px' }}>Type</th>
                                                             <th style={{ padding: '10px 12px' }}>Ref #</th>
                                                             <th style={{ padding: '10px 12px' }}>Description</th>
-                                                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Debit (₹)</th>
-                                                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Credit (₹)</th>
-                                                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Balance (₹)</th>
+                                                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Debit (Rs )</th>
+                                                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Credit (Rs )</th>
+                                                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Balance (Rs )</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -972,13 +1348,13 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                                 <td style={{ padding: '10px 12px', fontWeight: '500', color: 'var(--notion-text)' }}>{row.ref}</td>
                                                                 <td style={{ padding: '10px 12px', color: 'var(--notion-text-secondary)' }}>{row.description}</td>
                                                                 <td style={{ padding: '10px 12px', textAlign: 'right', color: row.debit > 0 ? 'var(--notion-red)' : 'var(--notion-text-secondary)' }}>
-                                                                    {row.debit > 0 ? `₹${row.debit.toLocaleString()}` : '—'}
+                                                                    {row.debit > 0 ? `Rs ${row.debit.toLocaleString()}` : '—'}
                                                                 </td>
                                                                 <td style={{ padding: '10px 12px', textAlign: 'right', color: row.credit > 0 ? 'var(--notion-green)' : 'var(--notion-text-secondary)' }}>
-                                                                    {row.credit > 0 ? `₹${row.credit.toLocaleString()}` : '—'}
+                                                                    {row.credit > 0 ? `Rs ${row.credit.toLocaleString()}` : '—'}
                                                                 </td>
                                                                 <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '600', color: row.balance > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>
-                                                                    ₹{row.balance.toLocaleString()}
+                                                                    Rs {row.balance.toLocaleString()}
                                                                 </td>
                                                             </tr>
                                                         ))}
@@ -986,9 +1362,9 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                     <tfoot style={{ backgroundColor: 'var(--notion-bg-secondary)', borderTop: '2px solid var(--notion-border)' }}>
                                                         <tr>
                                                             <td colSpan={4} style={{ padding: '10px 12px', fontWeight: '600', fontSize: '12px', textTransform: 'uppercase', color: 'var(--notion-text-secondary)' }}>Totals</td>
-                                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: 'var(--notion-red)' }}>₹{(financials?.stats.totalInvoiced || 0).toLocaleString()}</td>
-                                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: 'var(--notion-green)' }}>₹{(financials?.stats.totalPaid || 0).toLocaleString()}</td>
-                                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: (financials?.stats.balance || 0) > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>₹{(financials?.stats.balance || 0).toLocaleString()}</td>
+                                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: 'var(--notion-red)' }}>Rs {(financials?.stats.totalInvoiced || 0).toLocaleString()}</td>
+                                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: 'var(--notion-green)' }}>Rs {(financials?.stats.totalPaid || 0).toLocaleString()}</td>
+                                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: (financials?.stats.balance || 0) > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>Rs {(financials?.stats.balance || 0).toLocaleString()}</td>
                                                         </tr>
                                                     </tfoot>
                                                 </table>

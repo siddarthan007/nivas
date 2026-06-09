@@ -27,7 +27,7 @@ export const usersController = new Elysia({ prefix: '/users' })
             throw new ValidationError('Hotel ID is required');
         }
 
-        const safeUser = await UsersService.updateRole(user.hotelId, params.id, body.roleId);
+        const safeUser = await UsersService.updateRole(user.hotelId, user.id, params.id, body.roleId);
         return createResponse(safeUser, 'Role assigned successfully');
     }, {
         isSignedIn: true,
@@ -45,7 +45,7 @@ export const usersController = new Elysia({ prefix: '/users' })
             throw new ValidationError('Hotel ID is required');
         }
 
-        await UsersService.updateStatus(user.hotelId, params.id, body.isActive);
+        await UsersService.updateStatus(user.hotelId, user.id, params.id, body.isActive);
         return createResponse(null, `User ${body.isActive ? 'activated' : 'deactivated'}`);
     }, {
         isSignedIn: true,
@@ -63,7 +63,7 @@ export const usersController = new Elysia({ prefix: '/users' })
             throw new ValidationError('Hotel ID is required');
         }
 
-        await UsersService.resetPassword(user.hotelId, params.id, body.password);
+        await UsersService.resetPassword(user.hotelId, user.id, params.id, body.password);
         return createResponse(null, 'User password reset successfully');
     }, {
         isSignedIn: true,

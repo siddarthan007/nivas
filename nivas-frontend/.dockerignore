@@ -1,0 +1,14 @@
+node_modules
+.env
+.env.*
+!.env.example
+dist
+build
+out
+*.log
+.git
+.gitignore
+temp_check
+design-system
+new.md
+README.md

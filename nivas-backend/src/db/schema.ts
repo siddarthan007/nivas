@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, timestamp, uuid, integer, pgEnum, json, date, decimal, foreignKey, index } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, boolean, timestamp, uuid, integer, pgEnum, json, date, decimal, foreignKey, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const userTypeEnum = pgEnum('user_type', [
@@ -30,7 +30,8 @@ export const paymentMethodEnum = pgEnum('payment_method', [
     'ESEWA',
     'KHALTI',
     'CONNECT_IPS',
-    'UPI',
+    'FONEPAY',
+    'UPI', // legacy — retained for existing rows; not offered in the UI
     'BANK_TRANSFER',
     'OTHER'
 ]);
@@ -42,6 +43,104 @@ export const bookingSourceEnum = pgEnum('booking_source', [
     'OTA',
     'TRAVEL_AGENT',
     'CORPORATE'
+]);
+
+export const couponDiscountTypeEnum = pgEnum('coupon_discount_type', [
+    'PERCENT',
+    'FIXED'
+]);
+
+export const couponScopeEnum = pgEnum('coupon_scope', [
+    'ALL',
+    'ROOM',
+    'FNB'
+]);
+
+export const marketingChannelEnum = pgEnum('marketing_channel', [
+    'SMS',
+    'EMAIL'
+]);
+
+export const cbmsStatusEnum = pgEnum('cbms_status', ['PENDING', 'SENT', 'EXISTS', 'FAILED']);
+
+export const reviewSentimentEnum = pgEnum('review_sentiment', ['POSITIVE', 'NEUTRAL', 'NEGATIVE']);
+
+// Guest reviews — internal (guest portal) + imported (Google/OTA). Sentiment +
+// complaint tags are computed cheaply (lexicon, no LLM); replies can be AI-drafted.
+export const reviews = pgTable('reviews', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    bookingId: uuid('booking_id'),
+    guestName: text('guest_name'),
+    rating: integer('rating'),                 // 1-5
+    comment: text('comment'),
+    source: text('source').default('INTERNAL'), // INTERNAL | GOOGLE | BOOKING_COM | TRIPADVISOR | OTHER
+    sentiment: reviewSentimentEnum('sentiment').default('NEUTRAL'),
+    sentimentScore: decimal('sentiment_score', { precision: 4, scale: 2 }),
+    tags: json('tags').$type<string[]>().default([]),
+    replyText: text('reply_text'),
+    replyDraft: text('reply_draft'),
+    repliedAt: timestamp('replied_at'),
+    externalId: text('external_id'),           // dedupe imported reviews
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => [
+    index('reviews_hotel_idx').on(table.hotelId),
+    uniqueIndex('reviews_external_unique').on(table.hotelId, table.source, table.externalId),
+]);
+
+// IRD CBMS (Central Billing Monitoring System) push log — one row per invoice /
+// credit note, unique on (hotel, docType, refId) so a doc is never pushed twice.
+export const cbmsLogs = pgTable('cbms_logs', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    docType: text('doc_type').notNull(),   // 'BILL' | 'RETURN'
+    refId: text('ref_id').notNull(),       // invoiceId | creditNoteId
+    invoiceNumber: text('invoice_number'),
+    status: cbmsStatusEnum('status').default('PENDING').notNull(),
+    responseCode: integer('response_code'),
+    attempts: integer('attempts').default(0).notNull(),
+    lastError: text('last_error'),
+    payload: json('payload'),
+    sentAt: timestamp('sent_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+    uniqueIndex('cbms_doc_unique').on(table.hotelId, table.docType, table.refId),
+    index('cbms_status_idx').on(table.status),
+]);
+
+// API keys for the public booking engine / partner integrations. The raw key
+// is shown once; only a SHA-256 hash is stored.
+export const apiKeys = pgTable('api_keys', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    name: text('name').notNull(),
+    keyPrefix: text('key_prefix').notNull(),     // first chars, shown in UI
+    keyHash: text('key_hash').notNull().unique(),
+    scopes: json('scopes').$type<string[]>().default(['read']), // 'read' | 'book'
+    isActive: boolean('is_active').default(true),
+    lastUsedAt: timestamp('last_used_at'),
+    createdById: uuid('created_by_id').references(() => users.id),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => [
+    index('api_keys_hotel_idx').on(table.hotelId),
+    index('api_keys_hash_idx').on(table.keyHash),
+]);
+
+// Catalog of extra/incidental charges (damages, EV charging, parking, laundry…)
+// that staff add to a guest folio or a POS bill.
+export const amenities = pgTable('amenities', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    name: text('name').notNull(),
+    category: text('category').default('OTHER'), // PARKING | EV_CHARGING | DAMAGE | LAUNDRY | SPA | OTHER
+    price: decimal('price', { precision: 10, scale: 2 }).notNull().default('0'),
+    taxable: boolean('taxable').default(true),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+    index('amenities_hotel_idx').on(table.hotelId),
 ]);
 
 export const outletTypeEnum = pgEnum('outlet_type', [
@@ -82,6 +181,8 @@ export const hotels = pgTable('hotels', {
     phone: text('phone'),
     email: text('email'),
     website: text('website'),
+    latitude: text('latitude'),
+    longitude: text('longitude'),
 
     panNumber: text('pan_number'),
     vatNumber: text('vat_number'),
@@ -110,24 +211,65 @@ export const hotels = pgTable('hotels', {
     licenseGraceEndsAt: timestamp('license_grace_ends_at'),
     licensePausedAt: timestamp('license_paused_at'),
 
-    cbmsUsername: text('cbms_username'),
-    cbmsPassword: text('cbms_password'),
-    isCbmsEnabled: boolean('is_cbms_enabled').default(false),
     planTier: text('plan_tier').default('STANDARD'),
+
+    // Admin-configurable guest portal content (WiFi, welcome message, contacts, etc.)
+    guestPortalConfig: json('guest_portal_config').default({}),
+    // Enabled payment methods + gateway (Fonepay) config for POS/checkout.
+    paymentConfig: json('payment_config').default({}),
+    // Bill/receipt template options (header note, toggles, receipt footer, paper width).
+    invoiceConfig: json('invoice_config').default({}),
+    // Realtime push (Pusher) creds + PMS event-notification toggles.
+    notificationConfig: json('notification_config').default({}),
+    // IRD CBMS integration: { enabled, username, password, sellerPan?, isRealtime }.
+    cbmsConfig: json('cbms_config').default({}),
+    // AI engine: { enabled, apiKey (Gemini), model } — per-hotel BYO key.
+    aiConfig: json('ai_config').default({}),
 
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow()
 });
 
+export const saasPayments = pgTable('saas_payments', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
+    paymentMethod: paymentMethodEnum('payment_method').default('CASH'),
+    reference: text('reference'), // Manual receipt / bank ref
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow()
+}, (table) => [
+    index('saas_payment_hotel_idx').on(table.hotelId)
+]);
+
+export const PERMISSIONS = [
+    'MANAGE_USERS',
+    'MANAGE_ROLES',
+    'MANAGE_HOTEL_SETTINGS',
+    'MANAGE_BOOKINGS',
+    'MANAGE_ORDERS',
+    'MANAGE_FINANCE',
+    'MANAGE_INVENTORY',
+    'MANAGE_MAINTENANCE',
+    'VIEW_REPORTS',
+    'FRONTDESK_OPERATIONS',
+    'KITCHEN_OPERATIONS',
+    'HOUSEKEEPING_OPERATIONS'
+] as const;
+
+export type Permission = typeof PERMISSIONS[number];
+
 export const roles = pgTable('roles', {
     id: serial('id').primaryKey(),
     hotelId: integer('hotel_id').references(() => hotels.id),
     name: text('name').notNull(),
+    level: integer('level').notNull(), // lower = higher authority (Owner=0, Manager=1...)
     permissions: json('permissions').$type<string[]>().default([]),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow()
 }, (table) => [
     index('role_hotel_idx').on(table.hotelId),
+    index('role_level_idx').on(table.level),
 ]);
 
 export const backgroundJobs = pgTable('background_jobs', {
@@ -151,7 +293,7 @@ export const backgroundJobs = pgTable('background_jobs', {
     index('bg_job_status_scheduled_idx').on(table.status, table.scheduledAt),
 ]);
 
-export const users = pgTable('users', {
+export const users: any = pgTable('users', {
     id: uuid('id').defaultRandom().primaryKey(),
     hotelId: integer('hotel_id').references(() => hotels.id),
 
@@ -161,9 +303,12 @@ export const users = pgTable('users', {
 
     passwordHash: text('password_hash'),
     pin: text('pin'),
+    // Bumped to invalidate every existing JWT for this user (log out all devices).
+    tokenVersion: integer('token_version').default(0).notNull(),
 
     userType: userTypeEnum('user_type').default('GUEST'),
     roleId: integer('role_id').references(() => roles.id),
+    createdBy: uuid('created_by').references(() => (users as any).id),
 
     isActive: boolean('is_active').default(true),
 
@@ -209,6 +354,7 @@ export const rooms = pgTable('rooms', {
     id: serial('id').primaryKey(),
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
     floorId: integer('floor_id').references(() => floors.id),
+    floorNumber: integer('floor_number'),
 
     number: integer('number').notNull(),
     name: text('name'),
@@ -220,7 +366,9 @@ export const rooms = pgTable('rooms', {
     qrToken: text('qr_token').unique(),
 
     layoutProps: json('layout_props'),
+    imageUrl: text('image_url'),
 
+    capacity: integer('capacity').default(2),
     dndStatus: boolean('dnd_status').default(false),
     amenities: json('amenities').$type<string[]>().default([]),
 
@@ -254,6 +402,8 @@ export const bookings = pgTable('bookings', {
     source: bookingSourceEnum('source').default('WALK_IN'),
 
     guestId: uuid('guest_id').references(() => guests.id),
+    // Shared by all rooms in a group / block booking (one logical reservation).
+    groupRef: text('group_ref'),
     corporateAccountId: integer('corporate_account_id').references(() => corporateAccounts.id, { onDelete: 'set null' }),
     travelAgentId: integer('travel_agent_id').references(() => travelAgents.id, { onDelete: 'set null' }),
 
@@ -286,7 +436,18 @@ export const orders = pgTable('orders', {
     status: orderStatusEnum('status').default('PENDING'),
     totalAmount: decimal('total_amount', { precision: 10, scale: 2 }).notNull(),
 
+    subTotal: decimal('sub_total', { precision: 10, scale: 2 }),
+    vatAmount: decimal('vat_amount', { precision: 10, scale: 2 }),
+    serviceChargeAmount: decimal('service_charge_amount', { precision: 10, scale: 2 }),
+    discountAmount: decimal('discount_amount', { precision: 10, scale: 2 }).default('0'),
+    couponId: integer('coupon_id').references(() => coupons.id),
+    vatRate: decimal('vat_rate', { precision: 5, scale: 4 }),
+    serviceChargeRate: decimal('service_charge_rate', { precision: 5, scale: 4 }),
+    applyVat: boolean('apply_vat').default(false),
+    applyServiceCharge: boolean('apply_service_charge').default(false),
+
     orderType: text('order_type').default('ROOM_SERVICE'),
+    paymentStatus: text('payment_status').default('UNPAID'), // UNPAID | PAID | PARTIAL | ON_FOLIO
 
     createdById: uuid('created_by_id').references(() => users.id),
     assignedToId: uuid('assigned_to_id').references(() => users.id),
@@ -322,16 +483,50 @@ export const orderItems = pgTable('order_items', {
 export const inventoryItems = pgTable('inventory_items', {
     id: serial('id').primaryKey(),
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    sku: text('sku').notNull().default(''),
+    barcode: text('barcode'),
     name: text('name').notNull(),
+    description: text('description'),
     category: text('category'),
     quantity: integer('quantity').default(0),
+    unitCost: decimal('unit_cost', { precision: 10, scale: 2 }).default('0'),
     unit: text('unit').default('pcs'),
     lowStockThreshold: integer('low_stock_threshold').default(10),
+    status: text('status').default('ACTIVE'), // ACTIVE, DISCONTINUED
+    warehouseId: integer('warehouse_id').references(() => warehouses.id),
+    supplierId: integer('supplier_id').references(() => vendors.id),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 }, (table) => [
     index('inventory_item_hotel_idx').on(table.hotelId),
     index('inventory_item_name_idx').on(table.name),
+    index('inventory_item_sku_idx').on(table.sku),
+    index('inventory_item_barcode_idx').on(table.barcode),
+    index('inventory_item_status_idx').on(table.status),
+    index('inventory_item_warehouse_idx').on(table.warehouseId),
+]);
+
+export const stockMovements = pgTable('stock_movements', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    itemId: integer('item_id').references(() => inventoryItems.id).notNull(),
+    userId: uuid('user_id').references(() => users.id),
+
+    type: text('type').notNull(), // IN, OUT, ADJUSTMENT, RETURN, PURCHASE
+    quantity: integer('quantity').notNull(), // positive for IN, negative for OUT
+    previousStock: integer('previous_stock').default(0),
+    newStock: integer('new_stock').default(0),
+
+    reason: text('reason'),
+    reference: text('reference'), // PO number, order number, etc.
+    notes: text('notes'),
+
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => [
+    index('stock_mvmt_hotel_idx').on(table.hotelId),
+    index('stock_mvmt_item_idx').on(table.itemId),
+    index('stock_mvmt_type_idx').on(table.type),
+    index('stock_mvmt_created_idx').on(table.createdAt),
 ]);
 
 export const inventoryRequests = pgTable('inventory_requests', {
@@ -526,11 +721,26 @@ export const purchaseRequests = pgTable('purchase_requests', {
     updatedAt: timestamp('updated_at').defaultNow()
 });
 
+// Payments made TO a supplier/vendor (settles Accounts Payable from received POs).
+export const vendorPayments = pgTable('vendor_payments', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    vendorId: integer('vendor_id').references(() => vendors.id).notNull(),
+    amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
+    paymentMethod: text('payment_method').default('CASH'),
+    reference: text('reference'),
+    notes: text('notes'),
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id),
+    createdById: uuid('created_by_id').references(() => users.id),
+    createdAt: timestamp('created_at').defaultNow(),
+}, (table) => [index('vendor_payment_hotel_idx').on(table.hotelId), index('vendor_payment_vendor_idx').on(table.vendorId)]);
+
 export const purchaseOrders = pgTable('purchase_orders', {
     id: serial('id').primaryKey(),
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
     poNumber: text('po_number').notNull(),
     supplierName: text('supplier_name'),
+    vendorId: integer('vendor_id').references(() => vendors.id),
     status: text('status').default('DRAFT'),
     totalCost: decimal('total_cost', { precision: 10, scale: 2 }).default('0'),
     notes: text('notes'),
@@ -542,11 +752,50 @@ export const purchaseOrders = pgTable('purchase_orders', {
     index('po_hotel_idx').on(table.hotelId),
     index('po_number_idx').on(table.poNumber),
     index('po_status_idx').on(table.status),
+    index('po_vendor_idx').on(table.vendorId),
+]);
+
+export const coupons = pgTable('coupons', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    code: text('code').notNull(),
+    description: text('description'),
+    discountType: couponDiscountTypeEnum('discount_type').notNull().default('PERCENT'),
+    discountValue: decimal('discount_value', { precision: 10, scale: 2 }).notNull(),
+    // Cap on the discount when type is PERCENT (0 = no cap).
+    maxDiscount: decimal('max_discount', { precision: 10, scale: 2 }).default('0'),
+    minOrderAmount: decimal('min_order_amount', { precision: 10, scale: 2 }).default('0'),
+    scope: couponScopeEnum('scope').notNull().default('ALL'),
+    usageLimit: integer('usage_limit').default(0), // 0 = unlimited
+    usedCount: integer('used_count').default(0),
+    validFrom: timestamp('valid_from'),
+    validUntil: timestamp('valid_until'),
+    isActive: boolean('is_active').default(true),
+    createdById: uuid('created_by_id').references(() => users.id),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+    uniqueIndex('coupons_hotel_code_idx').on(table.hotelId, table.code),
+    index('coupons_hotel_idx').on(table.hotelId),
+]);
+
+export const marketingTemplates = pgTable('marketing_templates', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    name: text('name').notNull(),
+    channel: marketingChannelEnum('channel').notNull().default('SMS'),
+    subject: text('subject'), // email only
+    body: text('body').notNull(), // supports {{name}} placeholder
+    createdById: uuid('created_by_id').references(() => users.id),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+    index('marketing_tpl_hotel_idx').on(table.hotelId),
 ]);
 
 export const purchaseOrderItems = pgTable('purchase_order_items', {
     id: serial('id').primaryKey(),
-    purchaseOrderId: integer('purchase_order_id').references(() => purchaseOrders.id).notNull(),
+    purchaseOrderId: integer('purchase_order_id').references(() => purchaseOrders.id, { onDelete: 'cascade' }).notNull(),
     itemId: integer('item_id').references(() => inventoryItems.id).notNull(),
     quantityOrdered: integer('quantity_ordered').notNull(),
     quantityReceived: integer('quantity_received').default(0),
@@ -578,6 +827,7 @@ export const folioCharges = pgTable('folio_charges', {
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
     bookingId: uuid('booking_id').references(() => bookings.id).notNull(),
     orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
+    invoiceId: uuid('invoice_id').references(() => invoices.id, { onDelete: 'set null' }),
 
     date: date('date').notNull(),
     description: text('description').notNull(),
@@ -633,7 +883,6 @@ export const invoices = pgTable('invoices', {
     printCount: integer('print_count').default(0),
     voidReason: text('void_reason'),
     voidedAt: timestamp('voided_at'),
-    syncedToCbms: boolean('synced_to_cbms').default(false),
 
     createdById: uuid('created_by_id').references(() => users.id),
     createdAt: timestamp('created_at').defaultNow()
@@ -642,7 +891,6 @@ export const invoices = pgTable('invoices', {
     index('invoice_number_idx').on(table.invoiceNumber),
     index('invoice_fiscal_year_idx').on(table.fiscalYear),
     index('invoice_booking_idx').on(table.bookingId),
-    index('invoice_cbms_sync_idx').on(table.syncedToCbms, table.hotelId),
 ]);
 
 export const notifications = pgTable('notifications', {
@@ -676,9 +924,6 @@ export const creditNotes = pgTable('credit_notes', {
 
     reason: text('reason').notNull(),
     amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
-
-    syncedToCbms: boolean('synced_to_cbms').default(false),
-    cbmsResponse: json('cbms_response'),
 
     createdById: uuid('created_by_id').references(() => users.id),
     createdAt: timestamp('created_at').defaultNow()
@@ -887,11 +1132,26 @@ export const orderItemsRelations = relations(orderItems, ({ one }) => ({
     })
 }));
 
-export const inventoryItemsRelations = relations(inventoryItems, ({ one }) => ({
+export const inventoryItemsRelations = relations(inventoryItems, ({ one, many }) => ({
     hotel: one(hotels, {
         fields: [inventoryItems.hotelId],
         references: [hotels.id]
-    })
+    }),
+    warehouse: one(warehouses, {
+        fields: [inventoryItems.warehouseId],
+        references: [warehouses.id]
+    }),
+    supplier: one(vendors, {
+        fields: [inventoryItems.supplierId],
+        references: [vendors.id]
+    }),
+    movements: many(stockMovements),
+}));
+
+export const stockMovementsRelations = relations(stockMovements, ({ one }) => ({
+    hotel: one(hotels, { fields: [stockMovements.hotelId], references: [hotels.id] }),
+    item: one(inventoryItems, { fields: [stockMovements.itemId], references: [inventoryItems.id] }),
+    user: one(users, { fields: [stockMovements.userId], references: [users.id] }),
 }));
 
 export const inventoryRequestsRelations = relations(inventoryRequests, ({ one }) => ({
@@ -983,6 +1243,7 @@ export const guestProfilesRelations = relations(guestProfiles, ({ one }) => ({
 export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many }) => ({
     hotel: one(hotels, { fields: [purchaseOrders.hotelId], references: [hotels.id] }),
     items: many(purchaseOrderItems),
+    vendor: one(vendors, { fields: [purchaseOrders.vendorId], references: [vendors.id] }),
     createdBy: one(users, { fields: [purchaseOrders.createdById], references: [users.id] })
 }));
 
@@ -1189,6 +1450,8 @@ export const banquetBookings = pgTable('banquet_bookings', {
     id: uuid('id').defaultRandom().primaryKey(),
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
     banquetId: integer('banquet_id').references(() => banquets.id).notNull(),
+    guestId: uuid('guest_id').references(() => guests.id, { onDelete: 'set null' }),
+    invoiceId: uuid('invoice_id').references(() => invoices.id, { onDelete: 'set null' }),
 
     eventName: text('event_name').notNull(),
     eventType: text('event_type'),
@@ -1198,6 +1461,7 @@ export const banquetBookings = pgTable('banquet_bookings', {
     organizerEmail: text('organizer_email'),
 
     eventDate: date('event_date').notNull(),
+    endDate: date('end_date'),
     startTime: text('start_time').notNull(),
     endTime: text('end_time').notNull(),
 
@@ -1250,6 +1514,8 @@ export const banquetsRelations = relations(banquets, ({ one, many }) => ({
 export const banquetBookingsRelations = relations(banquetBookings, ({ one }) => ({
     hotel: one(hotels, { fields: [banquetBookings.hotelId], references: [hotels.id] }),
     banquet: one(banquets, { fields: [banquetBookings.banquetId], references: [banquets.id] }),
+    guest: one(guests, { fields: [banquetBookings.guestId], references: [guests.id] }),
+    invoice: one(invoices, { fields: [banquetBookings.invoiceId], references: [invoices.id] }),
     createdBy: one(users, { fields: [banquetBookings.createdById], references: [users.id] })
 }));
 
@@ -1274,12 +1540,22 @@ export const tenantFeatures = pgTable('tenant_features', {
     enableWhatsappNotifications: boolean('enable_whatsapp_notifications').default(false),
     enableEmailNotifications: boolean('enable_email_notifications').default(true),
 
+    // Module Standalone Flags
+    enableHotel: boolean('enable_hotel').default(true),
+    enableFoodAndBeverage: boolean('enable_food_and_beverage').default(true),
+
     // Advanced Features
     enableBanquets: boolean('enable_banquets').default(false),
     enablePosIntegration: boolean('enable_pos_integration').default(false),
     enableInventory: boolean('enable_inventory').default(true),
     enableHousekeeping: boolean('enable_housekeeping').default(true),
     enableGuestPortal: boolean('enable_guest_portal').default(false),
+    // Fonepay (Nepal QR gateway) — optional, plan-gated.
+    enableFonepay: boolean('enable_fonepay').default(false),
+    // IRD CBMS real-time billing sync — plan-gated (only specific plans/hotels).
+    enableCbms: boolean('enable_cbms').default(false),
+    // AI features (NL analytics, concierge) — plan-gated.
+    enableAi: boolean('enable_ai').default(false),
 
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow()
@@ -1337,6 +1613,30 @@ export const notificationSettings = pgTable('notification_settings', {
 
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow()
+});
+
+/**
+ * Platform-wide SMS / Email gateway — the SHARED provider credentials used by
+ * every tenant (managed by the SaaS operator in super-admin). A hotel's own
+ * notificationSettings, if set, override these per-field. Singleton (id = 1).
+ */
+export const platformSettings = pgTable('platform_settings', {
+    id: integer('id').primaryKey().default(1),
+    smtpHost: text('smtp_host'),
+    smtpPort: integer('smtp_port').default(587),
+    smtpUser: text('smtp_user'),
+    smtpPassword: text('smtp_password'),
+    smtpFromEmail: text('smtp_from_email'),
+    smtpFromName: text('smtp_from_name'),
+    smsProvider: text('sms_provider'),
+    smsApiKey: text('sms_api_key'),
+    smsApiSecret: text('sms_api_secret'),
+    smsSenderId: text('sms_sender_id'),
+    // DB backup schedule: { autoEnabled, frequency: 'DAILY'|'WEEKLY', lastRunAt }.
+    backupConfig: json('backup_config').default({}),
+    // Support contacts shown to hotels: { email, phone, whatsapp, hours }.
+    supportConfig: json('support_config').default({}),
+    updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 /**
@@ -1510,21 +1810,47 @@ export const menuItemsRelations = relations(menuItems, ({ one }) => ({
 // GUEST MANAGEMENT
 // ============================================
 
+export const customerTypeEnum = pgEnum('customer_type', ['HOTEL_GUEST', 'RESTAURANT_CUSTOMER', 'BOTH']);
+
 export const guests = pgTable('guests', {
     id: uuid('id').defaultRandom().primaryKey(),
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
 
+    // Core identity
+    firstName: text('first_name').default(''),
+    lastName: text('last_name').default(''),
     fullName: text('full_name').notNull(),
-    phone: text('phone'), // Not unique because multiple hotels might share guests conceptualy, but separated by hotelId logic usually. For now, we keep it simple.
+    uniqueId: text('unique_id').default(''),
+
+    // Contact
+    phone: text('phone'),
     email: text('email'),
+
+    // Personal details
+    fatherName: text('father_name'),
+    dob: date('dob'),
+    occupation: text('occupation'),
     nationality: text('nationality'),
 
-    idType: text('id_type'), // Passport, National ID, etc.
-    idNumber: text('id_number'),
-
+    // Location
     address: text('address'),
     city: text('city'),
     country: text('country'),
+
+    // Identity docs
+    idType: text('id_type'),
+    idNumber: text('id_number'),
+    panNumber: text('pan_number'),
+
+    // Financial
+    openingDueAmount: decimal('opening_due_amount', { precision: 10, scale: 2 }).default('0'),
+
+    // Media
+    photoUrl: text('photo_url'),
+    signatureUrl: text('signature_url'),
+
+    // Classification
+    customerType: customerTypeEnum('customer_type').default('HOTEL_GUEST'),
 
     notes: text('notes'),
 
@@ -1537,6 +1863,8 @@ export const guests = pgTable('guests', {
     index('guest_hotel_idx').on(table.hotelId),
     index('guest_phone_idx').on(table.phone),
     index('guest_name_idx').on(table.fullName),
+    index('guest_unique_id_idx').on(table.uniqueId),
+    index('guest_customer_type_idx').on(table.customerType),
 ]);
 
 export const guestsRelations = relations(guests, ({ one, many }) => ({
@@ -1656,3 +1984,268 @@ export const staffAttendanceRelations = relations(staffAttendance, ({ one }) => 
     hotel: one(hotels, { fields: [staffAttendance.hotelId], references: [hotels.id] })
 }));
 
+// ============================================
+// GENERAL LEDGER (GL) & ACCOUNTING
+// ============================================
+
+export const accountTypeEnum = pgEnum('account_type', [
+    'ASSET',
+    'LIABILITY',
+    'EQUITY',
+    'REVENUE',
+    'EXPENSE'
+]);
+
+export const accounts = pgTable('accounts', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    type: accountTypeEnum('type').notNull(),
+    
+    parentId: integer('parent_id'), // self-referencing for hierarchical CoA
+    isControlAccount: boolean('is_control_account').default(false),
+    
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow()
+}, (table) => [
+    index('account_hotel_idx').on(table.hotelId),
+    index('account_code_idx').on(table.code),
+]);
+
+export const journalEntries = pgTable('journal_entries', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    
+    date: date('date').notNull(),
+    description: text('description').notNull(),
+    reference: text('reference'), // e.g. Invoice ID or PO number
+    
+    createdById: uuid('created_by_id').references(() => users.id),
+    status: text('status').default('POSTED'), // DRAFT, POSTED, REVERSED
+    reversedById: uuid('reversed_by_id').references(() => users.id),
+    
+    createdAt: timestamp('created_at').defaultNow()
+}, (table) => [
+    index('je_hotel_idx').on(table.hotelId),
+    index('je_date_idx').on(table.date),
+]);
+
+export const journalLines = pgTable('journal_lines', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id, { onDelete: 'cascade' }).notNull(),
+    accountId: integer('account_id').references(() => accounts.id).notNull(),
+    
+    debit: decimal('debit', { precision: 14, scale: 2 }).default('0').notNull(),
+    credit: decimal('credit', { precision: 14, scale: 2 }).default('0').notNull(),
+    
+    description: text('description')
+}, (table) => [
+    index('jl_je_idx').on(table.journalEntryId),
+    index('jl_account_idx').on(table.accountId),
+]);
+
+export const accountsRelations = relations(accounts, ({ one, many }) => ({
+    hotel: one(hotels, { fields: [accounts.hotelId], references: [hotels.id] }),
+    lines: many(journalLines),
+}));
+
+export const journalEntriesRelations = relations(journalEntries, ({ one, many }) => ({
+    hotel: one(hotels, { fields: [journalEntries.hotelId], references: [hotels.id] }),
+    createdBy: one(users, { fields: [journalEntries.createdById], references: [users.id] }),
+    reversedBy: one(users, { fields: [journalEntries.reversedById], references: [users.id] }),
+    lines: many(journalLines),
+}));
+
+export const journalLinesRelations = relations(journalLines, ({ one }) => ({
+    journalEntry: one(journalEntries, { fields: [journalLines.journalEntryId], references: [journalEntries.id] }),
+    account: one(accounts, { fields: [journalLines.accountId], references: [accounts.id] }),
+}));
+
+export const taxRates = pgTable('tax_rates', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    
+    name: text('name').notNull(),
+    rate: decimal('rate', { precision: 5, scale: 4 }).notNull(), // e.g. 0.13 for 13%
+    isDefault: boolean('is_default').default(false),
+    
+    accountId: integer('account_id').references(() => accounts.id), // GL account to post tax to
+    
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow()
+});
+
+// ============================================
+// PROCUREMENT & WAREHOUSE
+// ============================================
+
+export const warehouses = pgTable('warehouses', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    name: text('name').notNull(),
+    location: text('location'),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow()
+});
+
+export const vendors = pgTable('vendors', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    name: text('name').notNull(),
+    contactPerson: text('contact_person'),
+    email: text('email'),
+    phone: text('phone'),
+    address: text('address'),
+    taxNumber: text('tax_number'), // PAN/VAT
+    payablesAccountId: integer('payables_account_id').references(() => accounts.id), // GL linkage
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow()
+});
+
+// extending existing purchase orders concept
+export const goodsReceiptNotes = pgTable('goods_receipt_notes', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    purchaseOrderId: integer('purchase_order_id').references(() => purchaseOrders.id),
+    vendorId: integer('vendor_id').references(() => vendors.id).notNull(),
+    warehouseId: integer('warehouse_id').references(() => warehouses.id).notNull(),
+    
+    grnNumber: text('grn_number').notNull(),
+    referenceInvoice: text('reference_invoice'),
+    
+    totalAmount: decimal('total_amount', { precision: 12, scale: 2 }).notNull(),
+    taxAmount: decimal('tax_amount', { precision: 12, scale: 2 }).default('0'),
+    grandTotal: decimal('grand_total', { precision: 12, scale: 2 }).notNull(),
+    
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id), // Link to auto-posted GL
+    
+    receivedById: uuid('received_by_id').references(() => users.id),
+    createdAt: timestamp('created_at').defaultNow()
+});
+
+export const grnLines = pgTable('grn_lines', {
+    id: serial('id').primaryKey(),
+    grnId: integer('grn_id').references(() => goodsReceiptNotes.id).notNull(),
+    itemId: integer('item_id').references(() => inventoryItems.id).notNull(),
+    
+    quantityReceived: integer('quantity_received').notNull(),
+    unitPrice: decimal('unit_price', { precision: 10, scale: 2 }).notNull(),
+    lineTotal: decimal('line_total', { precision: 10, scale: 2 }).notNull()
+});
+
+// ============================================
+// MAINTENANCE & ASSETS
+// ============================================
+
+export const assets = pgTable('assets', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    
+    name: text('name').notNull(),
+    category: text('category'), // HVAC, Plumbing, Furniture, IT
+    roomId: integer('room_id').references(() => rooms.id),
+    
+    purchaseDate: date('purchase_date'),
+    purchaseCost: decimal('purchase_cost', { precision: 10, scale: 2 }),
+    
+    status: text('status').default('ACTIVE'), // ACTIVE, MAINTENANCE, RETIRED
+    
+    createdAt: timestamp('created_at').defaultNow()
+});
+
+export const maintenanceTickets = pgTable('maintenance_tickets', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    
+    roomId: integer('room_id').references(() => rooms.id),
+    assetId: integer('asset_id').references(() => assets.id),
+    
+    title: text('title').notNull(),
+    description: text('description'),
+    priority: text('priority').default('MEDIUM'), // LOW, MEDIUM, HIGH, CRITICAL
+    status: text('status').default('OPEN'), // OPEN, IN_PROGRESS, RESOLVED, CLOSED
+    
+    blocksBooking: boolean('blocks_booking').default(false), // if true, puts room out_of_order
+    
+    reportedById: uuid('reported_by_id').references(() => users.id),
+    assignedToId: uuid('assigned_to_id').references(() => users.id),
+    
+    createdAt: timestamp('created_at').defaultNow(),
+    resolvedAt: timestamp('resolved_at')
+});
+
+// ============================================
+// HR & PAYROLL
+// ============================================
+
+export const payrollSummaries = pgTable('payroll_summaries', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    userId: uuid('user_id').references(() => users.id).notNull(),
+    
+    periodStart: date('period_start').notNull(),
+    periodEnd: date('period_end').notNull(),
+    
+    baseSalary: decimal('base_salary', { precision: 10, scale: 2 }).notNull(),
+    overtimePay: decimal('overtime_pay', { precision: 10, scale: 2 }).default('0'),
+    deductions: decimal('deductions', { precision: 10, scale: 2 }).default('0'),
+    netPay: decimal('net_pay', { precision: 10, scale: 2 }).notNull(),
+    
+    status: text('status').default('DRAFT'), // DRAFT, APPROVED, PAID
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id), // Link to auto-posted GL
+    
+    createdAt: timestamp('created_at').defaultNow()
+});
+
+// ============================================
+// SYSTEM RELIABILITY (Outbox & Sync)
+// ============================================
+
+export const outboxEvents = pgTable('outbox_events', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id), // null for global events
+    
+    aggregateType: text('aggregate_type').notNull(),
+    aggregateId: text('aggregate_id').notNull(),
+    eventType: text('event_type').notNull(),
+    payload: json('payload').notNull(),
+    
+    status: text('status').default('PENDING'), // PENDING, DELIVERED, FAILED
+    errorMsg: text('error_msg'),
+    attempts: integer('attempts').default(0),
+    
+    createdAt: timestamp('created_at').defaultNow(),
+    deliveredAt: timestamp('delivered_at')
+}, (table) => [
+    index('outbox_status_idx').on(table.status),
+    index('outbox_hotel_idx').on(table.hotelId),
+]);
+
+export const idempotencyKeys = pgTable('idempotency_keys', {
+    key: text('key').primaryKey(),
+    userId: uuid('user_id'),
+    path: text('path').notNull(),
+    method: text('method').notNull(),
+    
+    responseStatus: integer('response_status'),
+    responseBody: json('response_body'),
+    
+    createdAt: timestamp('created_at').defaultNow()
+});
+
+export const syncCheckpoints = pgTable('sync_checkpoints', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    deviceId: text('device_id').notNull(),
+    
+    lastSyncTimestamp: timestamp('last_sync_timestamp').notNull(),
+    clientVersion: text('client_version'),
+    
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow()
+}, (table) => [
+    index('sync_hotel_device_idx').on(table.hotelId, table.deviceId)
+]);

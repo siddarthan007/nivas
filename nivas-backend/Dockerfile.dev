@@ -1,0 +1,33 @@
+# ============================================================
+# Nivas PMS Backend — Development Dockerfile
+# Source mounted via volume, hot-reload enabled
+# ============================================================
+
+FROM oven/bun:1
+WORKDIR /usr/src/app
+
+# PostgreSQL 16 client (pg_dump / pg_restore) for the DB backup feature — matches
+# the postgres:16 server. In the image so backups work the same on every platform.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+  && install -d /usr/share/postgresql-common/pgdg \
+  && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo $VERSION_CODENAME)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends postgresql-client-16 \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install deps first (cached layer)
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+
+# Source will be mounted as volume at runtime (docker-compose.yml)
+# This just ensures the image has the right structure
+
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x docker-entrypoint.sh
+
+EXPOSE 3000
+
+ENTRYPOINT ["./docker-entrypoint.sh"]
+CMD ["bun", "--hot", "src/index.ts"]

@@ -1,169 +1,173 @@
-import { db } from '../../db';
-import { hotels, invoices, creditNotes } from '../../db/schema';
-import { eq, and } from 'drizzle-orm';
 import NepaliDate from 'nepali-date-converter';
+import { db } from '../../db';
+import { cbmsLogs, hotels, invoices, creditNotes, tenantFeatures } from '../../db/schema';
+import { eq, and, lt } from 'drizzle-orm';
+import { getRedis } from '../../shared/redis';
+import { logger } from '../../shared/logger';
 
-const CBMS_BILL_URL = process.env.CBMS_BILL_URL || 'https://cbapi.ird.gov.np/api/bill';
-const CBMS_RETURN_URL = process.env.CBMS_RETURN_URL || 'https://cbapi.ird.gov.np/api/billreturn';
+const BILL_URL = process.env.CBMS_BILL_URL || 'https://cbapi.ird.gov.np/api/bill';
+const RETURN_URL = process.env.CBMS_RETURN_URL || 'https://cbapi.ird.gov.np/api/billreturn';
+const MAX_ATTEMPTS = 6;
+const LOCK_KEY = 'lock:cbms:worker';
+
+type CbmsCfg = { enabled?: boolean; username?: string; password?: string; sellerPan?: string; isRealtime?: boolean };
+
+const num = (v: any) => Math.round((parseFloat(v ?? '0') || 0) * 100) / 100;
+
+// BS date "YYYY.MM.DD" (IRD format) from a JS Date.
+function bsDate(d: Date): string {
+    const n = new NepaliDate(d);
+    return `${n.getYear()}.${String(n.getMonth() + 1).padStart(2, '0')}.${String(n.getDate()).padStart(2, '0')}`;
+}
+// IRD CBMS datetimeClient format: "yyyy-MM-dd HH:mm:ss" (NOT ISO with T/Z).
+function cbmsDateTime(d: Date): string {
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+// Invoice fiscalYear is stored "81/82" → CBMS wants "2081.082".
+function cbmsFiscalYear(fy?: string | null): string {
+    if (!fy) return '';
+    const start = parseInt(fy.split('/')[0] || '0', 10);
+    const fullStart = start < 100 ? 2000 + start : start;
+    return `${fullStart}.0${String((fullStart + 1) % 100).padStart(2, '0')}`;
+}
 
 export const CbmsService = {
-    buildInvoicePayload(invoice: any, hotel: any) {
-        const invoiceDate = invoice.createdAt ?? new Date();
-        const nepaliDate = new NepaliDate(invoiceDate);
+    async getConfig(hotelId: number): Promise<{ cfg: CbmsCfg; sellerPan: string } | null> {
+        // Plan gate FIRST — CBMS is only available on plans that include it.
+        const feat = await db.query.tenantFeatures.findFirst({ where: eq(tenantFeatures.hotelId, hotelId), columns: { enableCbms: true } });
+        if (!feat?.enableCbms) return null;
 
+        const hotel = await db.query.hotels.findFirst({ where: eq(hotels.id, hotelId), columns: { cbmsConfig: true, panNumber: true } });
+        if (!hotel) return null;
+        const cfg = (hotel.cbmsConfig || {}) as CbmsCfg;
+        if (!cfg.enabled || !cfg.username || !cfg.password) return null; // hotel toggle + creds
+        const sellerPan = cfg.sellerPan || hotel.panNumber || '';
+        if (!sellerPan) return null;
+        return { cfg, sellerPan };
+    },
+
+    /** Queue an invoice/credit-note for CBMS sync (idempotent — unique row per doc). */
+    async enqueue(hotelId: number, docType: 'BILL' | 'RETURN', refId: string, invoiceNumber?: string) {
+        // Skip if CBMS isn't configured for the hotel.
+        const cfg = await this.getConfig(hotelId);
+        if (!cfg) return;
+        await db.insert(cbmsLogs)
+            .values({ hotelId, docType, refId, invoiceNumber, status: 'PENDING' })
+            .onConflictDoNothing();
+        // Nudge the worker (best-effort).
+        try { const r = getRedis(); if (r?.status === 'ready') await r.lpush('cbms:nudge', refId); } catch { /* ignore */ }
+    },
+
+    async buildBillPayload(hotelId: number, invoiceId: string, cfg: CbmsCfg, sellerPan: string) {
+        const inv = await db.query.invoices.findFirst({ where: and(eq(invoices.id, invoiceId), eq(invoices.hotelId, hotelId)) });
+        if (!inv) return null;
+        const taxable = num(inv.subTotal) + num(inv.serviceCharge) - num(inv.discountAmount);
         return {
-            username: hotel.cbmsUsername,
-            password: hotel.cbmsPassword,
-            seller_pan: hotel.panNumber,
-            buyer_pan: invoice.guestPan || '',
-            buyer_name: invoice.guestName,
-            fiscal_year: invoice.fiscalYear,
-            invoice_number: invoice.invoiceNumber,
-            invoice_date: nepaliDate.format('YYYY-MM-DD'),
-            total_sales: parseFloat(invoice.subTotal),
-            taxable_sales_vat: parseFloat(invoice.subTotal) + parseFloat(invoice.serviceCharge ?? '0'),
-            vat: parseFloat(invoice.vatAmount ?? '0'),
-            excisable_amount: 0,
-            excise: 0,
-            taxable_sales_hst: 0,
-            hst: 0,
-            amount_for_esf: 0,
-            esf: 0,
-            export_sales: 0,
+            username: cfg.username, password: cfg.password, seller_pan: sellerPan,
+            buyer_pan: inv.guestPan || '', buyer_name: inv.guestName || '',
+            fiscal_year: cbmsFiscalYear(inv.fiscalYear),
+            invoice_number: inv.invoiceNumber,
+            invoice_date: bsDate(inv.createdAt || new Date()),
+            total_sales: num(inv.grandTotal),
+            taxable_sales_vat: Math.max(0, taxable),
+            vat: num(inv.vatAmount),
+            excisable_amount: 0, excise: 0, taxable_sales_hst: 0, hst: 0,
+            amount_for_esf: 0, esf: 0, export_sales: 0,
             tax_exempted_sales: 0,
-            isrealtime: true,
-            datetimeClient: new Date().toISOString()
+            isrealtime: cfg.isRealtime ?? true,
+            datetimeClient: cbmsDateTime(new Date()),
         };
     },
 
-    parseResponseCode(code: number): { success: boolean; message: string } {
-        switch (code) {
-            case 200: return { success: true, message: 'Synced successfully' };
-            case 100: return { success: false, message: 'CBMS credentials do not match' };
-            case 101: return { success: false, message: 'Bill already exists in CBMS' };
-            case 102: return { success: false, message: 'Error saving bill - check field values' };
-            case 103: return { success: false, message: 'Unknown error - check API model' };
-            case 104: return { success: false, message: 'Invalid model - check required fields' };
-            default: return { success: false, message: `Unknown response code: ${code}` };
-        }
+    async buildReturnPayload(hotelId: number, creditNoteId: string, cfg: CbmsCfg, sellerPan: string) {
+        const cn = await db.query.creditNotes.findFirst({ where: and(eq(creditNotes.id, creditNoteId), eq(creditNotes.hotelId, hotelId)) });
+        if (!cn) return null;
+        const inv = cn.originalInvoiceId
+            ? await db.query.invoices.findFirst({ where: eq(invoices.id, cn.originalInvoiceId) })
+            : null;
+        const taxable = num(inv?.subTotal) + num(inv?.serviceCharge) - num(inv?.discountAmount);
+        return {
+            username: cfg.username, password: cfg.password, seller_pan: sellerPan,
+            buyer_pan: inv?.guestPan || '', buyer_name: inv?.guestName || '',
+            fiscal_year: cbmsFiscalYear(cn.fiscalYear || inv?.fiscalYear),
+            ref_invoice_number: inv?.invoiceNumber || '',
+            credit_note_number: cn.creditNoteNumber,
+            credit_note_date: bsDate(cn.createdAt || new Date()),
+            reason_for_return: cn.reason || 'Return',
+            total_sales: num(inv?.grandTotal ?? cn.amount),
+            taxable_sales_vat: Math.max(0, taxable),
+            vat: num(inv?.vatAmount),
+            excisable_amount: 0, excise: 0, taxable_sales_hst: 0, hst: 0,
+            amount_for_esf: 0, esf: 0, export_sales: 0, tax_exempted_sales: 0,
+            isrealtime: cfg.isRealtime ?? true,
+            datetimeClient: cbmsDateTime(new Date()),
+        };
     },
 
-    async syncInvoice(invoiceId: string, hotelId: number) {
-        const hotel = await db.query.hotels.findFirst({
-            where: eq(hotels.id, hotelId)
-        });
+    /** POST one log to CBMS. Maps IRD response codes → status. */
+    async pushOne(log: typeof cbmsLogs.$inferSelect): Promise<void> {
+        const cfg = await this.getConfig(log.hotelId);
+        if (!cfg) return; // config removed → leave PENDING
 
-        if (!hotel?.isCbmsEnabled) {
-            return { status: 'skipped', message: 'CBMS not enabled for this hotel' };
+        const payload = log.docType === 'RETURN'
+            ? await this.buildReturnPayload(log.hotelId, log.refId, cfg.cfg, cfg.sellerPan)
+            : await this.buildBillPayload(log.hotelId, log.refId, cfg.cfg, cfg.sellerPan);
+        if (!payload) {
+            await db.update(cbmsLogs).set({ status: 'FAILED', lastError: 'document not found', updatedAt: new Date() }).where(eq(cbmsLogs.id, log.id));
+            return;
         }
 
-        if (!hotel.cbmsUsername || !hotel.cbmsPassword || !hotel.panNumber) {
-            return { status: 'error', message: 'CBMS credentials or PAN not configured' };
-        }
-
-        const invoice = await db.query.invoices.findFirst({
-            where: and(eq(invoices.id, invoiceId), eq(invoices.hotelId, hotelId))
-        });
-
-        if (!invoice) {
-            return { status: 'error', message: 'Invoice not found' };
-        }
-
-        const payload = this.buildInvoicePayload(invoice, hotel);
-
+        const url = log.docType === 'RETURN' ? RETURN_URL : BILL_URL;
+        let code = 0; let errText = '';
         try {
-            const response = await fetch(CBMS_BILL_URL, {
+            const res = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                signal: AbortSignal.timeout(20000),
             });
-
-            const result = await response.json() as { status?: number; message?: string };
-            const parsed = this.parseResponseCode(result.status ?? 0);
-
-            if (parsed.success) {
-                await db.update(invoices)
-                    .set({ syncedToCbms: true })
-                    .where(eq(invoices.id, invoiceId));
-
-                return { status: 'success', message: parsed.message };
-            } else {
-                console.error('[CBMS] Sync failed:', result);
-                return { status: 'error', message: parsed.message, code: result.status };
-            }
-        } catch (error) {
-            console.error('[CBMS] Network error:', error);
-            return { status: 'error', message: 'Failed to connect to CBMS server' };
+            // CBMS returns the numeric code in the body or as status.
+            const text = await res.text();
+            const parsed = parseInt((text || '').replace(/[^0-9]/g, '').slice(0, 3)) || (res.ok ? 200 : res.status);
+            code = parsed;
+            errText = res.ok ? '' : text.slice(0, 400);
+        } catch (e: any) {
+            errText = String(e?.message || e).slice(0, 400);
         }
+
+        const attempts = log.attempts + 1;
+        // 200 = saved; 101 = already exists → both are terminal success (idempotent).
+        if (code === 200 || code === 101) {
+            await db.update(cbmsLogs).set({ status: code === 101 ? 'EXISTS' : 'SENT', responseCode: code, attempts, sentAt: new Date(), payload, updatedAt: new Date() }).where(eq(cbmsLogs.id, log.id));
+            return;
+        }
+        // 100 (bad creds) / 104 (invalid) / 105 (not found) are non-retryable → FAIL fast.
+        const nonRetryable = code === 100 || code === 104 || code === 105;
+        const status = (nonRetryable || attempts >= MAX_ATTEMPTS) ? 'FAILED' : 'PENDING';
+        await db.update(cbmsLogs).set({ status, responseCode: code || null, attempts, lastError: errText || `code ${code}`, payload, updatedAt: new Date() }).where(eq(cbmsLogs.id, log.id));
     },
 
-    async syncCreditNote(creditNoteId: string, hotelId: number) {
-        const hotel = await db.query.hotels.findFirst({
-            where: eq(hotels.id, hotelId)
-        });
-
-        if (!hotel?.isCbmsEnabled) {
-            return { status: 'skipped', message: 'CBMS not enabled' };
+    /** Worker — runs on a cron. Distributed-locked so only one instance processes. */
+    async processQueue(): Promise<number> {
+        const redis = getRedis();
+        if (redis?.status === 'ready') {
+            const locked = await redis.set(LOCK_KEY, '1', 'EX', 110, 'NX').catch(() => null);
+            if (locked !== 'OK') return 0;
         }
-
-        const creditNote = await db.query.creditNotes.findFirst({
-            where: and(eq(creditNotes.id, creditNoteId), eq(creditNotes.hotelId, hotelId)),
-            with: { originalInvoice: true }
-        });
-
-        if (!creditNote) {
-            return { status: 'error', message: 'Credit note not found' };
-        }
-
         try {
-            const payload = {
-                username: hotel.cbmsUsername,
-                password: hotel.cbmsPassword,
-                seller_pan: hotel.panNumber,
-                fiscal_year: creditNote.fiscalYear,
-                credit_note_number: creditNote.creditNoteNumber,
-                ref_invoice_number: creditNote.originalInvoice?.invoiceNumber,
-                credit_note_date: new NepaliDate(creditNote.createdAt ?? new Date()).format('YYYY-MM-DD'),
-                reason: creditNote.reason,
-                amount: parseFloat(creditNote.amount),
-                isrealtime: true,
-                datetimeClient: new Date().toISOString()
-            };
-
-            const response = await fetch(CBMS_RETURN_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+            const pending = await db.query.cbmsLogs.findMany({
+                where: and(eq(cbmsLogs.status, 'PENDING'), lt(cbmsLogs.attempts, MAX_ATTEMPTS)),
+                orderBy: (c, { asc }) => [asc(c.createdAt)],
+                limit: 50,
             });
-
-            const result = await response.json() as { status?: number; message?: string };
-            const parsed = this.parseResponseCode(result.status ?? 0);
-
-            if (parsed.success) {
-                await db.update(creditNotes)
-                    .set({ syncedToCbms: true })
-                    .where(eq(creditNotes.id, creditNoteId));
-
-                return { status: 'success', message: 'Credit note synced to CBMS' };
+            let done = 0;
+            for (const log of pending) {
+                try { await this.pushOne(log); done++; } catch (err) { logger.warn?.({ err, id: log.id }, '[cbms] push failed'); }
             }
-            return { status: 'error', message: parsed.message, code: result.status };
-        } catch (error) {
-            console.error('[CBMS] Credit note sync error:', error);
-            return { status: 'error', message: 'Failed to connect to CBMS server' };
+            return done;
+        } finally {
+            try { if (redis?.status === 'ready') await redis.del(LOCK_KEY); } catch { /* ignore */ }
         }
     },
-
-    async retryFailedSyncs(hotelId: number) {
-        const unsynced = await db.query.invoices.findMany({
-            where: and(eq(invoices.syncedToCbms, false), eq(invoices.hotelId, hotelId))
-        });
-
-        const results = [];
-        for (const inv of unsynced) {
-            const result = await this.syncInvoice(inv.id, hotelId);
-            results.push({ invoiceId: inv.id, invoiceNumber: inv.invoiceNumber, ...result });
-        }
-
-        return results;
-    }
 };

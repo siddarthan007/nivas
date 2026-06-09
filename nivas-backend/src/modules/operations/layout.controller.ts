@@ -12,11 +12,11 @@ export const layoutController = new Elysia({ prefix: '/layout' })
     .get('/floor-plan', async ({ user, query }) => {
         const floorId = query.floorId ? parseInt(query.floorId) : undefined;
 
+        const roomConditions = [eq(rooms.hotelId, user!.hotelId!)];
+        if (floorId) roomConditions.push(eq(rooms.floorId, floorId));
+
         const roomNodes = await db.query.rooms.findMany({
-            where: and(
-                eq(rooms.hotelId, user!.hotelId!),
-                floorId ? eq(rooms.floorId, floorId) : undefined
-            ),
+            where: and(...roomConditions),
             columns: {
                 id: true,
                 name: true,
@@ -49,35 +49,42 @@ export const layoutController = new Elysia({ prefix: '/layout' })
         detail: { summary: 'Get visual editor data', tags: ['Operations'] }
     })
     .post('/save-positions', async ({ body, user }) => {
-        const updates = [];
-
-        if (body.rooms) {
-            for (const r of body.rooms) {
-                updates.push(
-                    db.update(rooms)
+        await db.transaction(async (tx) => {
+            if (body.rooms) {
+                for (const r of body.rooms) {
+                    const layout = {
+                        x: r.layout.x ?? 0,
+                        y: r.layout.y ?? 0,
+                        w: r.layout.w ?? 100,
+                        h: r.layout.h ?? 60,
+                        rotation: r.layout.rotation ?? 0,
+                        shape: r.layout.shape ?? 'RECTANGLE'
+                    };
+                    await tx.update(rooms)
                         .set({
-                            layoutProps: r.layout,
+                            layoutProps: layout,
                             updatedAt: new Date()
-                        } as any)
-                        .where(and(eq(rooms.id, r.id), eq(rooms.hotelId, user!.hotelId!)))
-                );
+                        })
+                        .where(and(eq(rooms.id, r.id), eq(rooms.hotelId, user!.hotelId!)));
+                }
             }
-        }
 
-        if (body.tables) {
-            for (const tbl of body.tables) {
-                updates.push(
-                    db.update(restaurantTables)
+            if (body.tables) {
+                for (const tbl of body.tables) {
+                    const layout = {
+                        x: tbl.layout.x ?? 0,
+                        y: tbl.layout.y ?? 0,
+                        rotation: tbl.layout.rotation ?? 0
+                    };
+                    await tx.update(restaurantTables)
                         .set({
-                            layoutProps: tbl.layout,
+                            layoutProps: layout,
                             updatedAt: new Date()
-                        } as any)
-                        .where(and(eq(restaurantTables.id, tbl.id), eq(restaurantTables.hotelId, user!.hotelId!)))
-                );
+                        })
+                        .where(and(eq(restaurantTables.id, tbl.id), eq(restaurantTables.hotelId, user!.hotelId!)));
+                }
             }
-        }
-
-        await Promise.all(updates);
+        });
 
         return createResponse(null, 'Layout saved successfully');
     }, {
@@ -89,8 +96,8 @@ export const layoutController = new Elysia({ prefix: '/layout' })
                 layout: t.Object({
                     x: t.Number(),
                     y: t.Number(),
-                    w: t.Number(),
-                    h: t.Number(),
+                    w: t.Optional(t.Number()),
+                    h: t.Optional(t.Number()),
                     rotation: t.Optional(t.Number()),
                     shape: t.Optional(t.String())
                 })
@@ -100,7 +107,7 @@ export const layoutController = new Elysia({ prefix: '/layout' })
                 layout: t.Object({
                     x: t.Number(),
                     y: t.Number(),
-                    rotation: t.Number()
+                    rotation: t.Optional(t.Number())
                 })
             })))
         }),

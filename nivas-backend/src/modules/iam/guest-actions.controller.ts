@@ -1,6 +1,8 @@
 import { Elysia, t } from 'elysia';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { GuestActionsService } from './guest-actions.service';
+import { ReviewsService } from '../reviews/reviews.service';
+import { AiConciergeService } from './ai-concierge.service';
 import { createResponse } from '../../utils/response.helper';
 
 export const guestActionsController = new Elysia({ prefix: '/guest/actions' })
@@ -38,16 +40,18 @@ export const guestActionsController = new Elysia({ prefix: '/guest/actions' })
     })
     .post('/order', async ({ body, user }) => {
         const { hotelId, roomId, userId } = await GuestActionsService.validateGuestAccess(user);
-        const result = await GuestActionsService.placeOrder(hotelId, roomId, userId, body.items);
+        const result = await GuestActionsService.placeOrder(hotelId, roomId, userId, body.items, body.deliveryTo, body.notes);
         return createResponse(result, 'Order placed! Kitchen has been notified.');
     }, {
         isSignedIn: true,
         body: t.Object({
             items: t.Array(t.Object({
                 menuItemId: t.Number(),
-                quantity: t.Number(),
-                notes: t.Optional(t.String())
-            }))
+                quantity: t.Number({ minimum: 1, maximum: 99 }),
+                notes: t.Optional(t.String({ maxLength: 500 }))
+            }), { minItems: 1, maxItems: 50 }),
+            deliveryTo: t.Optional(t.Union([t.Literal('ROOM'), t.Literal('RESTAURANT')])),
+            notes: t.Optional(t.String({ maxLength: 500 })),
         }),
         detail: { summary: 'Place room service order', tags: ['Guest Portal'] }
     })
@@ -58,6 +62,22 @@ export const guestActionsController = new Elysia({ prefix: '/guest/actions' })
     }, {
         isSignedIn: true,
         detail: { summary: 'View order history', tags: ['Guest Portal'] }
+    })
+    .get('/activity', async ({ user }) => {
+        const { hotelId, roomId } = await GuestActionsService.validateGuestAccess(user);
+        const activity = await GuestActionsService.getActivity(hotelId, roomId);
+        return createResponse(activity, 'Activity fetched successfully');
+    }, {
+        isSignedIn: true,
+        detail: { summary: 'Unified activity feed (orders + service requests)', tags: ['Guest Portal'] }
+    })
+    .get('/portal-config', async ({ user }) => {
+        const { hotelId } = await GuestActionsService.validateGuestAccess(user);
+        const config = await GuestActionsService.getPortalConfig(hotelId);
+        return createResponse(config, 'Portal config fetched');
+    }, {
+        isSignedIn: true,
+        detail: { summary: 'Guest portal dynamic content (WiFi, contacts, welcome)', tags: ['Guest Portal'] }
     })
     .post('/request-housekeeping', async ({ body, user }) => {
         const { hotelId, roomId } = await GuestActionsService.validateGuestAccess(user);
@@ -75,4 +95,33 @@ export const guestActionsController = new Elysia({ prefix: '/guest/actions' })
             notes: t.Optional(t.String())
         }),
         detail: { summary: 'Request housekeeping service', tags: ['Guest Portal'] }
+    })
+    .post('/feedback', async ({ body, user }) => {
+        const { hotelId } = await GuestActionsService.validateGuestAccess(user);
+        const review = await ReviewsService.create(hotelId, {
+            guestName: (user as any)?.fullName,
+            rating: body.rating,
+            comment: body.comment,
+            source: 'INTERNAL',
+        });
+        return createResponse(review, 'Thank you for your feedback!');
+    }, {
+        isSignedIn: true,
+        body: t.Object({
+            rating: t.Number({ minimum: 1, maximum: 5 }),
+            comment: t.Optional(t.String({ maxLength: 2000 })),
+        }),
+        detail: { summary: 'Submit guest review/feedback', tags: ['Guest Portal'] }
+    })
+    .post('/concierge', async ({ body, user }) => {
+        const { hotelId } = await GuestActionsService.validateGuestAccess(user);
+        const result = await AiConciergeService.chat(hotelId, body.message, body.history || []);
+        return createResponse(result, 'Concierge reply');
+    }, {
+        isSignedIn: true,
+        body: t.Object({
+            message: t.String({ minLength: 1, maxLength: 500 }),
+            history: t.Optional(t.Array(t.Object({ role: t.String(), content: t.String() }), { maxItems: 8 })),
+        }),
+        detail: { summary: 'AI concierge chat (menu/FAQ/requests, Nepali+English)', tags: ['Guest Portal'] }
     });

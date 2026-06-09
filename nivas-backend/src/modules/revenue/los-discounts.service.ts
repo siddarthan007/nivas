@@ -33,6 +33,11 @@ export const LosDiscountService = {
         const roomType = query.roomType;
         const checkIn = query.checkIn;
 
+        // Bad/zero nights → no discount (avoids NaN flowing into the SQL comparison).
+        if (!Number.isFinite(nights) || nights < 1) {
+            return { nights: 0, roomType, applicableDiscount: null };
+        }
+
         const rules = await db.query.losDiscounts.findMany({
             where: and(
                 eq(losDiscounts.hotelId, hotelId),
@@ -69,9 +74,14 @@ export const LosDiscountService = {
     },
 
     async updateRule(hotelId: number, id: number, data: any) {
+        const allowed = ['name', 'minNights', 'maxNights', 'discountType', 'applyTo', 'specificNight', 'roomTypes', 'startDate', 'endDate', 'isActive'];
+        const updateData: any = {};
+        for (const key of allowed) {
+            if (data[key] !== undefined) updateData[key] = data[key];
+        }
         const [updated] = await db.update(losDiscounts)
             .set({
-                ...data,
+                ...updateData,
                 discountValue: data.discountValue?.toString()
             })
             .where(and(

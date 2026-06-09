@@ -26,7 +26,7 @@ export default function Breadcrumb() {
             }}
         >
             <Link
-                href="/dashboard"
+                href="/hotel"
                 className="hover-bg"
                 style={{
                     display: "flex",

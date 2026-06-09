@@ -47,8 +47,8 @@ const parseValue = (value: string): any => {
   return value;
 };
 
-function parseArgs(): Partial<Bun.BuildConfig> {
-  const config: Partial<Bun.BuildConfig> = {};
+function parseArgs(): Record<string, any> {
+  const config: Record<string, any> = {};
   const args = process.argv.slice(2);
 
   for (let i = 0; i < args.length; i++) {
@@ -132,8 +132,13 @@ const result = await Bun.build({
   define: {
     "process.env.NODE_ENV": JSON.stringify("production"),
   },
+  // Explicitly resolve @/ alias (mirrors tsconfig paths)
+  // @ts-ignore
+  alias: {
+    "@": path.resolve(process.cwd(), "src"),
+  },
   ...cliConfig,
-});
+} as any);
 
 const end = performance.now();
 

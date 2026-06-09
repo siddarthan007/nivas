@@ -11,6 +11,25 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Kalam:wght@300;400;700&family=Oswald:wght@400;500;600;700&display=swap"
     rel="stylesheet">
   <title>Nivas PMS</title>
+  <script>
+    (function() {
+      try {
+        var theme = localStorage.getItem('nivas-theme');
+        var accent = localStorage.getItem('nivas-accent');
+        if (theme === 'light' || theme === 'dark') {
+          document.documentElement.setAttribute('data-theme', theme);
+        } else if (theme === 'system' || !theme) {
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+        }
+        if (accent) {
+          document.documentElement.setAttribute('data-accent', accent);
+        } else {
+          document.documentElement.setAttribute('data-accent', 'blue');
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 
 <body>

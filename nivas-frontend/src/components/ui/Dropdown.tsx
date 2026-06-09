@@ -44,7 +44,7 @@ const Dropdown = ({
             >
                 <option value="" disabled>{placeholder}</option>
                 {options.map((opt) => (
-                    <option key={opt.value} value={opt.value} style={{ backgroundColor: '#191919', color: 'white' }}>
+                    <option key={opt.value} value={opt.value} style={{ backgroundColor: 'var(--background)', color: 'var(--foreground)' }}>
                         {opt.label}
                     </option>
                 ))}

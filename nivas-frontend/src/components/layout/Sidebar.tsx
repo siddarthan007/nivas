@@ -1,6 +1,6 @@
 import Link from "@/components/ui/Link";
-import { usePathname } from "@/lib/router";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { usePathname, useRouter } from "@/lib/router";
+import { useState, useEffect, useRef, useMemo, useLayoutEffect } from "react";
 import {
   LayoutDashboard,
   Menu,
@@ -31,8 +31,11 @@ import {
   Grid3X3,
   SquareStack,
   UserCircle,
+  Contact,
   PartyPopper,
   BookOpen,
+  Monitor,
+  Star,
 } from "lucide-react";
 import Avatar from "@/components/ui/Avatar";
 import { useSidebar } from "@/lib/contexts/SidebarContext";
@@ -41,8 +44,11 @@ import NotificationCenter from "@/components/ui/NotificationCenter";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { usePermissions } from "@/lib/hooks/usePermissions";
 import KeyboardHint from "@/components/ui/KeyboardHint";
+import ThemeToggle from "@/components/ui/ThemeToggle";
 import { useCommandPalette } from "@/lib/contexts/CommandPaletteContext";
 import { useHotelPlan } from "@/lib/hooks/useHotelPlan";
+import { useModuleConfig } from "@/lib/hooks/useModuleConfig";
+import { useMessages } from "@/lib/hooks/useMessages";
 
 interface StaffNavItem {
   id: string;
@@ -50,65 +56,81 @@ interface StaffNavItem {
   label: string;
   Icon: typeof LayoutDashboard;
   permission?: string;
+  section?: string;
 }
 
 const staffItems: StaffNavItem[] = [
-  { id: "dashboard", href: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
-  { id: "rooms", href: "/dashboard/rooms", label: "Rooms", Icon: Bed, permission: "rooms:read" },
-  { id: "bookings", href: "/dashboard/bookings", label: "Bookings", Icon: CalendarDays, permission: "bookings:read" },
-  { id: "orders", href: "/dashboard/orders", label: "Orders", Icon: UtensilsCrossed, permission: "orders:read" },
-  { id: "menu", href: "/dashboard/menu", label: "Menu", Icon: BookOpen, permission: "menu:view" },
-  { id: "housekeeping", href: "/dashboard/housekeeping", label: "Housekeeping", Icon: Sparkles, permission: "housekeeping:view" },
-  { id: "gantt", href: "/dashboard/bookings/calendar", label: "Calendar", Icon: CalendarRange, permission: "bookings:read" },
-  { id: "floor-plan", href: "/dashboard/operations/floor-plan", label: "Floor Plan", Icon: Grid3X3, permission: "rooms:manage_layout" },
-  { id: "table-plan", href: "/dashboard/operations/tables", label: "Table Plan", Icon: SquareStack, permission: "restaurant:view_tables" },
-  { id: "inventory", href: "/dashboard/inventory", label: "Inventory", Icon: Package, permission: "inventory:read" },
-  { id: "reports", href: "/dashboard/reports", label: "Reports", Icon: BarChart3, permission: "reports:view_sales" },
-  { id: "staff", href: "/dashboard/staff", label: "Staff", Icon: Users, permission: "users:read" },
-  { id: "roles", href: "/dashboard/roles", label: "Roles", Icon: Shield, permission: "roles:read" },
-  { id: "finance", href: "/dashboard/finance", label: "Finance", Icon: CreditCard, permission: "finance:view_records" },
-  { id: "revenue", href: "/dashboard/revenue", label: "Revenue", Icon: TrendingUp, permission: "analytics:view_financials" },
-  { id: "crm", href: "/dashboard/crm", label: "CRM", Icon: UserCircle, permission: "crm:view_guests" },
-  { id: "guests", href: "/dashboard/guests", label: "Guests", Icon: Users, permission: "crm:view_guests" },
-  { id: "events", href: "/dashboard/events", label: "Events", Icon: PartyPopper, permission: "banquets:view" },
-  { id: "kitchen", href: "/dashboard/kitchen", label: "Kitchen Display", Icon: UtensilsCrossed, permission: "orders:read" },
-  { id: "messages", href: "/dashboard/messages", label: "Messages", Icon: MessageSquare, permission: "communications:read_messages" },
-  { id: "attendance", href: "/dashboard/attendance", label: "Attendance", Icon: Clock, permission: "users:read" },
-  { id: "procurement", href: "/dashboard/procurement", label: "Procurement", Icon: Package, permission: "inventory:manage_procurement" },
-  { id: "facilities", href: "/dashboard/operations/facilities", label: "Facilities", Icon: Building2, permission: "operations:setup_facilities" },
-  { id: "corporate", href: "/dashboard/corporate", label: "Corporate", Icon: Building2, permission: "crm:manage_guests" },
-  { id: "channel-manager", href: "/dashboard/channel-manager", label: "Channel Manager", Icon: TrendingUp, permission: "system:manage_settings" },
-  { id: "saas-billing", href: "/dashboard/saas-billing", label: "Billing", Icon: CreditCard, permission: "finance:view_records" },
+  { id: "dashboard", href: "/hotel", label: "Dashboard", Icon: LayoutDashboard },
+  { id: "rooms", href: "/hotel/rooms", label: "Rooms", Icon: Bed, permission: "rooms:read", section: "Front Office" },
+  { id: "bookings", href: "/hotel/bookings", label: "Bookings", Icon: CalendarDays, permission: "bookings:read", section: "Front Office" },
+  { id: "housekeeping", href: "/hotel/housekeeping", label: "Housekeeping", Icon: Sparkles, permission: "housekeeping:view", section: "Front Office" },
+  { id: "floor-plan", href: "/hotel/operations/floor-plan", label: "Floor Plan", Icon: Grid3X3, permission: "rooms:manage_layout", section: "Front Office" },
+  { id: "guests", href: "/hotel/guests", label: "Customers", Icon: Contact, permission: "crm:view_guests", section: "Front Office" },
+  { id: "orders", href: "/hotel/orders", label: "Orders", Icon: UtensilsCrossed, permission: "orders:read", section: "Food & Beverage" },
+  { id: "pos", href: "/hotel/pos", label: "POS", Icon: Monitor, permission: "orders:create", section: "Food & Beverage" },
+  { id: "kitchen", href: "/hotel/kitchen", label: "Kitchen Display", Icon: UtensilsCrossed, permission: "orders:read", section: "Food & Beverage" },
+  { id: "menu", href: "/hotel/menu", label: "Menu", Icon: BookOpen, permission: "menu:view", section: "Food & Beverage" },
+  { id: "table-plan", href: "/hotel/operations/tables", label: "Table Plan", Icon: SquareStack, permission: "restaurant:view_tables", section: "Food & Beverage" },
+  { id: "inventory", href: "/hotel/inventory", label: "Inventory", Icon: Package, permission: "inventory:read", section: "Inventory" },
+  { id: "finance", href: "/hotel/finance", label: "Finance", Icon: CreditCard, permission: "finance:view_records", section: "Finance" },
+  { id: "reports", href: "/hotel/reports", label: "Reports", Icon: BarChart3, permission: "reports:view_sales", section: "Finance" },
+  { id: "reviews", href: "/hotel/reviews", label: "Reviews", Icon: Star, permission: "analytics:view_operations", section: "Finance" },
+  { id: "staff", href: "/hotel/staff", label: "Staff", Icon: Users, permission: "users:read", section: "People" },
+  { id: "roles", href: "/hotel/roles", label: "Roles", Icon: Shield, permission: "roles:read", section: "People" },
+  { id: "crm", href: "/hotel/crm", label: "CRM", Icon: UserCircle, permission: "crm:view_guests", section: "People" },
+  { id: "corporate", href: "/hotel/corporate", label: "Corporate", Icon: Building2, permission: "crm:manage_guests", section: "People" },
+  { id: "events", href: "/hotel/events", label: "Events", Icon: PartyPopper, permission: "banquets:view", section: "More" },
+  { id: "messages", href: "/hotel/messages", label: "Messages", Icon: MessageSquare, permission: "communications:read_messages", section: "More" },
+  { id: "facilities", href: "/hotel/operations/facilities", label: "Facilities", Icon: Building2, permission: "operations:setup_facilities", section: "More" },
 ];
 
-// Super Admin Navigation
 const superAdminItems = [
-  { id: "dashboard", href: "/dashboard", label: "Overview", Icon: LayoutDashboard },
-  { id: "tenants", href: "/dashboard/tenants", label: "Tenants", Icon: Building2 },
-  { id: "licenses", href: "/dashboard/licenses", label: "Licenses", Icon: Ticket },
-  { id: "plans", href: "/dashboard/plans", label: "Plans", Icon: Package },
-  { id: "analytics", href: "/dashboard/analytics", label: "SaaS Analytics", Icon: TrendingUp },
-  { id: "audit", href: "/dashboard/audit", label: "Audit Logs", Icon: FileText },
-  { id: "settings", href: "/dashboard/settings", label: "System Settings", Icon: Settings },
+  { id: "admin-dashboard", href: "/admin", label: "Overview", Icon: LayoutDashboard },
+  { id: "tenants", href: "/admin/tenants", label: "Tenants", Icon: Building2 },
+  { id: "licenses", href: "/admin/licenses", label: "Licenses", Icon: Ticket },
+  { id: "plans", href: "/admin/plans", label: "Plans", Icon: Package },
+  { id: "analytics", href: "/admin/analytics", label: "SaaS Analytics", Icon: TrendingUp },
+  { id: "audit", href: "/admin/audit", label: "Audit Logs", Icon: FileText },
+  { id: "settings", href: "/admin/settings", label: "System Settings", Icon: Settings },
 ];
 
 const adminItems = [
-  { id: "audit", href: "/dashboard/audit", label: "Audit Logs", Icon: FileText },
-  { id: "settings", href: "/dashboard/settings", label: "Settings", Icon: Settings },
+  { id: "channel-manager", href: "/hotel/channel-manager", label: "Channel Manager", Icon: TrendingUp },
+  { id: "saas-billing", href: "/hotel/billing", label: "Subscription", Icon: CreditCard },
+  { id: "audit", href: "/hotel/audit", label: "Audit Logs", Icon: FileText },
+  { id: "settings", href: "/hotel/settings", label: "Settings", Icon: Settings },
 ];
 
 
 import ChangePasswordModal from "../modals/ChangePasswordModal";
 
+// Persisted across Sidebar remounts (each page wraps its own DashboardLayout, so
+// navigating remounts the sidebar). Keeps the nav scroll position stable.
+let savedNavScroll = 0;
+
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const prevPathRef = useRef(pathname);
+  const navScrollRef = useRef<HTMLDivElement>(null);
+
+  // Restore the saved scroll synchronously before paint so there's no jump.
+  useLayoutEffect(() => {
+    if (navScrollRef.current) navScrollRef.current.scrollTop = savedNavScroll;
+  }, []);
   const { user, logout, impersonation } = useAuth();
   const { isAdmin: checkIsAdmin, isUserType, can } = usePermissions();
-  const { isCollapsed, setIsCollapsed, notificationCounts, isMobileOpen, setIsMobileOpen } = useSidebar();
+  const { isCollapsed, setIsCollapsed, notificationCounts, setNotificationCounts, isMobileOpen, setIsMobileOpen } = useSidebar();
   const { open: openCommandPalette } = useCommandPalette();
   const { hasModule } = useHotelPlan();
+  const { isRouteEnabled } = useModuleConfig();
+  const { conversations } = useMessages();
+  const totalUnreadMessages = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
   const [errorMessage, setErrorMessage] = useState(false);
+
+  useEffect(() => {
+    setNotificationCounts({ ...notificationCounts, messages: totalUnreadMessages });
+  }, [totalUnreadMessages]);
 
   const isAdmin = checkIsAdmin();
 
@@ -117,11 +139,13 @@ export default function Sidebar() {
       // Permission check
       if (item.permission && !can(item.permission)) return false;
       // Plan module check (skip for dashboard, settings, billing, attendance, saas-billing)
-      const alwaysVisible = ['dashboard', 'saas-billing', 'attendance'];
+      const alwaysVisible = ['dashboard', 'saas-billing', 'attendance', 'reviews'];
       if (!alwaysVisible.includes(item.id) && !hasModule(item.id)) return false;
+      // Standalone module config check
+      if (!isRouteEnabled(item.id)) return false;
       return true;
     });
-  }, [can, hasModule]);
+  }, [can, hasModule, isRouteEnabled]);
 
   // Auto-collapse on mobile/small screens
   useEffect(() => {
@@ -138,7 +162,7 @@ export default function Sidebar() {
   }, [setIsCollapsed, setIsMobileOpen]);
 
   const isActiveRoute = (href: string) => {
-    if (href === "/dashboard") return pathname === "/dashboard";
+    if (href === "/hotel" || href === "/admin") return pathname === href;
     return pathname.startsWith(href);
   };
 
@@ -264,10 +288,10 @@ export default function Sidebar() {
             </button>
           )}
 
-          {/* Right side actions when expanded */}
-          {!isCompact && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <NotificationCenter />
+          {/* Right side actions — notification in sidebar only when expanded */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            {!isCompact && <NotificationCenter />}
+            {!isCompact && (
               <button
                 onClick={() => setIsCollapsed(!isCollapsed)}
                 className="hover-bg sidebar-collapse-btn"
@@ -285,17 +309,21 @@ export default function Sidebar() {
               >
                 <ChevronsLeft size={16} />
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Scrollable Nav Area */}
-        <div style={{
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          padding: '12px 4px'
-        }}>
+        <div
+          ref={navScrollRef}
+          onScroll={(e) => { savedNavScroll = e.currentTarget.scrollTop; }}
+          className="sidebar-nav-scroll"
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            padding: isCompact ? '12px 0' : '12px 8px'
+          }}>
           {/* Search Bar - Above Navigation */}
           {!isCompact ? (
             <button
@@ -325,12 +353,13 @@ export default function Sidebar() {
             <button
               onClick={openCommandPalette}
               className="hover-bg"
+              title="Search (Ctrl+K)"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: '36px',
-                height: '36px',
+                width: '40px',
+                height: '40px',
                 margin: '0 auto 12px',
                 background: 'var(--notion-bg)',
                 border: '1px solid var(--notion-border)',
@@ -340,7 +369,25 @@ export default function Sidebar() {
               }}
               title="Search (Ctrl+K)"
             >
-              <Search size={16} />
+              <Search size={18} />
+            </button>
+          )}
+
+          {/* Prominent POS quick-launch */}
+          {!isUserType("SUPER_ADMIN") && can("orders:create") && (
+            <button
+              onClick={() => router.push("/hotel/pos")}
+              className="hover-op"
+              title="Open POS"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: isCompact ? 0 : '8px',
+                width: isCompact ? '40px' : '100%', height: '38px', margin: isCompact ? '0 auto 12px' : '0 0 12px',
+                background: 'var(--notion-blue)', color: '#fff', border: 'none',
+                borderRadius: 'var(--radius-md)', cursor: 'pointer', fontSize: '13px', fontWeight: 600,
+              }}
+            >
+              <Monitor size={16} />
+              {!isCompact && <span>Open POS</span>}
             </button>
           )}
 
@@ -436,7 +483,7 @@ export default function Sidebar() {
           gap: '10px',
           justifyContent: isCollapsed ? 'center' : 'flex-start'
         }}>
-          <Link href="/dashboard/profile">
+          <Link href={isUserType("SUPER_ADMIN") ? "/admin/profile" : "/hotel/profile"}>
             <Avatar src={undefined} name={user?.name || "User"} size="sm" style={{ cursor: 'pointer' }} />
           </Link>
 
@@ -453,13 +500,14 @@ export default function Sidebar() {
                 {user?.name || "User"}
               </div>
               <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)' }}>
-                {user?.role || "STAFF"}
+                {user?.role?.name || "STAFF"}
               </div>
             </div>
           )}
 
           {!isCompact && (
-            <div style={{ display: 'flex' }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <ThemeToggle />
               <button
                 onClick={() => setErrorMessage(true)}
                 style={{
@@ -496,6 +544,18 @@ export default function Sidebar() {
           )}
         </div>
       </aside >
+
+      {/* Floating notification button when sidebar collapsed */}
+      {isCompact && (
+        <div style={{
+          position: 'fixed',
+          top: '16px',
+          right: '16px',
+          zIndex: 9999,
+        }}>
+          <NotificationCenter />
+        </div>
+      )}
 
       <ChangePasswordModal isOpen={errorMessage} onClose={() => setErrorMessage(false)} />
     </>

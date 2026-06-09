@@ -24,30 +24,10 @@ export default function ProtectedRoute({
     // Show loading state during initial auth check
     if (isLoading) {
         return (
-            <div style={{
-                minHeight: '100vh',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: 'var(--notion-bg)'
-            }}>
-                <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 'var(--space-4)'
-                }}>
-                    <div className="animate-spin" style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '50%',
-                        border: '3px solid var(--notion-border)',
-                        borderTopColor: 'var(--notion-blue)'
-                    }} />
-                    <span style={{
-                        color: 'var(--notion-text-secondary)',
-                        fontSize: '14px'
-                    }}>
+            <div className="page-center">
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-4)' }}>
+                    <div className="animate-spin loading-spinner" />
+                    <span style={{ fontSize: '14px' }} className="text-notion-secondary">
                         Loading...
                     </span>
                 </div>
@@ -68,40 +48,15 @@ export default function ProtectedRoute({
         }
 
         return (
-            <div style={{
-                minHeight: '100vh',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: 'var(--notion-bg)',
-                padding: 'var(--space-8)'
-            }}>
-                <div style={{
-                    textAlign: 'center',
-                    padding: 'var(--space-8)',
-                    backgroundColor: 'var(--notion-bg-secondary)',
-                    borderRadius: 'var(--radius-lg)',
-                    border: '1px solid var(--notion-border)',
-                    maxWidth: '400px'
-                }}>
-                    <div style={{
-                        fontSize: '48px',
-                        marginBottom: 'var(--space-4)'
-                    }}>
+            <div className="page-center" style={{ padding: 'var(--space-8)' }}>
+                <div className="card-box" style={{ maxWidth: '400px' }}>
+                    <div style={{ fontSize: '48px', marginBottom: 'var(--space-4)' }}>
                         🔒
                     </div>
-                    <h2 style={{
-                        fontSize: '18px',
-                        fontWeight: '600',
-                        color: 'var(--notion-text)',
-                        marginBottom: 'var(--space-2)'
-                    }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: '600', marginBottom: 'var(--space-2)' }}>
                         Access Denied
                     </h2>
-                    <p style={{
-                        fontSize: '14px',
-                        color: 'var(--notion-text-secondary)'
-                    }}>
+                    <p style={{ fontSize: '14px' }} className="text-notion-secondary">
                         You don't have permission to access this page.
                     </p>
                 </div>

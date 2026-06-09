@@ -1,28 +1,43 @@
 import { HttpError } from '../utils/errors';
 import { logger } from '../shared/logger';
 
-export const errorMiddleware = (app: any) => {
-    return app.onError(({ error, set, request }: any) => {
+import type { Elysia } from 'elysia';
+
+export const errorMiddleware = (app: Elysia) => {
+    return app.onError(({ error, set, request }) => {
+        const err = error instanceof Error ? error : new Error(String(error));
+
         const logPayload = {
             method: request.method,
             url: request.url,
-            message: error.message,
-            stack: error.stack,
+            message: err.message,
+            stack: err.stack,
         };
 
-        if (error instanceof HttpError) {
-            set.status = error.statusCode;
-            if (error.statusCode >= 500) {
-                logger.error(logPayload, `[${error.statusCode}] ${error.message}`);
+        if (err instanceof HttpError) {
+            set.status = err.statusCode;
+            if (err.statusCode >= 500) {
+                logger.error(logPayload, `[${err.statusCode}] ${err.message}`);
             }
             return {
                 status: 'error',
-                message: error.message,
-                code: error.code || 'INTERNAL_SERVER_ERROR'
+                message: err.message,
+                code: err.code || 'INTERNAL_SERVER_ERROR'
             };
         }
 
-        logger.error(logPayload, `[500] Unhandled: ${error.message}`);
+        // Postgres exclusion constraint violation (double-booking)
+        const pgError = error as any;
+        if (pgError?.code === '23P01') {
+            set.status = 409;
+            return {
+                status: 'error',
+                message: 'Room not available for selected dates. The dates overlap with an existing booking.',
+                code: 'CONFLICT'
+            };
+        }
+
+        logger.error(logPayload, `[500] Unhandled: ${err.message}`);
 
         set.status = 500;
         return {

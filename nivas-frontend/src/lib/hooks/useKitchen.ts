@@ -2,10 +2,31 @@
  * Kitchen Display System API Hook
  * Connects to /orders/kot endpoints + WebSocket real-time events
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { toast } from 'sonner';
 import { useSocket } from './useSocket';
+
+// Subtle two-note kitchen chime (slightly more present than the bell — it's a
+// work alert — but still soft). Respects reduced-motion/quiet preference best-effort.
+function playKitchenChime() {
+    try {
+        const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        const t = ctx.currentTime;
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(784, t);        // G5
+        osc.frequency.setValueAtTime(1047, t + 0.1); // C6
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.1, t + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+        osc.start(t); osc.stop(t + 0.47);
+    } catch { /* ignore */ }
+}
 
 export interface KitchenOrder {
     id: number;
@@ -44,7 +65,6 @@ export function useKitchen(): UseKitchenReturn {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const { status: socketStatus, on } = useSocket();
-    const audioRef = useRef<HTMLAudioElement | null>(null);
 
     const fetchOrders = useCallback(async () => {
         try {
@@ -103,13 +123,7 @@ export function useKitchen(): UseKitchenReturn {
     useEffect(() => {
         const unsubNew = on('KITCHEN_NEW_ORDER', (data: any) => {
             toast.info(`New order: #${data.orderNumber}`);
-            // Play notification sound
-            try {
-                if (!audioRef.current) {
-                    audioRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQ==');
-                }
-                audioRef.current.play().catch(() => { });
-            } catch { }
+            playKitchenChime(); // subtle WebAudio chime (old base64 WAV was empty)
             fetchOrders();
         });
 

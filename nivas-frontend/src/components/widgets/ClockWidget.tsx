@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Globe, Settings, X, Search, CalendarDays } from "lucide-react";
-import { adToBS, formatBSDate, getBSDayName } from "@/lib/utils/nepaliDate";
+import { adToBS, formatBSDate, formatBSDateEN, getBSDayName } from "@/lib/utils/nepaliDate";
 
 const TIMEZONES = [
     { label: "Local Time", zone: "local" },
@@ -27,7 +27,6 @@ export default function ClockWidget() {
     const [selectedZone, setSelectedZone] = useState(TIMEZONES[0]);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
-    const [showBS, setShowBS] = useState(false);
 
     useEffect(() => {
         const timer = setInterval(() => setTime(new Date()), 1000);
@@ -52,11 +51,17 @@ export default function ClockWidget() {
     };
 
     const getDateString = (date: Date, zone: string) => {
-        // If showing BS date (only for Nepal timezone or local in Nepal)
-        if (showBS && (zone === "Asia/Kathmandu" || zone === "local")) {
+        const isNepal = zone === "Asia/Kathmandu" || zone === "local";
+        if (isNepal) {
             const bsDate = adToBS(date);
+            const bsFormatted = formatBSDateEN(bsDate, 'long');
+            const adFormatted = date.toLocaleDateString('en-US', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+            });
             const dayName = getBSDayName(date);
-            return `${dayName}, ${formatBSDate(bsDate, 'long')}`;
+            return `${dayName} | ${adFormatted} (${bsFormatted} BS)`;
         }
 
         if (zone === "local") return date.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
@@ -71,8 +76,6 @@ export default function ClockWidget() {
             return "";
         }
     };
-
-    const isNepalTimezone = selectedZone?.zone === "Asia/Kathmandu" || selectedZone?.zone === "local";
 
     return (
         <div style={{
@@ -133,7 +136,7 @@ export default function ClockWidget() {
                         {getTimeString(time, selectedZone?.zone || "local")}
                     </div>
 
-                    {/* Date with AD/BS Toggle */}
+                    {/* Date with AD/BS */}
                     <div style={{
                         display: "flex",
                         alignItems: "center",
@@ -146,29 +149,6 @@ export default function ClockWidget() {
                         }}>
                             {getDateString(time, selectedZone?.zone || "local")}
                         </span>
-
-                        {/* BS Toggle Button - Only show for Nepal timezone */}
-                        {isNepalTimezone && (
-                            <button
-                                onClick={() => setShowBS(!showBS)}
-                                title={showBS ? "Switch to AD" : "Switch to BS (विक्रम संवत)"}
-                                style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    padding: "2px 6px",
-                                    fontSize: "9px",
-                                    fontWeight: 600,
-                                    background: showBS ? "var(--notion-blue-bg)" : "var(--notion-bg-tertiary)",
-                                    color: showBS ? "var(--notion-blue)" : "var(--notion-text-muted)",
-                                    border: "none",
-                                    borderRadius: "4px",
-                                    cursor: "pointer",
-                                    transition: "all 150ms ease"
-                                }}
-                            >
-                                {showBS ? "BS" : "AD"}
-                            </button>
-                        )}
                     </div>
                 </div>
 

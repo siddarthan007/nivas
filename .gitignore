@@ -13,6 +13,8 @@ out/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.prod
+.env.docker
 *.pem
 
 # Logs
@@ -45,3 +47,12 @@ coverage/
 
 .cursor
 .github
+# Generated knowledge graph (graphify) + backup temp dumps
+graphify-out/
+*.dump
+
+# Agent / tooling scratch (not part of the app)
+.agent/
+.agents/
+.claude/
+skills-lock.json

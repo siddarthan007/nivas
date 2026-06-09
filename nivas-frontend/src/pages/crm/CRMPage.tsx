@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
     useCRM,
+    type Guest,
     type Company,
     type TravelAgent,
     type CreateCompanyPayload,
@@ -24,11 +25,17 @@ import {
     Pencil,
     Trash2,
     AlertTriangle,
+    User,
+    Star,
+    Hash,
+    Receipt,
+    Phone,
 } from 'lucide-react';
 
 // Tab Navigation
 function TabNav({ activeTab, onTabChange }: { activeTab: string; onTabChange: (tab: string) => void }) {
     const tabs = [
+        { id: 'guests', label: 'Guests', icon: User },
         { id: 'companies', label: 'Corporate', icon: Building2 },
         { id: 'agents', label: 'Agents', icon: Briefcase },
     ];
@@ -118,7 +125,7 @@ function CompanyCard({ company, onEdit, onDelete }: { company: Company; onEdit: 
                     <span style={{ color: 'var(--notion-green)' }}>{company.discountPercentage}% discount</span>
                 )}
                 {company.creditLimit && (
-                    <span style={{ color: 'var(--notion-blue)' }}>₹{(company.creditLimit || 0).toLocaleString()} limit</span>
+                    <span style={{ color: 'var(--notion-blue)' }}>Rs {(company.creditLimit || 0).toLocaleString()} limit</span>
                 )}
             </div>
         </div>
@@ -174,6 +181,73 @@ function AgentCard({ agent, onEdit, onDelete }: { agent: TravelAgent; onEdit: ()
             )}
             <div style={{ marginTop: 'var(--space-3)', fontSize: '14px', fontWeight: '500', color: 'var(--notion-orange)' }}>
                 {((agent.commissionRate || 0) * 100).toFixed(0)}% commission
+            </div>
+        </div>
+    );
+}
+
+// Guest Card
+function GuestCard({ guest, onToggleVip, onViewLedger }: { guest: Guest; onToggleVip: () => void; onViewLedger: () => void }) {
+    const fullName = [guest.firstName, guest.lastName].filter(Boolean).join(' ') || 'Unknown Guest';
+    return (
+        <div style={{
+            backgroundColor: 'var(--notion-bg-secondary)',
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--notion-border)',
+            padding: 'var(--space-4)',
+        }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-2)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    <div style={{
+                        width: '36px', height: '36px', borderRadius: '50%',
+                        backgroundColor: guest.isVip ? 'var(--notion-yellow-bg)' : 'var(--notion-bg-tertiary)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: guest.isVip ? 'var(--notion-yellow)' : 'var(--notion-text-secondary)',
+                    }}>
+                        <User size={16} />
+                    </div>
+                    <div>
+                        <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--notion-text)' }}>{fullName}</div>
+                        {guest.isVip && (
+                            <span style={{ fontSize: '11px', color: 'var(--notion-yellow)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                <Star size={10} fill="currentColor" /> VIP
+                            </span>
+                        )}
+                    </div>
+                </div>
+                <button
+                    onClick={onToggleVip}
+                    title={guest.isVip ? 'Remove VIP' : 'Mark VIP'}
+                    style={{
+                        background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
+                        color: guest.isVip ? 'var(--notion-yellow)' : 'var(--notion-text-secondary)', borderRadius: 'var(--radius-sm)',
+                    }}
+                >
+                    <Star size={16} />
+                </button>
+            </div>
+            {guest.phone && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-1)' }}>
+                    <Phone size={12} /> {guest.phone}
+                </div>
+            )}
+            {guest.email && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-1)' }}>
+                    <Mail size={12} /> {guest.email}
+                </div>
+            )}
+            <div style={{ display: 'flex', gap: 'var(--space-4)', marginTop: 'var(--space-3)', fontSize: '12px' }}>
+                <span style={{ color: 'var(--notion-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Hash size={12} /> {guest.stays ?? 0} stays
+                </span>
+                <span style={{ color: 'var(--notion-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Receipt size={12} /> NPR {guest.totalSpend?.toLocaleString() ?? 0}
+                </span>
+            </div>
+            <div style={{ marginTop: 'var(--space-3)' }}>
+                <Button variant="secondary" size="sm" onClick={onViewLedger} style={{ width: '100%' }}>
+                    <Receipt size={12} style={{ marginRight: '4px' }} /> View Ledger
+                </Button>
             </div>
         </div>
     );
@@ -502,9 +576,12 @@ function DeleteConfirmModal({ isOpen, onClose, onConfirm, entityName, entityType
 // Main Page
 export default function CRMPage() {
     const {
+        guests,
         companies,
         agents,
         isLoading,
+        searchGuests,
+        updateGuestProfile,
         fetchCompanies,
         createCompany,
         updateCompany,
@@ -515,7 +592,8 @@ export default function CRMPage() {
         deleteAgent,
     } = useCRM();
 
-    const [activeTab, setActiveTab] = useState('companies');
+    const [activeTab, setActiveTab] = useState('guests');
+    const [guestSearch, setGuestSearch] = useState('');
     const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
     const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
 
@@ -528,9 +606,17 @@ export default function CRMPage() {
     const [deletingAgent, setDeletingAgent] = useState<TravelAgent | null>(null);
 
     useEffect(() => {
+        searchGuests();
         fetchCompanies();
         fetchAgents();
-    }, [fetchCompanies, fetchAgents]);
+    }, [searchGuests, fetchCompanies, fetchAgents]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (activeTab === 'guests') searchGuests(guestSearch || undefined);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [guestSearch, activeTab, searchGuests]);
 
     return (
         <DashboardLayout>
@@ -577,7 +663,11 @@ export default function CRMPage() {
                 {/* Stats */}
                 <div style={{ display: 'flex', gap: 'var(--space-6)', marginBottom: 'var(--space-6)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                        <span style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-blue)' }}>{companies.length}</span>
+                        <span style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-blue)' }}>{guests.length}</span>
+                        <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Guests</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                        <span style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-green)' }}>{companies.length}</span>
                         <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Companies</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
@@ -595,6 +685,34 @@ export default function CRMPage() {
                         {Array.from({ length: 4 }).map((_, i) => (
                             <SkeletonCard key={i} />
                         ))}
+                    </div>
+                ) : activeTab === 'guests' ? (
+                    <div>
+                        <div style={{ maxWidth: '400px', marginBottom: 'var(--space-4)' }}>
+                            <Input
+                                placeholder="Search guests by name, phone, or email..."
+                                value={guestSearch}
+                                onChange={e => setGuestSearch(e.target.value)}
+                                icon={<User size={16} />}
+                            />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 'var(--space-4)' }}>
+                            {guests.length === 0 ? (
+                                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 'var(--space-12)', color: 'var(--notion-text-secondary)' }}>
+                                    <User size={48} style={{ opacity: 0.3, marginBottom: 'var(--space-4)' }} />
+                                    <p>No guests found</p>
+                                </div>
+                            ) : (
+                                guests.map(guest => (
+                                    <GuestCard
+                                        key={guest.id}
+                                        guest={guest}
+                                        onToggleVip={() => updateGuestProfile(guest.id, { isVip: !guest.isVip })}
+                                        onViewLedger={() => window.open(`/hotel/finance/customer-ledger?guestId=${encodeURIComponent(guest.id)}`, '_blank')}
+                                    />
+                                ))
+                            )}
+                        </div>
                     </div>
                 ) : activeTab === 'companies' ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>

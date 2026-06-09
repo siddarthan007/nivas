@@ -6,8 +6,9 @@ export interface SubscriptionPackage {
     id: number;
     name: string;
     description: string;
-    price: number;
-    billingCycle: 'MONTHLY';
+    monthlyPrice: number;
+    annualPrice?: number | null;
+    billingCycle: 'MONTHLY' | 'ANNUAL' | '2_YEAR' | '3_YEAR';
     features: string[];
     isActive: boolean;
     maxRooms?: number | null;
@@ -110,8 +111,9 @@ function mapPackage(pkg: Record<string, any>): SubscriptionPackage {
         id: Number(pkg.id),
         name: pkg.name || 'Unnamed Plan',
         description: pkg.description || 'Subscription package',
-        price: Number(pkg.price || 0),
-        billingCycle: 'MONTHLY',
+        monthlyPrice: Number(pkg.monthlyPrice || pkg.monthly_price || 0),
+        annualPrice: pkg.annualPrice || pkg.annual_price ? Number(pkg.annualPrice || pkg.annual_price) : null,
+        billingCycle: pkg.billingCycle || 'MONTHLY',
         features: Array.isArray(pkg.features) ? pkg.features : [],
         isActive: Boolean(pkg.isActive),
         maxRooms: pkg.maxRooms ?? null,

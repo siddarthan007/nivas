@@ -40,6 +40,7 @@ export interface Role {
     id: number;
     name: string;
     description?: string;
+    level: number; // lower = higher authority (Owner=0, Manager=1...)
     permissions: string[];
     hotelId: number;
     isSystem: boolean;
@@ -48,6 +49,7 @@ export interface Role {
 export interface CreateRolePayload {
     name: string;
     description?: string;
+    level?: number;
     permissions: string[];
 }
 
@@ -80,11 +82,19 @@ export interface Room {
     type: RoomType;
     rate: number;
     status: RoomStatus;
-    floor?: number;
+    floorId?: number;
+    floorNumber?: number;
     capacity?: number;
+    imageUrl?: string;
     amenities?: string[];
     notes?: string;
     layoutProps?: any; // JSON layout properties
+    currentBooking?: {
+        id: string;
+        guestName: string;
+        checkIn: string;
+        checkOut: string;
+    } | null;
     createdAt: string;
     updatedAt: string;
 }
@@ -94,8 +104,10 @@ export interface CreateRoomPayload {
     name?: string;
     type: RoomType;
     rate: number;
-    floor?: number;
+    floorId?: number;
+    floorNumber?: number;
     capacity?: number;
+    imageUrl?: string;
 }
 
 export interface UpdateRoomPayload {
@@ -103,7 +115,11 @@ export interface UpdateRoomPayload {
     name?: string;
     type?: RoomType;
     rate?: number;
+    imageUrl?: string;
     status?: RoomStatus;
+    floorId?: number;
+    floorNumber?: number;
+    capacity?: number;
 }
 
 // ============================================================================
@@ -179,10 +195,16 @@ export interface Order {
     customerName?: string;
     orderType: OrderType;
     status: OrderStatus;
+    paymentStatus?: 'UNPAID' | 'PAID' | 'PARTIAL' | 'ON_FOLIO';
     items: OrderItem[];
-    subtotal: number;
-    tax: number;
-    total: number;
+    totalAmount: number;
+    subTotal?: number;
+    vatAmount?: number;
+    serviceChargeAmount?: number;
+    vatRate?: number;
+    serviceChargeRate?: number;
+    applyVat?: boolean;
+    applyServiceCharge?: boolean;
     createdBy: string;
     createdAt: string;
     updatedAt: string;
@@ -190,12 +212,15 @@ export interface Order {
 
 export interface CreateOrderPayload {
     roomId?: number;
+    bookingId?: string;
     customerName?: string;
     restaurantTableId?: number;
     guestId?: string;
     outletId?: number;
     orderType: OrderType;
     addToGuestBill?: boolean;
+    applyVat?: boolean;
+    applyServiceCharge?: boolean;
     items: {
         menuItemId: number;
         quantity: number;
@@ -217,7 +242,6 @@ export interface MenuItem {
     price: number;
     isAvailable: boolean;
     imageUrl?: string;
-    preparationTime?: number;
     createdAt: string;
 }
 
@@ -227,7 +251,7 @@ export interface CreateMenuItemPayload {
     category: string;
     price: number;
     isAvailable?: boolean;
-    preparationTime?: number;
+    imageUrl?: string;
 }
 
 // ============================================================================
@@ -272,27 +296,47 @@ export type ItemCategory = 'FOOD' | 'BEVERAGE' | 'HOUSEKEEPING' | 'STATIONERY' |
 export interface InventoryItem {
     id: number;
     hotelId: number;
+    sku: string;
+    barcode?: string;
     name: string;
+    description?: string;
     category: ItemCategory;
     unit: string;
+    quantity: number;
     currentStock: number;
     minStock: number;
     reorderLevel: number;
+    unitCost: number;
     costPrice: number;
+    lowStockThreshold: number;
+    status: 'ACTIVE' | 'DISCONTINUED';
     supplier?: string;
+    warehouseId?: number;
+    warehouse?: { id: number; name: string };
+    supplierId?: number;
+    supplierObj?: { id: number; name: string };
     createdAt: string;
     updatedAt: string;
 }
 
 export interface CreateInventoryPayload {
+    sku?: string;
+    barcode?: string;
     name: string;
+    description?: string;
     category: ItemCategory;
     unit: string;
-    currentStock: number;
-    minStock: number;
-    reorderLevel: number;
-    costPrice: number;
+    currentStock?: number;
+    quantity?: number;
+    minStock?: number;
+    reorderLevel?: number;
+    lowStockThreshold?: number;
+    unitCost?: number;
+    costPrice?: number;
+    status?: 'ACTIVE' | 'DISCONTINUED';
     supplier?: string;
+    warehouseId?: number;
+    supplierId?: number;
 }
 
 // ============================================================================
@@ -313,6 +357,18 @@ export interface DashboardStats {
     todayRevenue: number;
     occupancyRate: number;
     lowStockItems?: number;
+    // Nepali PMS metrics
+    todayUnpaid?: number;
+    todayDiscount?: number;
+    totalDue?: number;
+    totalPurchase?: number;
+    todayProfit?: number;
+    totalOrders?: number;
+    qrOrders?: number;
+    totalMenuItems?: number;
+    totalEmployees?: number;
+    bestHour?: string;
+    totalAdvancePayments?: number;
 }
 
 export interface RevenueAnalytics {
@@ -321,6 +377,7 @@ export interface RevenueAnalytics {
     fbRevenue: number;
     otherRevenue: number;
     trend: { date: string; amount: number }[];
+    fbTrend?: { date: string; amount: number; orders: number }[];
     comparison: {
         current: number;
         previous: number;
@@ -379,6 +436,22 @@ export interface SaaSOverview {
     expiringLicenses: number;
     revenueHistory?: { month: string; amount: number }[];
     tenantGrowth?: { month: string; count: number }[];
+}
+
+export interface SaaSPayment {
+    id: string;
+    hotelId: number;
+    hotelName?: string;
+    amount: string;
+    currency: string;
+    status: string;
+    paymentMethod?: string;
+    transactionId?: string;
+    invoiceNumber?: string;
+    periodStart?: string;
+    periodEnd?: string;
+    notes?: string;
+    createdAt: string;
 }
 
 // ============================================================================
@@ -469,4 +542,80 @@ export interface UpdateRegionalPayload {
     timezone?: string;
     dateFormat?: string;
     fiscalYearStart?: string;
+}
+
+// ============================================================================
+// HR / Payroll Types
+// ============================================================================
+export interface PayrollSummary {
+    id: number;
+    employeeId: string;
+    employeeName: string;
+    periodStart: string;
+    periodEnd: string;
+    baseSalary: number;
+    deductions: number;
+    bonuses: number;
+    netPay: number;
+    status: 'PENDING' | 'PAID';
+    paymentDate?: string;
+}
+
+export interface GeneratePayrollPayload {
+    employeeId: string;
+    periodStart: string;
+    periodEnd: string;
+    baseSalary: number;
+    deductions?: number;
+    bonuses?: number;
+}
+
+// ============================================================================
+// Maintenance Types
+// ============================================================================
+export interface Asset {
+    id: number;
+    hotelId: number;
+    name: string;
+    category: string;
+    serialNumber?: string;
+    location?: string;
+    purchaseDate?: string;
+    purchasePrice?: string;
+    status: string;
+}
+
+export interface CreateAssetPayload {
+    name: string;
+    category: string;
+    serialNumber?: string;
+    location?: string;
+    purchaseDate?: string;
+    purchasePrice?: string;
+    status?: string;
+}
+
+export interface MaintenanceTicket {
+    id: number;
+    hotelId: number;
+    title: string;
+    description: string;
+    priority: string;
+    status: string;
+    roomId?: number;
+    assetId?: number;
+    assignedTo?: string;
+    blockRoom: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface CreateTicketPayload {
+    title: string;
+    description: string;
+    priority?: string;
+    roomId?: number;
+    assetId?: number;
+    assignedTo?: string;
+    blockRoom?: boolean;
 }

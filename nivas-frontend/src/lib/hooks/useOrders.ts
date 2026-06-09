@@ -14,11 +14,12 @@ export function useOrders() {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchOrders = useCallback(async () => {
+    const fetchOrders = useCallback(async (search?: string) => {
         setIsLoading(true);
         setError(null);
         try {
-            const res = await api.get<Order[]>('/orders');
+            const qs = search && search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
+            const res = await api.get<Order[]>(`/orders${qs}`);
             setOrders(res.data || []);
         } catch (err: unknown) {
             const msg = getErrorMessage(err, 'Failed to fetch orders');
@@ -32,14 +33,14 @@ export function useOrders() {
     const createOrder = async (data: CreateOrderPayload) => {
         setIsLoading(true);
         try {
-            await api.post('/orders', data);
+            const res = await api.post<{ data: Order }>('/orders', data);
             await fetchOrders();
             toast.success('Order created successfully');
-            return true;
+            return res.data?.data || null;
         } catch (err: unknown) {
             const msg = getErrorMessage(err, 'Failed to create order');
             toast.error(msg);
-            return false;
+            return null;
         } finally {
             setIsLoading(false);
         }

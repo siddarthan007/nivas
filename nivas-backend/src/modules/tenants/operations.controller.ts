@@ -106,8 +106,9 @@ export const operationsController = new Elysia({ prefix: '/ops' })
         hasPermission: PERMISSIONS.ROOMS.DELETE,
         detail: { summary: 'Delete a floor', tags: ['Operations'] }
     })
-    .patch('/rooms/:id/guest-pin', async ({ params, body }) => {
-        const updatedRoom = await OperationsService.updateGuestPin(parseInt(params.id), body.pin);
+    .patch('/rooms/:id/guest-pin', async ({ params, body, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const updatedRoom = await OperationsService.updateGuestPin(user.hotelId, parseInt(params.id), body.pin);
         return createResponse(updatedRoom, 'Guest PIN updated');
     }, {
         isSignedIn: true,

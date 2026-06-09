@@ -20,7 +20,35 @@ interface GuestBill {
     description: string;
     amount: number;
     date: string;
-    status: 'PENDING' | 'PAID';
+    status: 'PENDING' | 'PAID' | 'BILLED';
+}
+
+export interface GuestBillSummary {
+    roomCharge: number;
+    ordersTotal: number;
+    subTotal: number;
+    serviceCharge: number;
+    serviceChargeRate: number;
+    vat: number;
+    taxRate: number;
+    grandTotal: number;
+    paidAmount: number;
+    dueAmount: number;
+    pendingOrdersTotal: number;
+}
+
+export interface PortalConfig {
+    hotelName: string;
+    hotelPhone?: string;
+    hotelEmail?: string;
+    hotelAddress?: string;
+    welcomeMessage: string;
+    wifiNetworks: { floor: string; ssid: string; password: string }[];
+    contactNumbers: Record<string, string>;
+    socialLinks: Record<string, string>;
+    customSections: { title: string; content: string }[];
+    showBillBreakdown: boolean;
+    showOrderProgress: boolean;
 }
 
 interface MenuItem {
@@ -33,12 +61,17 @@ interface MenuItem {
     image?: string;
 }
 
-interface ServiceRequest {
+/** Unified activity item: a food order OR a service (housekeeping/amenity) request. */
+export interface ActivityItem {
     id: string;
-    type: 'HOUSEKEEPING' | 'ROOM_SERVICE' | 'MAINTENANCE';
-    status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+    kind: 'ORDER' | 'SERVICE';
+    type: string;
+    status: string;
+    orderNumber?: string;
+    totalAmount?: number;
     notes?: string;
     createdAt: string;
+    items: { name: string; quantity: number; price: number }[];
 }
 
 function saveGuestSession(session: GuestSession, token: string) {
@@ -110,8 +143,10 @@ function normalizeMenuByCategory(raw: unknown): Record<string, MenuItem[]> {
 export function useGuestPortal() {
     const [session, setSession] = useState<GuestSession | null>(null);
     const [bills, setBills] = useState<GuestBill[]>([]);
+    const [billSummary, setBillSummary] = useState<GuestBillSummary | null>(null);
+    const [portalConfig, setPortalConfig] = useState<PortalConfig | null>(null);
     const [menuByCategory, setMenuByCategory] = useState<Record<string, MenuItem[]>>({});
-    const [requests, setRequests] = useState<ServiceRequest[]>([]);
+    const [requests, setRequests] = useState<ActivityItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -127,11 +162,11 @@ export function useGuestPortal() {
         setIsLoading(false);
     }, []);
 
-    const loginWithPin = async (roomNumber: string, pin: string): Promise<boolean> => {
+    const loginWithPin = async (roomNumber: string, pin: string, hotelSlug?: string): Promise<boolean> => {
         setIsLoading(true);
         setError(null);
         try {
-            const response = await api.post<any>('/guest/login', { roomNumber, pin });
+            const response = await api.post<any>('/guest/login', { roomNumber, pin, hotelSlug });
 
             if (response.data) {
                 const d = response.data;
@@ -164,33 +199,38 @@ export function useGuestPortal() {
         }
     };
 
-    // Fetch guest bills
+    // Fetch guest bill (itemized line items + authoritative summary totals)
     const fetchBills = useCallback(async () => {
         if (!isAuthenticated) return;
         try {
-            // Using billing controller endpoint
             const response = await api.get<any>('/billing/guest/my-bill');
-            if (response.data) {
-                // Transform backend response to GuestBill[]
-                // Backend returns { financials: { total, paid, due }, orders: [], payments: [] }
-                // We need to flatten this for the UI list
-                const billItems: GuestBill[] = [];
-
-                // Add orders
-                response.data.orders.forEach((o: any) => {
-                    billItems.push({
-                        id: o.orderNumber,
-                        category: 'FOOD',
-                        description: `Order #${o.orderNumber} (${o.items} items)`,
-                        amount: o.amount,
-                        date: new Date().toISOString(), // Date not in summary
-                        status: 'PENDING'
-                    });
+            const d = response.data;
+            if (d) {
+                const items: GuestBill[] = (d.lineItems || []).map((li: any) => ({
+                    id: String(li.id),
+                    category: String(li.category || 'OTHER'),
+                    description: String(li.description || ''),
+                    amount: Number(li.amount) || 0,
+                    date: li.date || new Date().toISOString(),
+                    status: li.status === 'BILLED' ? 'BILLED' : 'PENDING',
+                }));
+                setBills(items);
+                setBillSummary({
+                    roomCharge: Number(d.roomCharge) || 0,
+                    ordersTotal: Number(d.ordersTotal) || 0,
+                    subTotal: Number(d.subTotal) || 0,
+                    serviceCharge: Number(d.serviceCharge) || 0,
+                    serviceChargeRate: Number(d.serviceChargeRate) || 0,
+                    vat: Number(d.vat) || 0,
+                    taxRate: Number(d.taxRate) || 0,
+                    grandTotal: Number(d.grandTotal) || 0,
+                    paidAmount: Number(d.paidAmount) || 0,
+                    dueAmount: Number(d.dueAmount) || 0,
+                    pendingOrdersTotal: Number(d.pendingOrdersTotal) || 0,
                 });
-
-                setBills(billItems);
             }
         } catch (err) {
+            // No active booking / not checked in yet — keep bill empty.
             console.error('Failed to fetch bills:', err);
         }
     }, [isAuthenticated]);
@@ -204,25 +244,38 @@ export function useGuestPortal() {
         }
     }, []);
 
-    // Fetch service requests (using orders endpoint as proxy)
+    // Fetch unified activity feed (food orders + service requests) for live tracking
     const fetchRequests = useCallback(async () => {
         if (!isAuthenticated) return;
         try {
-            const response = await api.get<any[]>('/guest/actions/orders');
-            if (response.data && Array.isArray(response.data)) {
-                const serviceRequests: ServiceRequest[] = response.data.map((order: any) => ({
-                    id: order.id || order.orderNumber,
-                    type: order.type || 'ROOM_SERVICE',
-                    status: order.status === 'SERVED' || order.status === 'COMPLETED' ? 'COMPLETED'
-                        : order.status === 'PREPARING' || order.status === 'IN_PROGRESS' ? 'IN_PROGRESS'
-                        : 'PENDING',
-                    notes: order.notes,
-                    createdAt: order.createdAt || new Date().toISOString(),
-                }));
-                setRequests(serviceRequests);
+            const response = await api.get<any[]>('/guest/actions/activity');
+            if (Array.isArray(response.data)) {
+                setRequests(response.data.map((a: any): ActivityItem => ({
+                    id: String(a.id),
+                    kind: a.kind === 'SERVICE' ? 'SERVICE' : 'ORDER',
+                    type: String(a.type || (a.kind === 'SERVICE' ? 'CLEANING' : 'ROOM_SERVICE')),
+                    status: String(a.status || 'PENDING'),
+                    orderNumber: a.orderNumber ? String(a.orderNumber) : undefined,
+                    totalAmount: a.totalAmount != null ? Number(a.totalAmount) : undefined,
+                    notes: a.notes || undefined,
+                    createdAt: a.createdAt || new Date().toISOString(),
+                    items: Array.isArray(a.items)
+                        ? a.items.map((i: any) => ({ name: String(i.name || 'Item'), quantity: Number(i.quantity) || 1, price: Number(i.price) || 0 }))
+                        : [],
+                })));
             }
         } catch {
             setRequests([]);
+        }
+    }, [isAuthenticated]);
+
+    const fetchPortalConfig = useCallback(async () => {
+        if (!isAuthenticated) return;
+        try {
+            const response = await api.get<PortalConfig>('/guest/actions/portal-config');
+            if (response.data) setPortalConfig(response.data);
+        } catch {
+            setPortalConfig(null);
         }
     }, [isAuthenticated]);
 
@@ -232,20 +285,46 @@ export function useGuestPortal() {
             fetchBills();
             fetchMenu();
             fetchRequests();
+            fetchPortalConfig();
         }
-    }, [isAuthenticated, fetchBills, fetchMenu, fetchRequests]);
+    }, [isAuthenticated, fetchBills, fetchMenu, fetchRequests, fetchPortalConfig]);
+
+    // Live progress: guests have no websocket, so poll the activity feed + bill
+    // while the portal is open and the tab is visible. This keeps order status
+    // (Received -> Preparing -> Ready -> Served), service requests, and the
+    // running bill up to date without a manual reload.
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        const POLL_MS = 15000;
+        const tick = () => {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            fetchRequests();
+            fetchBills();
+        };
+        const interval = setInterval(tick, POLL_MS);
+        // Refresh immediately when the guest returns to the tab.
+        const onVisible = () => { if (!document.hidden) tick(); };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+    }, [isAuthenticated, fetchRequests, fetchBills]);
 
     // Place food order
-    const placeOrder = async (items: { menuItemId: string; quantity: number }[], deliveryTo: 'ROOM' | 'RESTAURANT', notes?: string): Promise<boolean> => {
+    const placeOrder = async (items: { menuItemId: string; quantity: number; notes?: string }[], deliveryTo: 'ROOM' | 'RESTAURANT', orderNotes?: string): Promise<boolean> => {
         try {
             await api.post('/guest/actions/order', {
                 items: items.map(i => ({
-                    menuItemId: parseInt(i.menuItemId),
+                    menuItemId: Number(i.menuItemId),
                     quantity: i.quantity,
-                    notes: notes
-                }))
+                    notes: i.notes || undefined
+                })),
+                deliveryTo,
+                notes: orderNotes || undefined,   // guest's order-level instructions (was dropped)
             });
             await fetchBills();
+            await fetchRequests();
             return true;
         } catch (err: any) {
             setError(err.message || 'Failed to place order');
@@ -260,9 +339,20 @@ export function useGuestPortal() {
                 taskType: 'CLEANING', // Default to cleaning
                 notes,
             });
+            await fetchRequests();
             return true;
         } catch (err: any) {
             setError(err.message || 'Failed to submit request');
+            return false;
+        }
+    };
+
+    const submitFeedback = async (rating: number, comment?: string): Promise<boolean> => {
+        try {
+            await api.post('/guest/actions/feedback', { rating, comment: comment || undefined });
+            return true;
+        } catch (err: any) {
+            setError(err.message || 'Failed to submit feedback');
             return false;
         }
     };
@@ -276,6 +366,7 @@ export function useGuestPortal() {
                 taskType: 'AMENITIES',
                 notes,
             });
+            await fetchRequests();
             return true;
         } catch (err: any) {
             setError(err.message || 'Failed to submit request');
@@ -298,14 +389,16 @@ export function useGuestPortal() {
         setSession(null);
         setIsAuthenticated(false);
         setBills([]);
+        setBillSummary(null);
+        setPortalConfig(null);
         setMenuByCategory({});
         setRequests([]);
         clearGuestSession();
     };
 
-    // Calculate totals
-    const totalSpent = bills.reduce((sum, bill) => sum + bill.amount, 0);
-    const pendingAmount = bills.filter(b => b.status === 'PENDING').reduce((sum, b) => sum + b.amount, 0);
+    // Calculate totals from the authoritative summary
+    const totalSpent = billSummary?.grandTotal ?? 0;
+    const pendingAmount = billSummary?.dueAmount ?? 0;
 
     return {
         session,
@@ -313,6 +406,8 @@ export function useGuestPortal() {
         isLoading,
         error,
         bills,
+        billSummary,
+        portalConfig,
         menuByCategory,
         requests,
         totalSpent,
@@ -320,12 +415,14 @@ export function useGuestPortal() {
         loginWithPin,
         placeOrder,
         requestHousekeeping,
+        submitFeedback,
         requestRoomService,
         requestCheckout,
         logout,
         fetchBills,
         fetchMenu,
         fetchRequests,
+        fetchPortalConfig,
     };
 }
 

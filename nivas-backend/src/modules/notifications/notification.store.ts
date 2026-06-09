@@ -1,5 +1,6 @@
 import { db } from '../../db';
 import { notifications } from '../../db/schema';
+import { WSService, MANAGER_ROLES } from './ws.service';
 
 export const NotificationStore = {
     async create(data: {
@@ -11,7 +12,7 @@ export const NotificationStore = {
         message: string;
         metadata?: any;
     }) {
-        return await db.insert(notifications).values({
+        const rows = await db.insert(notifications).values({
             hotelId: data.hotelId,
             recipientId: data.recipientId,
             targetRole: data.targetRole,
@@ -21,5 +22,17 @@ export const NotificationStore = {
             metadata: data.metadata,
             isRead: false
         }).returning();
+
+        // Push live so it appears in the bell immediately for connected clients.
+        const row = rows[0];
+        if (row) {
+            WSService.pushNotificationRecord(data.hotelId, row, client =>
+                (!!data.recipientId && client.userId === data.recipientId) ||
+                (!!data.targetRole && client.role === data.targetRole) ||
+                MANAGER_ROLES.includes(client.role)
+            );
+        }
+
+        return rows;
     }
 };

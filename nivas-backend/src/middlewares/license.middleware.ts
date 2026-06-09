@@ -149,8 +149,9 @@ export function getLicenseErrorMessage(licenseInfo: LicenseInfo): string {
  * Super admins and guests bypass this check
  * Exempt paths are not checked
  */
-export const licenseMiddleware = (app: Elysia) => app.onBeforeHandle(async ({ path, set, ...ctx }) => {
-    const user = (ctx as any).user as User | null;
+export const licenseMiddleware = (app: Elysia) => app.onBeforeHandle(async (ctx) => {
+    const user = (ctx as unknown as { user?: User | null }).user;
+    const { path, set } = ctx;
 
     // Skip for unauthenticated requests
     if (!user) return;

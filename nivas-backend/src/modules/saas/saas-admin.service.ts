@@ -1,11 +1,57 @@
 import { db } from '../../db';
 import { users, hotels, subscriptionPackages } from '../../db/schema';
-import { BusinessLogicError } from '../../utils/errors';
-import { eq, and } from 'drizzle-orm';
-import { NotFoundError } from '../../utils/errors';
+import { HttpError, BusinessLogicError } from '../../utils/errors';
+import { eq, and, sql } from 'drizzle-orm';
+import { NotFoundError, UnauthorizedError } from '../../utils/errors';
 import { LicenseService } from './license.service';
+import { saasPayments, roles, platformSettings, subscriptions, tenantFeatures } from '../../db/schema';
+import { AccessControlService } from '../system/access-control.service';
 
 export const SaasAdminService = {
+    /** Platform support contacts (shown to hotels in the support panel). */
+    async getSupportConfig() {
+        const ps: any = await db.query.platformSettings.findFirst({ where: eq(platformSettings.id, 1), columns: { supportConfig: true } });
+        const c = (ps?.supportConfig || {}) as any;
+        return { email: c.email || '', phone: c.phone || '', whatsapp: c.whatsapp || '', hours: c.hours || '' };
+    },
+
+    async setSupportConfig(data: { email?: string; phone?: string; whatsapp?: string; hours?: string }) {
+        const ps: any = await db.query.platformSettings.findFirst({ where: eq(platformSettings.id, 1), columns: { supportConfig: true } });
+        const next = { ...((ps?.supportConfig || {}) as any) };
+        for (const k of ['email', 'phone', 'whatsapp', 'hours'] as const) if (data[k] !== undefined) next[k] = data[k];
+        await db.insert(platformSettings).values({ id: 1, supportConfig: next } as any)
+            .onConflictDoUpdate({ target: platformSettings.id, set: { supportConfig: next, updatedAt: new Date() } });
+        return this.getSupportConfig();
+    },
+
+    /** Database storage report — biggest tables by on-disk size (for capacity planning). */
+    async getDatabaseStats() {
+        const rows: any = await db.execute(sql`
+            SELECT c.relname AS table,
+                   pg_total_relation_size(c.oid) AS bytes,
+                   pg_size_pretty(pg_total_relation_size(c.oid)) AS size
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind IN ('r','p')
+            ORDER BY pg_total_relation_size(c.oid) DESC
+            LIMIT 25`);
+        const arr = ((rows?.rows ?? rows) as any[]) || [];
+        const totalBytes = arr.reduce((s, r) => s + Number(r.bytes || 0), 0);
+
+        // Exact COUNT(*) per table — stats estimates (reltuples/n_live_tup) read 0
+        // until autovacuum analyzes a table, which is wrong on a fresh DB. Cheap
+        // here (small DB, admin-only, cached). Names come from pg_class → safe to quote.
+        const tables = await Promise.all(arr.map(async (r) => {
+            let rowCount = 0;
+            try {
+                const c: any = await db.execute(sql.raw(`SELECT count(*)::int AS n FROM "${String(r.table).replace(/"/g, '')}"`));
+                rowCount = Number(((c?.rows ?? c) as any[])[0]?.n || 0);
+            } catch { /* view/perm issue → 0 */ }
+            return { table: r.table, size: r.size, bytes: Number(r.bytes || 0), estRows: rowCount };
+        }));
+        return { totalBytes, tables };
+    },
+
     async getAllTenants() {
         const allHotels = await db.query.hotels.findMany({
             columns: {
@@ -21,6 +67,13 @@ export const SaasAdminService = {
                 planTier: true,
                 maxRooms: true,
                 maxUsers: true,
+                logoUrl: true,
+                address: true,
+                website: true,
+                panNumber: true,
+                vatNumber: true,
+                serviceChargeRate: true,
+                taxRate: true,
                 createdAt: true
             },
             with: {
@@ -38,35 +91,115 @@ export const SaasAdminService = {
             return {
                 ...hotelData,
                 email: hotel.email || owner?.email || '',
+                ownerName: owner?.fullName || '',
                 licenseStatus: hotel.licenseStatus ?? 'TRIAL'
             };
         });
     },
 
-    async getTenantDetails(hotelId: number) {
-        const hotel = await LicenseService.getHotel(hotelId);
-        const subscription = await LicenseService.getSubscription(hotelId);
+    async onboardTenant(data: any, createdById: string) {
+        return await db.transaction(async (tx) => {
+            // 1. Create Hotel
+            const [hotel] = await tx.insert(hotels).values({
+                name: data.hotelName,
+                slug: data.slug,
+                email: data.hotelEmail,
+                phone: data.hotelPhone,
+                planTier: data.planTier,
+                licenseStatus: 'TRIAL',
+                licenseExpiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) // 14 days trial
+            }).returning();
+            if (!hotel) throw new Error('Failed to create hotel');
 
-        const usersCount = await db.query.users.findMany({
-            where: and(eq(users.hotelId, hotelId), eq(users.isActive, true)),
-            columns: { id: true }
+            // 2. Create Owner Role
+            const [role] = await tx.insert(roles).values({
+                hotelId: hotel.id,
+                name: 'Owner',
+                level: 0,
+                permissions: ['*'] // wildcard permission for owner
+            }).returning();
+            if (!role) throw new Error('Failed to create role');
+
+            // 3. Seed default system roles (Manager, Front Desk, etc.)
+            await AccessControlService.seedDefaultRoles(hotel.id);
+
+            // 4. Create Admin User
+            const hashedPassword = await Bun.password.hash(data.adminPassword);
+            const [user] = await tx.insert(users).values({
+                hotelId: hotel.id,
+                fullName: data.adminName,
+                email: data.adminEmail,
+                phone: data.adminPhone,
+                passwordHash: hashedPassword,
+                userType: 'HOTEL_STAFF',
+                roleId: role.id
+            }).returning();
+            if (!user) throw new Error('Failed to create user');
+
+            return { hotel, user };
         });
+    },
 
-        return {
-            hotel: { ...hotel, licenseStatus: hotel.licenseStatus ?? 'TRIAL' },
-            subscription,
-            usersCount: usersCount.length
-        };
+    async recordSaaSPayment(hotelId: number, data: any, createdById: string) {
+        const [payment] = await db.insert(saasPayments).values({
+            hotelId,
+            amount: data.amount,
+            paymentMethod: data.paymentMethod,
+            reference: data.reference,
+            notes: data.notes
+        }).returning();
+
+        return payment;
+    },
+
+    async getTenantDetails(hotelId: number) {
+        try {
+            const hotel = await LicenseService.getHotel(hotelId);
+            const subscription = await LicenseService.getSubscription(hotelId);
+
+            const usersCount = await db.query.users.findMany({
+                where: and(eq(users.hotelId, hotelId), eq(users.isActive, true)),
+                columns: { id: true }
+            });
+
+            return {
+                hotel: { ...hotel, licenseStatus: hotel.licenseStatus ?? 'TRIAL' },
+                subscription,
+                usersCount: usersCount.length
+            };
+        } catch (err: any) {
+            if (err instanceof BusinessLogicError || err instanceof NotFoundError) throw err;
+            throw new HttpError(`Failed to load tenant details: ${err.message}`, 500, 'TENANT_DETAILS_ERROR');
+        }
     },
 
     async updateTenantDetails(hotelId: number, data: any) {
+        const allowed = ['name', 'slug', 'email', 'phone', 'address', 'website', 'logoUrl', 'panNumber', 'vatNumber', 'currency', 'checkInTime', 'checkOutTime', 'taxRate', 'serviceChargeRate', 'isActive', 'planTier', 'maxRooms', 'maxUsers'];
+        const updateData: any = {};
+        for (const key of allowed) {
+            if (data[key] !== undefined) updateData[key] = data[key];
+        }
         const [updatedHotel] = await db.update(hotels)
             .set({
-                ...data,
+                ...updateData,
                 updatedAt: new Date()
             })
             .where(eq(hotels.id, hotelId))
             .returning();
+
+        // ownerName lives on the owner USER (users.fullName), not hotels — update it.
+        if (data.ownerName !== undefined && String(data.ownerName).trim()) {
+            const owner = await db.query.users.findFirst({
+                where: and(eq(users.hotelId, hotelId), eq(users.userType, 'HOTEL_STAFF')),
+                with: { role: true },
+                orderBy: (u, { asc }) => [asc(u.createdAt)],
+            });
+            const ownerUser = owner?.role?.name === 'Owner' ? owner
+                : (await db.query.users.findFirst({ where: and(eq(users.hotelId, hotelId)), with: { role: true } }));
+            if (ownerUser) {
+                await db.update(users).set({ fullName: String(data.ownerName).trim() }).where(eq(users.id, ownerUser.id));
+            }
+        }
 
         return updatedHotel;
     },
@@ -185,6 +318,20 @@ export const SaasAdminService = {
             .returning();
 
         if (!updated) throw new BusinessLogicError('Failed to update package');
+
+        // Propagate the new feature set to every hotel on this plan so a plan edit
+        // (e.g. turning AI on) reflects immediately. Full sync across known flags.
+        const FEATURE_KEYS = ['enableMultiCurrency', 'enableChannelManager', 'enableAdvancedRevenue', 'enableSmsNotifications', 'enableWhatsappNotifications', 'enableEmailNotifications', 'enableBanquets', 'enablePosIntegration', 'enableInventory', 'enableHousekeeping', 'enableGuestPortal', 'enableFonepay', 'enableCbms', 'enableAi'];
+        const featSet = new Set(((updated.features || []) as string[]));
+        const flags: Record<string, boolean> = {};
+        for (const k of FEATURE_KEYS) flags[k] = featSet.has(k);
+        const subs = await db.query.subscriptions.findMany({ where: eq(subscriptions.packageId, id), columns: { hotelId: true } });
+        for (const s of subs) {
+            if (!s.hotelId) continue;
+            const ex = await db.query.tenantFeatures.findFirst({ where: eq(tenantFeatures.hotelId, s.hotelId) });
+            if (ex) await db.update(tenantFeatures).set({ ...flags, updatedAt: new Date() }).where(eq(tenantFeatures.hotelId, s.hotelId));
+            else await db.insert(tenantFeatures).values({ hotelId: s.hotelId, ...flags });
+        }
         return updated;
     },
 
@@ -201,6 +348,9 @@ export const SaasAdminService = {
             { id: 'enableInventory', label: 'Inventory Management', category: 'Modules' },
             { id: 'enableHousekeeping', label: 'Housekeeping', category: 'Modules' },
             { id: 'enableGuestPortal', label: 'Guest Portal', category: 'Modules' },
+            { id: 'enableFonepay', label: 'Fonepay Payments (Nepal)', category: 'Payments' },
+            { id: 'enableCbms', label: 'IRD CBMS Sync (Nepal)', category: 'Compliance' },
+            { id: 'enableAi', label: 'AI Engine (analytics + concierge)', category: 'AI' },
         ];
     },
 

@@ -1,4 +1,4 @@
-declare module 'pdfmake/src/printer' {
+declare module 'pdfmake/src/Printer' {
     export default class PdfPrinter {
         constructor(fontDescriptors: Record<string, Record<string, string>>);
         createPdfKitDocument(docDefinition: unknown): {

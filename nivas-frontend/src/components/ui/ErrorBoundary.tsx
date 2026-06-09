@@ -81,7 +81,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
                             gap: '6px',
                             padding: '8px 16px',
                             backgroundColor: 'var(--notion-blue)',
-                            color: 'white',
+                            color: 'var(--foreground-inverse)',
                             border: 'none',
                             borderRadius: '6px',
                             fontSize: '13px',

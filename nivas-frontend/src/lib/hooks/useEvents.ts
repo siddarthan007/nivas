@@ -9,6 +9,8 @@ export interface Venue {
     capacity: number;
     description?: string;
     amenities?: string[];
+    baseRateHalf?: string;
+    baseRateFull?: string;
     isActive: boolean;
     createdAt: string;
 }
@@ -18,9 +20,12 @@ export type BanquetBookingStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANC
 export interface BanquetBooking {
     id: string;
     banquetId: number;
+    guestId?: string;
+    invoiceId?: string;
     eventName: string;
     eventType?: 'WEDDING' | 'CONFERENCE' | 'BIRTHDAY' | 'CORPORATE' | 'OTHER';
     eventDate: string;
+    endDate?: string;
     startTime: string;
     endTime: string;
     expectedGuests: number;
@@ -40,6 +45,8 @@ export interface BanquetBooking {
     advanceAmount?: number;
     createdAt: string;
     venue?: Venue;
+    guest?: { id: string; fullName: string; phone: string } | null;
+    invoice?: { id: string; invoiceNumber: string; grandTotal: string } | null;
 }
 
 export interface CreateVenuePayload {
@@ -47,6 +54,8 @@ export interface CreateVenuePayload {
     capacity: number;
     description?: string;
     amenities?: string[];
+    baseRateHalf?: number;
+    baseRateFull?: number;
 }
 
 export interface CreateBookingPayload {
@@ -54,12 +63,14 @@ export interface CreateBookingPayload {
     eventName: string;
     eventType?: 'WEDDING' | 'CONFERENCE' | 'BIRTHDAY' | 'CORPORATE' | 'OTHER';
     eventDate: string;
+    endDate?: string;
     startTime: string;
     endTime: string;
     expectedGuests: number;
     contactName: string;
     contactPhone: string;
     contactEmail?: string;
+    guestId?: string;
     cateringRequired?: boolean;
     cateringPackage?: string;
     cateringPax?: number;
@@ -78,6 +89,8 @@ function normalizeVenue(raw: any): Venue {
         capacity: Number(raw.capacity ?? 0),
         description: raw.description ?? raw.area ?? undefined,
         amenities: Array.isArray(raw.amenities) ? raw.amenities : [],
+        baseRateHalf: raw.baseRateHalf ?? undefined,
+        baseRateFull: raw.baseRateFull ?? undefined,
         isActive: raw.isActive ?? true,
         createdAt: raw.createdAt ?? new Date().toISOString(),
     };
@@ -87,9 +100,12 @@ function normalizeBooking(raw: any): BanquetBooking {
     return {
         id: String(raw.id),
         banquetId: Number(raw.banquetId ?? 0),
+        guestId: raw.guestId ?? undefined,
+        invoiceId: raw.invoiceId ?? undefined,
         eventName: raw.eventName ?? '',
         eventType: raw.eventType ?? undefined,
         eventDate: raw.eventDate ?? '',
+        endDate: raw.endDate ?? undefined,
         startTime: raw.startTime ?? '',
         endTime: raw.endTime ?? '',
         expectedGuests: Number(raw.expectedGuests ?? 0),
@@ -109,6 +125,8 @@ function normalizeBooking(raw: any): BanquetBooking {
         advanceAmount: raw.advanceAmount !== null && raw.advanceAmount !== undefined ? Number(raw.advanceAmount) : undefined,
         createdAt: raw.createdAt ?? new Date().toISOString(),
         venue: raw.banquet ? normalizeVenue(raw.banquet) : undefined,
+        guest: raw.guest ? { id: raw.guest.id, fullName: raw.guest.fullName, phone: raw.guest.phone } : undefined,
+        invoice: raw.invoice ? { id: raw.invoice.id, invoiceNumber: raw.invoice.invoiceNumber, grandTotal: raw.invoice.grandTotal } : undefined,
     };
 }
 

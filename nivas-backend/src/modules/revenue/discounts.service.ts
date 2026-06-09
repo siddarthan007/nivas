@@ -1,10 +1,18 @@
 import { db } from '../../db';
-import { discountRules } from '../../db/schema';
+import { discountRules, outlets } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
-import { BusinessLogicError, NotFoundError } from '../../utils/errors';
+import { BusinessLogicError, NotFoundError, ValidationError } from '../../utils/errors';
+
+// Reject an outletId that doesn't belong to this hotel (cross-tenant IDOR).
+async function assertOutlet(hotelId: number, outletId?: number) {
+    if (outletId == null) return;
+    const o = await db.query.outlets.findFirst({ where: and(eq(outlets.id, outletId), eq(outlets.hotelId, hotelId)), columns: { id: true } });
+    if (!o) throw new ValidationError('Invalid outlet for this hotel');
+}
 
 export const DiscountService = {
     async createRule(hotelId: number, data: any) {
+        await assertOutlet(hotelId, data.outletId);
         const [newRule] = await db.insert(discountRules).values({
             hotelId,
             outletId: data.outletId,
@@ -66,9 +74,15 @@ export const DiscountService = {
     },
 
     async updateRule(hotelId: number, id: number, data: any) {
+        if (data.outletId !== undefined) await assertOutlet(hotelId, data.outletId);
+        const allowed = ['name', 'description', 'outletId', 'discountType', 'startTime', 'endTime', 'daysOfWeek', 'startDate', 'endDate', 'applicableCategories', 'applicableItems', 'priority', 'isActive'];
+        const updateData: any = {};
+        for (const key of allowed) {
+            if (data[key] !== undefined) updateData[key] = data[key];
+        }
         const [updated] = await db.update(discountRules)
             .set({
-                ...data,
+                ...updateData,
                 discountValue: data.discountValue?.toString(),
                 minOrderAmount: data.minOrderAmount?.toString(),
                 updatedAt: new Date()
