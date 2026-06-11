@@ -26,7 +26,7 @@ export default function GroupBookingModal({ isOpen, onClose, rooms, onCreated }:
     const [busy, setBusy] = useState(false);
 
     const bookable = useMemo(
-        () => rooms.filter(r => r.status === 'AVAILABLE' || r.status === 'VACANT'),
+        () => rooms.filter(r => r.status === 'AVAILABLE'),
         [rooms]
     );
 

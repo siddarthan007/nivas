@@ -73,7 +73,6 @@ const navigationItems: NavigationItem[] = [
     { id: 'roles', label: 'Roles', path: '/dashboard/roles', Icon: Shield, group: 'Management', keywords: 'permissions access', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.ROLES.READ] },
     { id: 'reports', label: 'Reports', path: '/dashboard/reports', Icon: BarChart3, group: 'Management', keywords: 'analytics statistics', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.REPORTS.VIEW_SALES] },
     { id: 'finance', label: 'Finance', path: '/dashboard/finance', Icon: CreditCard, group: 'Finance', keywords: 'billing invoices payments', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.FINANCE.VIEW_RECORDS] },
-    { id: 'revenue', label: 'Revenue', path: '/dashboard/revenue', Icon: TrendingUp, group: 'Finance', keywords: 'pricing discounts', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.ANALYTICS.VIEW_FINANCIALS] },
     { id: 'crm', label: 'CRM', path: '/dashboard/crm', Icon: Users, group: 'CRM', keywords: 'guests corporate agents', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.CRM.VIEW_GUESTS] },
     { id: 'events', label: 'Events', path: '/dashboard/events', Icon: Calendar, group: 'CRM', keywords: 'banquets venues bookings', allowedUserTypes: ['HOTEL_STAFF'], requiredPermissions: [PERMISSIONS.BANQUETS.VIEW] },
     { id: 'profile', label: 'Profile', path: '/dashboard/profile', Icon: UserCircle, group: 'Personal', keywords: 'account user settings', allowedUserTypes: ['HOTEL_STAFF', 'SUPER_ADMIN'] },

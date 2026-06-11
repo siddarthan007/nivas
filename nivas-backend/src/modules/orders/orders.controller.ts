@@ -128,6 +128,36 @@ export const ordersController = new Elysia({ prefix: '/orders' })
             tags: ['Orders']
         }
     })
+    .post('/:id/items', async ({ params, body, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const result = await OrdersService.addItemsToOrder(user.hotelId, user.id, params.id, body.items);
+        return createResponse(result, 'Items added to order');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.ORDERS.UPDATE_STATUS,
+        body: t.Object({
+            items: t.Array(t.Object({
+                menuItemId: t.Number(),
+                quantity: t.Number({ minimum: 1 }),
+                price: t.Number(),
+                notes: t.Optional(t.String())
+            }), { minItems: 1 })
+        }),
+        detail: { summary: 'Add items to an existing open order', tags: ['Orders'] }
+    })
+    .patch('/:id/items/:itemId', async ({ params, body, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const updated = await OrdersService.updateOrderItem(user.hotelId, user.id, params.id, parseInt(params.itemId), body);
+        return createResponse(updated, 'Item updated');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.ORDERS.UPDATE_STATUS,
+        body: t.Object({
+            quantity: t.Optional(t.Number({ minimum: 1 })),
+            notes: t.Optional(t.String())
+        }),
+        detail: { summary: 'Update an order item quantity or notes', tags: ['Orders'] }
+    })
     .post('/:id/items/:itemId/void', async ({ params, body, user }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
         const updated = await OrdersService.voidOrderItem(user.hotelId, user.id, params.id, parseInt(params.itemId), body.reason);

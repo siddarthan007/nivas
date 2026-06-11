@@ -4,7 +4,6 @@ import { eq, and, or, ilike, desc, inArray } from 'drizzle-orm';
 import { BusinessLogicError, NotFoundError } from '../../utils/errors';
 import { EventBus } from '../../shared/event-bus';
 import { logAction } from '../system/audit.service';
-import { GLService } from '../finance/gl.service';
 import { CouponsService } from '../coupons/coupons.service';
 import { occupyTable, syncTableStatus } from '../operations/table-status.service';
 import { logger } from '../../shared/logger';
@@ -445,28 +444,6 @@ export class OrdersService {
                 .where(and(eq(orders.id, orderId), eq(orders.hotelId, hotelId)))
                 .returning();
 
-            // Post F&B Revenue GL once on the transition into SERVED. (The guards
-            // above already ensure the order wasn't already SERVED.)
-            if (status === 'SERVED') {
-                const revenue = parseFloat(updated!.subTotal || updated!.totalAmount || '0');
-                if (revenue > 0) {
-                    const arAccount = await GLService.getOrCreateControlAccount(hotelId, '1100', 'Accounts Receivable', 'ASSET', tx);
-                    const revAccount = await GLService.getOrCreateControlAccount(hotelId, '4100', 'F&B Revenue', 'REVENUE', tx);
-                    await GLService.postJournalEntry(
-                        hotelId,
-                        null,
-                        new Date().toISOString().split('T')[0] as string,
-                        `F&B Revenue - Order ${updated!.orderNumber}`,
-                        updated!.orderNumber,
-                        [
-                            { accountId: arAccount!.id, debit: revenue, credit: 0, description: `AR - Order ${updated!.orderNumber}` },
-                            { accountId: revAccount!.id, debit: 0, credit: revenue, description: 'F&B Revenue' }
-                        ],
-                        tx
-                    );
-                }
-            }
-
             return updated!;
         });
 
@@ -563,10 +540,24 @@ export class OrdersService {
             }
 
             const newSubtotal = parseFloat(target.subTotal || target.totalAmount || '0') + addedSubtotal;
-            const newTotal = parseFloat(target.totalAmount || '0') + sourceOrders.reduce((sum, s) => sum + parseFloat(s.totalAmount || '0'), 0);
+            // Recalculate taxes using the target order's stored rates so the
+            // tax breakdown stays consistent after a merge.
+            const scRate = parseFloat(target.serviceChargeRate || '0.10');
+            const vatRate = parseFloat(target.vatRate || '0.13');
+            const applySC = target.applyServiceCharge ?? false;
+            const applyVat = target.applyVat ?? false;
+            const newSC = applySC ? newSubtotal * scRate : 0;
+            const newVAT = applyVat ? (newSubtotal + newSC) * vatRate : 0;
+            const newTotal = newSubtotal + newSC + newVAT;
 
             const [updated] = await tx.update(orders)
-                .set({ subTotal: newSubtotal.toFixed(2), totalAmount: newTotal.toFixed(2), updatedAt: new Date() })
+                .set({
+                    subTotal: newSubtotal.toFixed(2),
+                    serviceChargeAmount: newSC.toFixed(2),
+                    vatAmount: newVAT.toFixed(2),
+                    totalAmount: newTotal.toFixed(2),
+                    updatedAt: new Date()
+                })
                 .where(eq(orders.id, targetOrderId))
                 .returning();
 
@@ -618,6 +609,118 @@ export class OrdersService {
 
             await logAction(hotelId, userId, 'COMP_ORDER', 'ORDER', orderId,
                 { orderNumber: order.orderNumber, reason: reason || 'Complimentary', amount: subTotal });
+            return updated!;
+        });
+    }
+
+    /**
+     * Add new items to an existing open order (append-only). Recalculates totals.
+     * Returns the newly inserted item rows so the caller can trigger a KOT print.
+     */
+    static async addItemsToOrder(hotelId: number, userId: string, orderId: string, items: { menuItemId: number; quantity: number; price: number; notes?: string }[]) {
+        return db.transaction(async (tx) => {
+            const order = await tx.query.orders.findFirst({
+                where: and(eq(orders.id, orderId), eq(orders.hotelId, hotelId)),
+            });
+            if (!order) throw new NotFoundError('Order');
+            if (!OrdersService.OPEN_STATUSES.includes(order.status as string)) {
+                throw new BusinessLogicError(`Cannot add items to a ${order.status} order`);
+            }
+
+            const menuItemIds = items.map(i => i.menuItemId);
+            const menuItemsData = await tx.query.menuItems.findMany({
+                where: and(inArray(menuItems.id, menuItemIds), eq(menuItems.hotelId, hotelId))
+            });
+            const priceMap = new Map(menuItemsData.map(m => [m.id, parseFloat(m.price)]));
+
+            const existingItems = await tx.query.orderItems.findMany({
+                where: eq(orderItems.orderId, orderId)
+            });
+
+            const addedSubtotal = items.reduce((sum, it) =>
+                sum + (priceMap.get(it.menuItemId) ?? 0) * it.quantity, 0);
+
+            const subTotal = existingItems.reduce((s, it) => s + parseFloat(it.price) * it.quantity, 0) + addedSubtotal;
+            const scRate = parseFloat(order.serviceChargeRate || '0.10');
+            const vatRate = parseFloat(order.vatRate || '0.13');
+            const sc = order.applyServiceCharge ? subTotal * scRate : 0;
+            const vat = order.applyVat ? (subTotal + sc) * vatRate : 0;
+            const discount = Math.min(parseFloat(order.discountAmount || '0'), subTotal + sc + vat);
+            const totalAmount = Math.max(0, subTotal + sc + vat - discount);
+
+            await tx.update(orders)
+                .set({
+                    subTotal: subTotal.toFixed(2),
+                    serviceChargeAmount: sc.toFixed(2),
+                    vatAmount: vat.toFixed(2),
+                    totalAmount: totalAmount.toFixed(2),
+                    updatedAt: new Date()
+                })
+                .where(and(eq(orders.id, orderId), eq(orders.hotelId, hotelId)));
+
+            const inserted = await tx.insert(orderItems).values(
+                items.map(it => ({
+                    orderId,
+                    menuItemId: it.menuItemId,
+                    quantity: it.quantity,
+                    price: (priceMap.get(it.menuItemId) ?? 0).toString(),
+                    notes: it.notes
+                }))
+            ).returning();
+
+            await logAction(hotelId, userId, 'ADD_ORDER_ITEMS', 'ORDER', orderId,
+                { orderNumber: order.orderNumber, itemsAdded: items.length });
+
+            return { order: await tx.query.orders.findFirst({ where: and(eq(orders.id, orderId), eq(orders.hotelId, hotelId)), with: { items: { with: { menuItem: true } } } }), newItems: inserted };
+        });
+    }
+
+    /**
+     * Update an existing order item (quantity or notes). Recalculates totals.
+     */
+    static async updateOrderItem(hotelId: number, userId: string, orderId: string, itemId: number, data: { quantity?: number; notes?: string }) {
+        return db.transaction(async (tx) => {
+            const order = await tx.query.orders.findFirst({
+                where: and(eq(orders.id, orderId), eq(orders.hotelId, hotelId)),
+            });
+            if (!order) throw new NotFoundError('Order');
+            if (!OrdersService.OPEN_STATUSES.includes(order.status as string)) {
+                throw new BusinessLogicError(`Cannot edit items on a ${order.status} order`);
+            }
+
+            const item = await tx.query.orderItems.findFirst({
+                where: and(eq(orderItems.id, itemId), eq(orderItems.orderId, orderId))
+            });
+            if (!item) throw new NotFoundError('Order item');
+
+            const updateData: Record<string, any> = { updatedAt: new Date() };
+            if (data.quantity !== undefined) updateData.quantity = data.quantity;
+            if (data.notes !== undefined) updateData.notes = data.notes;
+
+            await tx.update(orderItems).set(updateData).where(eq(orderItems.id, itemId));
+
+            const remaining = await tx.query.orderItems.findMany({ where: eq(orderItems.orderId, orderId) });
+            const subTotal = remaining.reduce((s, it) => s + parseFloat(it.price) * it.quantity, 0);
+            const scRate = parseFloat(order.serviceChargeRate || '0.10');
+            const vatRate = parseFloat(order.vatRate || '0.13');
+            const sc = order.applyServiceCharge ? subTotal * scRate : 0;
+            const vat = order.applyVat ? (subTotal + sc) * vatRate : 0;
+            const discount = Math.min(parseFloat(order.discountAmount || '0'), subTotal + sc + vat);
+
+            const [updated] = await tx.update(orders)
+                .set({
+                    subTotal: subTotal.toFixed(2),
+                    serviceChargeAmount: sc.toFixed(2),
+                    vatAmount: vat.toFixed(2),
+                    totalAmount: Math.max(0, subTotal + sc + vat - discount).toFixed(2),
+                    updatedAt: new Date()
+                })
+                .where(and(eq(orders.id, orderId), eq(orders.hotelId, hotelId)))
+                .returning();
+
+            await logAction(hotelId, userId, 'UPDATE_ORDER_ITEM', 'ORDER', orderId,
+                { orderNumber: order.orderNumber, itemId, changes: data });
+
             return updated!;
         });
     }

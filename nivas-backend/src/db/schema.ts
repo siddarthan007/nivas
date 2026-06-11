@@ -397,6 +397,7 @@ export const bookings = pgTable('bookings', {
     status: bookingStatusEnum('status').default('PENDING'),
     totalAmount: decimal('total_amount', { precision: 10, scale: 2 }),
     advancePayment: decimal('advance_payment', { precision: 10, scale: 2 }).default('0'),
+    creditBalance: decimal('credit_balance', { precision: 10, scale: 2 }).default('0'),
     isPaid: boolean('is_paid').default(false),
 
     source: bookingSourceEnum('source').default('WALK_IN'),
@@ -427,6 +428,7 @@ export const orders = pgTable('orders', {
     roomId: integer('room_id').references(() => rooms.id),
     bookingId: uuid('booking_id').references(() => bookings.id),
     guestId: uuid('guest_id').references(() => guests.id, { onDelete: 'set null' }),
+    corporateAccountId: integer('corporate_account_id').references(() => corporateAccounts.id, { onDelete: 'set null' }),
     restaurantTableId: integer('restaurant_table_id').references(() => restaurantTables.id, { onDelete: 'set null' }),
     outletId: integer('outlet_id').references(() => outlets.id, { onDelete: 'set null' }),
 
@@ -874,6 +876,8 @@ export const invoices = pgTable('invoices', {
     serviceCharge: decimal('service_charge', { precision: 10, scale: 2 }).default('0'),
     vatAmount: decimal('vat_amount', { precision: 10, scale: 2 }).default('0'),
     discountAmount: decimal('discount_amount', { precision: 10, scale: 2 }).default('0'),
+    roomRevenue: decimal('room_revenue', { precision: 10, scale: 2 }).default('0'),
+    fbRevenue: decimal('fb_revenue', { precision: 10, scale: 2 }).default('0'),
     grandTotal: decimal('grand_total', { precision: 10, scale: 2 }).notNull(),
 
     paymentStatus: text('payment_status').default('PAID'),
@@ -956,25 +960,6 @@ export const staffAttendance = pgTable('staff_attendance', {
     index('staff_attendance_user_id_idx').on(table.userId),
 ]);
 
-export const pricingRules = pgTable('pricing_rules', {
-    id: serial('id').primaryKey(),
-    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
-    name: text('name').notNull(),
-
-    type: text('type').notNull(),
-
-    startDate: date('start_date'),
-    endDate: date('end_date'),
-
-    daysOfWeek: json('days_of_week').$type<number[]>(),
-    minOccupancy: integer('min_occupancy'),
-
-    adjustmentType: text('adjustment_type').notNull(),
-    adjustmentValue: decimal('adjustment_value', { precision: 10, scale: 2 }).notNull(),
-
-    isActive: boolean('is_active').default(true)
-});
-
 export const corporateAccounts = pgTable('corporate_accounts', {
     id: serial('id').primaryKey(),
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
@@ -1007,7 +992,32 @@ export const travelAgents = pgTable('travel_agents', {
     createdAt: timestamp('created_at').defaultNow()
 });
 
+/**
+ * Corporate Ledger — tracks all bills assigned to corporate accounts
+ */
+export const corporateLedger = pgTable('corporate_ledger', {
+    id: serial('id').primaryKey(),
+    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
+    corporateAccountId: integer('corporate_account_id').references(() => corporateAccounts.id, { onDelete: 'cascade' }).notNull(),
 
+    entryType: text('entry_type').notNull(), // 'ROOM_BOOKING' | 'F_B_ORDER' | 'BANQUET' | 'PAYMENT' | 'ADJUSTMENT'
+    referenceId: text('reference_id'), // bookingId, orderId, banquetBookingId, etc.
+    referenceType: text('reference_type'), // 'booking' | 'order' | 'banquet_booking'
+
+    description: text('description').notNull(),
+    debit: decimal('debit', { precision: 12, scale: 2 }).default('0'),
+    credit: decimal('credit', { precision: 12, scale: 2 }).default('0'),
+
+    balance: decimal('balance', { precision: 12, scale: 2 }).notNull(),
+
+    createdById: uuid('created_by_id').references(() => users.id),
+    createdAt: timestamp('created_at').defaultNow()
+}, (table) => [
+    index('ledger_hotel_idx').on(table.hotelId),
+    index('ledger_corporate_idx').on(table.corporateAccountId),
+    index('ledger_entry_type_idx').on(table.entryType),
+    index('ledger_created_idx').on(table.createdAt)
+]);
 
 export const restaurantTablesRelations = relations(restaurantTables, ({ one, many }) => ({
     hotel: one(hotels, {
@@ -1105,6 +1115,10 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
     booking: one(bookings, {
         fields: [orders.bookingId],
         references: [bookings.id]
+    }),
+    corporateAccount: one(corporateAccounts, {
+        fields: [orders.corporateAccountId],
+        references: [corporateAccounts.id]
     }),
     createdBy: one(users, {
         fields: [orders.createdById],
@@ -1324,68 +1338,22 @@ export const outletsRelations = relations(outlets, ({ one }) => ({
     hotel: one(hotels, { fields: [outlets.hotelId], references: [hotels.id] })
 }));
 
-export const pricingRulesRelations = relations(pricingRules, ({ one }) => ({
-    hotel: one(hotels, { fields: [pricingRules.hotelId], references: [hotels.id] })
-}));
-
 export const corporateAccountsRelations = relations(corporateAccounts, ({ one, many }) => ({
     hotel: one(hotels, { fields: [corporateAccounts.hotelId], references: [hotels.id] }),
-    bookings: many(bookings)
+    bookings: many(bookings),
+    ledgerEntries: many(corporateLedger)
+}));
+
+export const corporateLedgerRelations = relations(corporateLedger, ({ one }) => ({
+    hotel: one(hotels, { fields: [corporateLedger.hotelId], references: [hotels.id] }),
+    corporateAccount: one(corporateAccounts, { fields: [corporateLedger.corporateAccountId], references: [corporateAccounts.id] }),
+    createdBy: one(users, { fields: [corporateLedger.createdById], references: [users.id] })
 }));
 
 export const travelAgentsRelations = relations(travelAgents, ({ one, many }) => ({
     hotel: one(hotels, { fields: [travelAgents.hotelId], references: [hotels.id] }),
     bookings: many(bookings)
 }));
-
-export const discountRules = pgTable('discount_rules', {
-    id: serial('id').primaryKey(),
-    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
-    outletId: integer('outlet_id').references(() => outlets.id),
-
-    name: text('name').notNull(),
-    description: text('description'),
-
-    discountType: text('discount_type').notNull(),
-    discountValue: decimal('discount_value', { precision: 10, scale: 2 }).notNull(),
-
-    startTime: text('start_time'),
-    endTime: text('end_time'),
-    daysOfWeek: json('days_of_week').$type<number[]>(),
-
-    startDate: date('start_date'),
-    endDate: date('end_date'),
-
-    minOrderAmount: decimal('min_order_amount', { precision: 10, scale: 2 }),
-    applicableCategories: json('applicable_categories').$type<string[]>(),
-    applicableItems: json('applicable_items').$type<number[]>(),
-
-    priority: integer('priority').default(0),
-    isActive: boolean('is_active').default(true),
-    createdAt: timestamp('created_at').defaultNow()
-});
-
-export const losDiscounts = pgTable('los_discounts', {
-    id: serial('id').primaryKey(),
-    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
-
-    name: text('name').notNull(),
-    minNights: integer('min_nights').notNull(),
-    maxNights: integer('max_nights'),
-
-    discountType: text('discount_type').notNull(),
-    discountValue: decimal('discount_value', { precision: 10, scale: 2 }).notNull(),
-
-    applyTo: text('apply_to').default('ALL'),
-    specificNight: integer('specific_night'),
-
-    roomTypes: json('room_types').$type<string[]>(),
-    startDate: date('start_date'),
-    endDate: date('end_date'),
-
-    isActive: boolean('is_active').default(true),
-    createdAt: timestamp('created_at').defaultNow()
-});
 
 export const kotPrinters = pgTable('kot_printers', {
     id: serial('id').primaryKey(),
@@ -1451,6 +1419,7 @@ export const banquetBookings = pgTable('banquet_bookings', {
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
     banquetId: integer('banquet_id').references(() => banquets.id).notNull(),
     guestId: uuid('guest_id').references(() => guests.id, { onDelete: 'set null' }),
+    corporateAccountId: integer('corporate_account_id').references(() => corporateAccounts.id, { onDelete: 'set null' }),
     invoiceId: uuid('invoice_id').references(() => invoices.id, { onDelete: 'set null' }),
 
     eventName: text('event_name').notNull(),
@@ -1488,15 +1457,6 @@ export const banquetBookings = pgTable('banquet_bookings', {
     updatedAt: timestamp('updated_at').defaultNow()
 });
 
-export const discountRulesRelations = relations(discountRules, ({ one }) => ({
-    hotel: one(hotels, { fields: [discountRules.hotelId], references: [hotels.id] }),
-    outlet: one(outlets, { fields: [discountRules.outletId], references: [outlets.id] })
-}));
-
-export const losDiscountsRelations = relations(losDiscounts, ({ one }) => ({
-    hotel: one(hotels, { fields: [losDiscounts.hotelId], references: [hotels.id] })
-}));
-
 export const kotPrintersRelations = relations(kotPrinters, ({ one }) => ({
     hotel: one(hotels, { fields: [kotPrinters.hotelId], references: [hotels.id] }),
     outlet: one(outlets, { fields: [kotPrinters.outletId], references: [outlets.id] })
@@ -1515,6 +1475,7 @@ export const banquetBookingsRelations = relations(banquetBookings, ({ one }) => 
     hotel: one(hotels, { fields: [banquetBookings.hotelId], references: [hotels.id] }),
     banquet: one(banquets, { fields: [banquetBookings.banquetId], references: [banquets.id] }),
     guest: one(guests, { fields: [banquetBookings.guestId], references: [guests.id] }),
+    corporateAccount: one(corporateAccounts, { fields: [banquetBookings.corporateAccountId], references: [corporateAccounts.id] }),
     invoice: one(invoices, { fields: [banquetBookings.invoiceId], references: [invoices.id] }),
     createdBy: one(users, { fields: [banquetBookings.createdById], references: [users.id] })
 }));
@@ -1529,11 +1490,6 @@ export const banquetBookingsRelations = relations(banquetBookings, ({ one }) => 
 export const tenantFeatures = pgTable('tenant_features', {
     id: serial('id').primaryKey(),
     hotelId: integer('hotel_id').references(() => hotels.id).notNull().unique(),
-
-    // Core Features
-    enableMultiCurrency: boolean('enable_multi_currency').default(false),
-    enableChannelManager: boolean('enable_channel_manager').default(false),
-    enableAdvancedRevenue: boolean('enable_advanced_revenue').default(false),
 
     // Notification Channels
     enableSmsNotifications: boolean('enable_sms_notifications').default(false),
@@ -1559,24 +1515,6 @@ export const tenantFeatures = pgTable('tenant_features', {
 
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow()
-});
-
-/**
- * Exchange Rates - Multi-currency support
- */
-export const exchangeRates = pgTable('exchange_rates', {
-    id: serial('id').primaryKey(),
-
-    baseCurrency: text('base_currency').notNull().default('NPR'),
-    targetCurrency: text('target_currency').notNull(),
-    rate: decimal('rate', { precision: 15, scale: 6 }).notNull(),
-
-    effectiveFrom: date('effective_from').notNull(),
-    effectiveTo: date('effective_to'),
-
-    source: text('source').default('MANUAL'), // 'MANUAL' | 'NRB' | 'API'
-
-    createdAt: timestamp('created_at').defaultNow()
 });
 
 /**
@@ -1639,118 +1577,6 @@ export const platformSettings = pgTable('platform_settings', {
     updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-/**
- * Channel Manager Settings - OTA integrations
- */
-export const channelManagerSettings = pgTable('channel_manager_settings', {
-    id: serial('id').primaryKey(),
-    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
-
-    channelCode: text('channel_code').notNull(), // 'BOOKING_COM' | 'EXPEDIA' | 'AGODA' | 'MMT' | 'GOIBIBO'
-    channelName: text('channel_name').notNull(),
-
-    apiKey: text('api_key'),
-    apiSecret: text('api_secret'),
-    hotelCode: text('hotel_code'), // Property ID on the OTA
-
-    // Sync settings
-    syncRates: boolean('sync_rates').default(true),
-    syncAvailability: boolean('sync_availability').default(true),
-    syncReservations: boolean('sync_reservations').default(true),
-
-    rateMultiplier: decimal('rate_multiplier', { precision: 5, scale: 2 }).default('1.00'),
-    minLeadTime: integer('min_lead_time').default(0), // Hours before booking
-
-    lastSyncAt: timestamp('last_sync_at'),
-    syncStatus: text('sync_status').default('PENDING'), // 'PENDING' | 'ACTIVE' | 'ERROR'
-
-    isActive: boolean('is_active').default(false),
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow()
-});
-
-/**
- * Channel Rate Mappings - Room type mapping to OTA
- */
-export const channelRateMappings = pgTable('channel_rate_mappings', {
-    id: serial('id').primaryKey(),
-    channelSettingId: integer('channel_setting_id').notNull(),
-
-    localRoomType: text('local_room_type').notNull(),
-    channelRoomCode: text('channel_room_code').notNull(),
-    channelRatePlanCode: text('channel_rate_plan_code'),
-
-    priceAdjustment: decimal('price_adjustment', { precision: 10, scale: 2 }).default('0'),
-    adjustmentType: text('adjustment_type').default('FLAT'), // 'FLAT' | 'PERCENTAGE'
-
-    isActive: boolean('is_active').default(true)
-}, (table) => ({
-    crmChannelSettingFk: foreignKey({
-        columns: [table.channelSettingId],
-        foreignColumns: [channelManagerSettings.id],
-        name: 'crm_channel_setting_fk'
-    })
-}));
-
-/**
- * Channel Sync Log - Audit trail for OTA syncs
- */
-export const channelSyncLogs = pgTable('channel_sync_logs', {
-    id: serial('id').primaryKey(),
-    hotelId: integer('hotel_id').notNull(),
-    channelSettingId: integer('channel_setting_id'),
-
-    syncType: text('sync_type').notNull(), // 'RATE_PUSH' | 'AVAILABILITY_PUSH' | 'RESERVATION_PULL'
-    direction: text('direction').notNull(), // 'OUTBOUND' | 'INBOUND'
-
-    status: text('status').notNull(), // 'SUCCESS' | 'FAILED' | 'PARTIAL'
-    requestPayload: json('request_payload'),
-    responsePayload: json('response_payload'),
-    errorMessage: text('error_message'),
-
-    recordsProcessed: integer('records_processed').default(0),
-
-    createdAt: timestamp('created_at').defaultNow()
-}, (table) => ({
-    cslHotelFk: foreignKey({
-        columns: [table.hotelId],
-        foreignColumns: [hotels.id],
-        name: 'csl_hotel_fk'
-    }),
-    cslChannelSettingFk: foreignKey({
-        columns: [table.channelSettingId],
-        foreignColumns: [channelManagerSettings.id],
-        name: 'csl_channel_setting_fk'
-    })
-}));
-
-/**
- * Revenue Rules - Advanced revenue management
- */
-export const revenueRules = pgTable('revenue_rules', {
-    id: serial('id').primaryKey(),
-    hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
-
-    name: text('name').notNull(),
-    ruleType: text('rule_type').notNull(), // 'OCCUPANCY_BASED' | 'DEMAND_BASED' | 'COMPETITOR' | 'SEASONAL'
-
-    // Conditions
-    minOccupancy: integer('min_occupancy'),
-    maxOccupancy: integer('max_occupancy'),
-    daysBeforeArrival: integer('days_before_arrival'),
-    daysOfWeek: json('days_of_week').$type<number[]>(),
-
-    // Actions
-    adjustmentType: text('adjustment_type').notNull(), // 'PERCENTAGE' | 'FLAT'
-    adjustmentValue: decimal('adjustment_value', { precision: 10, scale: 2 }).notNull(),
-
-    applyToRoomTypes: json('apply_to_room_types').$type<string[]>(),
-
-    priority: integer('priority').default(0),
-    isActive: boolean('is_active').default(true),
-
-    createdAt: timestamp('created_at').defaultNow()
-});
 
 // Relations for new tables
 export const tenantFeaturesRelations = relations(tenantFeatures, ({ one }) => ({
@@ -1759,25 +1585,6 @@ export const tenantFeaturesRelations = relations(tenantFeatures, ({ one }) => ({
 
 export const notificationSettingsRelations = relations(notificationSettings, ({ one }) => ({
     hotel: one(hotels, { fields: [notificationSettings.hotelId], references: [hotels.id] })
-}));
-
-export const channelManagerSettingsRelations = relations(channelManagerSettings, ({ one, many }) => ({
-    hotel: one(hotels, { fields: [channelManagerSettings.hotelId], references: [hotels.id] }),
-    rateMappings: many(channelRateMappings),
-    syncLogs: many(channelSyncLogs)
-}));
-
-export const channelRateMappingsRelations = relations(channelRateMappings, ({ one }) => ({
-    channelSetting: one(channelManagerSettings, { fields: [channelRateMappings.channelSettingId], references: [channelManagerSettings.id] })
-}));
-
-export const channelSyncLogsRelations = relations(channelSyncLogs, ({ one }) => ({
-    hotel: one(hotels, { fields: [channelSyncLogs.hotelId], references: [hotels.id] }),
-    channelSetting: one(channelManagerSettings, { fields: [channelSyncLogs.channelSettingId], references: [channelManagerSettings.id] })
-}));
-
-export const revenueRulesRelations = relations(revenueRules, ({ one }) => ({
-    hotel: one(hotels, { fields: [revenueRules.hotelId], references: [hotels.id] })
 }));
 
 // ============================================
@@ -1841,6 +1648,7 @@ export const guests = pgTable('guests', {
     idType: text('id_type'),
     idNumber: text('id_number'),
     panNumber: text('pan_number'),
+    vatNumber: text('vat_number'),
 
     // Financial
     openingDueAmount: decimal('opening_due_amount', { precision: 10, scale: 2 }).default('0'),
@@ -1943,7 +1751,7 @@ export const subscriptionPayments = pgTable('subscription_payments', {
     hotelId: integer('hotel_id').references(() => hotels.id).notNull(),
 
     amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
-    currency: text('currency').default('USD'),
+    currency: text('currency').default('NPR'),
 
     paymentMethod: text('payment_method'),
     transactionId: text('transaction_id'),

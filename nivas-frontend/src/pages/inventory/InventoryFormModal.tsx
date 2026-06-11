@@ -154,7 +154,7 @@ export default function InventoryFormModal({
                     <Input
                         type="number"
                         label="Stock"
-                        value={formData.currentStock}
+                        value={formData.currentStock || ''}
                         onChange={e =>
                             setFormData({
                                 ...formData,
@@ -166,22 +166,22 @@ export default function InventoryFormModal({
                     <Input
                         type="number"
                         label="Min Stock"
-                        value={formData.minStock}
+                        value={formData.minStock || ''}
                         onChange={e =>
                             setFormData({
                                 ...formData,
-                                minStock: parseInt(e.target.value) || 0,
+                                minStock: e.target.value === '' ? 0 : parseInt(e.target.value),
                             })
                         }
                     />
                     <Input
                         type="number"
                         label="Reorder"
-                        value={formData.reorderLevel}
+                        value={formData.reorderLevel || ''}
                         onChange={e =>
                             setFormData({
                                 ...formData,
-                                reorderLevel: parseInt(e.target.value) || 0,
+                                reorderLevel: e.target.value === '' ? 0 : parseInt(e.target.value),
                             })
                         }
                     />
@@ -191,7 +191,7 @@ export default function InventoryFormModal({
                     <Input
                         type="number"
                         label="Unit Cost"
-                        value={formData.costPrice}
+                        value={formData.costPrice || ''}
                         onChange={e =>
                             setFormData({
                                 ...formData,

@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * Environment Configuration
  * Core application settings only - service credentials are stored per-hotel in database
- * (notification_settings, channel_manager_settings tables)
+ * (notification_settings table)
  */
 const envSchema = z.object({
     // Core

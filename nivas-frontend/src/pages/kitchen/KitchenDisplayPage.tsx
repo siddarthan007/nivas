@@ -138,6 +138,11 @@ function KOTCard({ order, onStatusChange, onDismiss, isUpdating, isShaking }: { 
                             textAlign: 'right'
                         }}>
                             x{item.quantity}
+                            {typeof item.price === 'number' && item.price > 0 && (
+                                <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', fontWeight: 500 }}>
+                                    NPR {Math.round(item.price * item.quantity).toLocaleString()}
+                                </div>
+                            )}
                         </div>
                     </div>
                 ))}

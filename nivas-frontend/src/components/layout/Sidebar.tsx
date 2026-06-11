@@ -36,6 +36,8 @@ import {
   BookOpen,
   Monitor,
   Star,
+  DoorOpen,
+  UserPlus,
 } from "lucide-react";
 import Avatar from "@/components/ui/Avatar";
 import { useSidebar } from "@/lib/contexts/SidebarContext";
@@ -63,9 +65,11 @@ const staffItems: StaffNavItem[] = [
   { id: "dashboard", href: "/hotel", label: "Dashboard", Icon: LayoutDashboard },
   { id: "rooms", href: "/hotel/rooms", label: "Rooms", Icon: Bed, permission: "rooms:read", section: "Front Office" },
   { id: "bookings", href: "/hotel/bookings", label: "Bookings", Icon: CalendarDays, permission: "bookings:read", section: "Front Office" },
+  { id: "checkin", href: "/hotel/bookings/checkin", label: "Check-In", Icon: DoorOpen, permission: "bookings:update", section: "Front Office" },
   { id: "housekeeping", href: "/hotel/housekeeping", label: "Housekeeping", Icon: Sparkles, permission: "housekeeping:view", section: "Front Office" },
   { id: "floor-plan", href: "/hotel/operations/floor-plan", label: "Floor Plan", Icon: Grid3X3, permission: "rooms:manage_layout", section: "Front Office" },
   { id: "guests", href: "/hotel/guests", label: "Customers", Icon: Contact, permission: "crm:view_guests", section: "Front Office" },
+  { id: "new-customer", href: "/hotel/guests/new", label: "New Customer", Icon: UserPlus, permission: "crm:manage_guests", section: "Front Office" },
   { id: "orders", href: "/hotel/orders", label: "Orders", Icon: UtensilsCrossed, permission: "orders:read", section: "Food & Beverage" },
   { id: "pos", href: "/hotel/pos", label: "POS", Icon: Monitor, permission: "orders:create", section: "Food & Beverage" },
   { id: "kitchen", href: "/hotel/kitchen", label: "Kitchen Display", Icon: UtensilsCrossed, permission: "orders:read", section: "Food & Beverage" },
@@ -95,7 +99,6 @@ const superAdminItems = [
 ];
 
 const adminItems = [
-  { id: "channel-manager", href: "/hotel/channel-manager", label: "Channel Manager", Icon: TrendingUp },
   { id: "saas-billing", href: "/hotel/billing", label: "Subscription", Icon: CreditCard },
   { id: "audit", href: "/hotel/audit", label: "Audit Logs", Icon: FileText },
   { id: "settings", href: "/hotel/settings", label: "Settings", Icon: Settings },
@@ -367,7 +370,6 @@ export default function Sidebar() {
                 cursor: 'pointer',
                 color: 'var(--notion-text-secondary)'
               }}
-              title="Search (Ctrl+K)"
             >
               <Search size={18} />
             </button>

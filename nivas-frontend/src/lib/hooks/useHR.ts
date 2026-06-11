@@ -17,9 +17,22 @@ export function useHR() {
         setIsLoading(true);
         setError(null);
         try {
-            const response = await api.get<PayrollSummary[]>('/hr/payroll');
+            const response = await api.get<any[]>('/hr/payroll');
             if (response.data) {
-                setPayroll(response.data);
+                const mapped: PayrollSummary[] = response.data.map((p: any) => ({
+                    id: p.id,
+                    employeeId: p.userId || p.employeeId || '',
+                    employeeName: p.employee?.fullName || p.employeeName || 'Unknown',
+                    periodStart: p.periodStart,
+                    periodEnd: p.periodEnd,
+                    baseSalary: parseFloat(p.baseSalary || 0),
+                    deductions: parseFloat(p.deductions || 0),
+                    bonuses: parseFloat(p.bonuses || p.overtimePay || 0),
+                    netPay: parseFloat(p.netPay || 0),
+                    status: p.status === 'PAID' ? 'PAID' : 'PENDING',
+                    paymentDate: p.paymentDate,
+                }));
+                setPayroll(mapped);
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch payroll data');

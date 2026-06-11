@@ -28,6 +28,12 @@ export class HousekeepingService {
     }
 
     static async createTask(hotelId: number, userId: string, data: { roomId: number; assignedToId?: string; taskType: string; priority: string; notes?: string; bookingId?: string }) {
+        // Verify the room belongs to this hotel before touching it.
+        const room = await db.query.rooms.findFirst({
+            where: and(eq(rooms.id, data.roomId), eq(rooms.hotelId, hotelId))
+        });
+        if (!room) throw new NotFoundError('Room');
+
         let resolvedBookingId = data.bookingId;
 
         // Auto-link current booking for the room if not explicitly provided
@@ -66,9 +72,20 @@ export class HousekeepingService {
                 throw new BusinessLogicError('Failed to create housekeeping task');
             }
 
-            await tx.update(rooms)
-                .set({ status: 'CLEANING' })
-                .where(eq(rooms.id, data.roomId));
+            // Only mark room as CLEANING if no guest is currently checked in.
+            // Mid-stay tasks (towels, amenities) must NOT mark an occupied room as cleaning.
+            const activeStay = await tx.query.bookings.findFirst({
+                where: and(
+                    eq(bookings.roomId, data.roomId),
+                    eq(bookings.hotelId, hotelId),
+                    eq(bookings.status, 'CHECKED_IN')
+                )
+            });
+            if (!activeStay) {
+                await tx.update(rooms)
+                    .set({ status: 'CLEANING' })
+                    .where(and(eq(rooms.id, data.roomId), eq(rooms.hotelId, hotelId)));
+            }
 
             return task;
         });
@@ -144,7 +161,7 @@ export class HousekeepingService {
                 if (!activeStay) {
                     await tx.update(rooms)
                         .set({ status: 'AVAILABLE', updatedAt: new Date() })
-                        .where(eq(rooms.id, task.roomId));
+                        .where(and(eq(rooms.id, task.roomId), eq(rooms.hotelId, hotelId)));
                 }
             }
 

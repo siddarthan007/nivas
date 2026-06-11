@@ -30,12 +30,11 @@ import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal';
 import ImageUpload from '@/components/ui/ImageUpload';
 import { toast } from 'sonner';
 
-// Status color mapping
+// Status color mapping (must match backend room.status values)
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
-    VACANT: { bg: 'var(--notion-green-bg)', text: 'var(--notion-green)', label: 'Vacant' },
     AVAILABLE: { bg: 'var(--notion-green-bg)', text: 'var(--notion-green)', label: 'Available' },
     OCCUPIED: { bg: 'var(--notion-blue-bg)', text: 'var(--notion-blue)', label: 'Occupied' },
-    DIRTY: { bg: 'var(--notion-yellow-bg)', text: 'var(--notion-orange)', label: 'Dirty' },
+    CLEANING: { bg: 'var(--notion-yellow-bg)', text: 'var(--notion-orange)', label: 'Cleaning' },
     MAINTENANCE: { bg: 'var(--notion-red-bg)', text: 'var(--notion-red)', label: 'Maintenance' },
     OUT_OF_ORDER: { bg: 'var(--notion-bg-hover)', text: 'var(--notion-text-secondary)', label: 'Out of Order' },
 };
@@ -313,7 +312,7 @@ function RoomCard({
                     whiteSpace: 'nowrap',
                     marginLeft: 'auto',
                 }}>
-                    Rs {(room.rate || 0).toLocaleString()}
+                    NPR {(Number(room.rate) || 0).toLocaleString()}
                 </span>
             </div>
         </div>
@@ -321,7 +320,7 @@ function RoomCard({
 }
 
 // Stats Bar Component
-function StatsBar({ stats }: { stats: { total: number; vacant: number; occupied: number; dirty: number; maintenance: number } }) {
+function StatsBar({ stats }: { stats: { total: number; available: number; occupied: number; cleaning: number; maintenance: number; outOfOrder: number } }) {
     return (
         <div style={{
             display: 'flex',
@@ -331,10 +330,11 @@ function StatsBar({ stats }: { stats: { total: number; vacant: number; occupied:
         }}>
             {[
                 { label: 'Total', value: stats.total, color: 'var(--notion-text)' },
-                { label: 'Vacant', value: stats.vacant, color: 'var(--notion-green)' },
+                { label: 'Available', value: stats.available, color: 'var(--notion-green)' },
                 { label: 'Occupied', value: stats.occupied, color: 'var(--notion-blue)' },
-                { label: 'Dirty', value: stats.dirty, color: 'var(--notion-orange)' },
+                { label: 'Cleaning', value: stats.cleaning, color: 'var(--notion-orange)' },
                 { label: 'Maintenance', value: stats.maintenance, color: 'var(--notion-red)' },
+                { label: 'Out of Order', value: stats.outOfOrder, color: 'var(--notion-text-secondary)' },
             ].map(stat => (
                 <div key={stat.label} style={{
                     display: 'flex',
@@ -486,14 +486,14 @@ function RoomFormModal({
                             }}
                             options={roomTypes.filter(rt => rt.isActive).map(rt => ({
                                 value: rt.code,
-                                label: `${rt.name} — Rs ${parseFloat(rt.baseRate || '0').toLocaleString()}`
+                                label: `${rt.name} — NPR ${(Number(rt.baseRate) || 0).toLocaleString()}`
                             }))}
                         />
                     </div>
 
                     <div>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Rate per Night (Rs ) *
+                            Rate per Night (NPR) *
                         </label>
                         <Input
                             type="number"
@@ -661,7 +661,7 @@ function RoomTypesManager({
                                         <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)', fontFamily: 'ui-monospace, monospace' }}>{rt.code}</div>
                                     </div>
                                     <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', fontWeight: '500' }}>
-                                        Rs {parseFloat(rt.baseRate || '0').toLocaleString()}
+                                        NPR {(Number(rt.baseRate) || 0).toLocaleString()}
                                     </span>
                                     <button
                                         onClick={() => { setEditingId(rt.id); setEditName(rt.name); setEditRate(rt.baseRate || '0'); }}
@@ -845,10 +845,11 @@ export default function RoomsPage() {
                         onChange={e => setStatusFilter(e.target.value as RoomStatus | 'ALL')}
                         options={[
                             { value: 'ALL', label: 'All Status' },
-                            { value: 'VACANT', label: 'Vacant' },
+                            { value: 'AVAILABLE', label: 'Available' },
                             { value: 'OCCUPIED', label: 'Occupied' },
-                            { value: 'DIRTY', label: 'Dirty' },
-                            { value: 'MAINTENANCE', label: 'Maintenance' }
+                            { value: 'CLEANING', label: 'Cleaning' },
+                            { value: 'MAINTENANCE', label: 'Maintenance' },
+                            { value: 'OUT_OF_ORDER', label: 'Out of Order' }
                         ]}
                         style={{ width: '150px' }}
                     />

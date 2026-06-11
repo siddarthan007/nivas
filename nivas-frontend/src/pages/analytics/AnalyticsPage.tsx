@@ -104,7 +104,7 @@ export default function AnalyticsPage() {
                     gap: 'var(--space-4)',
                     marginBottom: 'var(--space-6)'
                 }}>
-                    <KPICard title="License Revenue" value={`Rs ${totalRevenue.toLocaleString()}`} icon={DollarSign} color="var(--notion-green)" bg="var(--notion-green-bg)" />
+                    <KPICard title="License Revenue" value={`NPR ${totalRevenue.toLocaleString()}`} icon={DollarSign} color="var(--notion-green)" bg="var(--notion-green-bg)" />
                     <KPICard title="Active Tenants" value={activeTenants} icon={Building2} color="var(--notion-blue)" bg="var(--notion-blue-bg)" />
                     <KPICard title="Total Tenants" value={totalTenants} icon={Users} color="var(--notion-orange)" bg="var(--notion-yellow-bg)" />
                     <KPICard title="Expiring Licenses" value={expiringLicenses} icon={Activity} color="var(--notion-purple)" bg="var(--notion-purple-bg)" />
@@ -223,7 +223,7 @@ export default function AnalyticsPage() {
                                             <td style={{ padding: '10px 12px', color: 'var(--notion-text)' }}>{p.hotelName}</td>
                                             <td style={{ padding: '10px 12px', color: 'var(--notion-text-secondary)' }}>{p.invoiceNumber || '-'}</td>
                                             <td style={{ padding: '10px 12px', color: 'var(--notion-text-secondary)' }}>{p.paymentMethod || 'Manual'}</td>
-                                            <td style={{ padding: '10px 12px', color: 'var(--notion-text)', textAlign: 'right', fontWeight: '500' }}>Rs {parseFloat(p.amount).toLocaleString()}</td>
+                                            <td style={{ padding: '10px 12px', color: 'var(--notion-text)', textAlign: 'right', fontWeight: '500' }}>NPR {parseFloat(p.amount).toLocaleString()}</td>
                                             <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                                 <span style={{
                                                     fontSize: '11px',

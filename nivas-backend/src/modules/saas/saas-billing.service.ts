@@ -28,12 +28,14 @@ export const SaasBillingService = {
         const subscription = await LicenseService.getSubscription(hotelId);
         const featureMap = new Map(SaasAdminService.getAvailableFeatures().map((feature) => [feature.id, feature.label]));
 
+        const rawFeatures = (subscription?.package?.features as string[]) || [];
         const mappedSubscription = subscription ? {
             ...subscription,
             package: subscription.package ? {
                 ...subscription.package,
                 price: Number(subscription.package.monthlyPrice),
-                features: ((subscription.package.features as string[]) || []).map((feature) => featureMap.get(feature) || feature)
+                features: rawFeatures.map((feature) => featureMap.get(feature) || feature),
+                featureIds: rawFeatures,
             } : null
         } : null;
 

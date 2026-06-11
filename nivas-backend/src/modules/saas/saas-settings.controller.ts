@@ -77,9 +77,6 @@ export const saasSettingsController = new Elysia({ prefix: '/saas' })
         isSignedIn: true,
         hasPermission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS,
         body: t.Partial(t.Object({
-            enableMultiCurrency: t.Boolean(),
-            enableChannelManager: t.Boolean(),
-            enableAdvancedRevenue: t.Boolean(),
             enableSmsNotifications: t.Boolean(),
             enableWhatsappNotifications: t.Boolean(),
             enableEmailNotifications: t.Boolean(),
@@ -144,51 +141,4 @@ export const saasSettingsController = new Elysia({ prefix: '/saas' })
             testRecipient: t.String()
         }),
         detail: { summary: 'Test notification channel', tags: ['SaaS'] }
-    })
-    .get('/exchange-rates', async () => {
-        const rates = await SaasSettingsService.getExchangeRates();
-        return createResponse(rates, 'Exchange rates fetched successfully');
-    }, {
-        isSignedIn: true,
-        detail: { summary: 'Get exchange rates', tags: ['SaaS'] }
-    })
-    .post('/exchange-rates', async ({ body }) => {
-        const rate = await SaasSettingsService.createExchangeRate(body);
-        return createResponse(rate, 'Exchange rate created successfully');
-    }, {
-        isSignedIn: true,
-        hasPermission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS,
-        body: t.Object({
-            baseCurrency: t.String(),
-            targetCurrency: t.String(),
-            rate: t.Number(),
-            effectiveFrom: t.String(),
-            effectiveTo: t.Optional(t.String()),
-            source: t.Optional(t.Union([t.Literal('MANUAL'), t.Literal('NRB'), t.Literal('API')]))
-        }),
-        detail: { summary: 'Add exchange rate', tags: ['SaaS'] }
-    })
-    .get('/convert', async ({ query }) => {
-        const result = await SaasSettingsService.convertCurrency(query.from, query.to, query.amount);
-        return createResponse(result, 'Currency converted successfully');
-    }, {
-        isSignedIn: true,
-        query: t.Object({
-            from: t.String(),
-            to: t.String(),
-            amount: t.String()
-        }),
-        detail: { summary: 'Convert currency amount', tags: ['SaaS'] }
-    })
-    .patch('/hotel-currency', async ({ body, user }) => {
-        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
-        const updated = await SaasSettingsService.updateHotelCurrency(user.hotelId, body.currency);
-        return createResponse({ currency: updated.currency }, 'Hotel currency updated successfully');
-    }, {
-        isSignedIn: true,
-        hasPermission: PERMISSIONS.SYSTEM.MANAGE_SETTINGS,
-        body: t.Object({
-            currency: t.Union([t.Literal('NPR'), t.Literal('INR')])
-        }),
-        detail: { summary: 'Set hotel primary currency', tags: ['SaaS'] }
     });

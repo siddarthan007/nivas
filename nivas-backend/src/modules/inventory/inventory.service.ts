@@ -305,14 +305,15 @@ export class InventoryService {
 
             if (status === 'APPROVED' && !wasApproved && req) {
                 const item = await tx.query.inventoryItems.findFirst({
-                    where: eq(inventoryItems.id, req.itemId)
+                    where: and(eq(inventoryItems.id, req.itemId), eq(inventoryItems.hotelId, hotelId))
                 });
-                const previousStock = item?.quantity ?? 0;
+                if (!item) throw new NotFoundError('Inventory Item');
+                const previousStock = item.quantity ?? 0;
                 const newStock = previousStock + req.quantity;
 
                 await tx.update(inventoryItems)
                     .set({ quantity: newStock, updatedAt: new Date() })
-                    .where(eq(inventoryItems.id, req.itemId));
+                    .where(and(eq(inventoryItems.id, req.itemId), eq(inventoryItems.hotelId, hotelId)));
 
                 await tx.insert(stockMovements).values({
                     hotelId,

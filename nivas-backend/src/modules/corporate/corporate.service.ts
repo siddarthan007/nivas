@@ -1,6 +1,6 @@
 import { db } from '../../db';
-import { corporateAccounts, travelAgents } from '../../db/schema';
-import { eq, and } from 'drizzle-orm';
+import { corporateAccounts, travelAgents, corporateLedger } from '../../db/schema';
+import { eq, and, desc } from 'drizzle-orm';
 import { NotFoundError } from '../../utils/errors';
 
 export const CorporateService = {
@@ -106,5 +106,70 @@ export const CorporateService = {
             .returning();
         if (!deleted) throw new NotFoundError('Travel Agent');
         return deleted;
+    },
+
+    async getLedger(hotelId: number, companyId: number) {
+        const company = await db.query.corporateAccounts.findFirst({
+            where: and(eq(corporateAccounts.id, companyId), eq(corporateAccounts.hotelId, hotelId))
+        });
+        if (!company) throw new NotFoundError('Corporate Account');
+
+        const entries = await db.query.corporateLedger.findMany({
+            where: and(eq(corporateLedger.corporateAccountId, companyId), eq(corporateLedger.hotelId, hotelId)),
+            orderBy: [desc(corporateLedger.createdAt)],
+            with: { createdBy: { columns: { name: true } } }
+        });
+
+        const balance = entries.length > 0 ? parseFloat(entries[0].balance) : 0;
+        return { company, entries, balance };
+    },
+
+    async addLedgerEntry(hotelId: number, companyId: number, data: any, userId?: string) {
+        const company = await db.query.corporateAccounts.findFirst({
+            where: and(eq(corporateAccounts.id, companyId), eq(corporateAccounts.hotelId, hotelId))
+        });
+        if (!company) throw new NotFoundError('Corporate Account');
+
+        const previousEntries = await db.query.corporateLedger.findMany({
+            where: and(eq(corporateLedger.corporateAccountId, companyId), eq(corporateLedger.hotelId, hotelId)),
+            orderBy: [desc(corporateLedger.createdAt)],
+            limit: 1
+        });
+
+        const previousBalance = previousEntries.length > 0 ? parseFloat(previousEntries[0].balance) : 0;
+        const debit = parseFloat(data.debit || '0');
+        const credit = parseFloat(data.credit || '0');
+        const newBalance = previousBalance + debit - credit;
+
+        const [entry] = await db.insert(corporateLedger).values({
+            hotelId,
+            corporateAccountId: companyId,
+            entryType: data.entryType,
+            referenceId: data.referenceId,
+            referenceType: data.referenceType,
+            description: data.description,
+            debit: debit.toString(),
+            credit: credit.toString(),
+            balance: newBalance.toString(),
+            createdById: userId
+        }).returning();
+
+        return entry;
+    },
+
+    async getCompanyWithBalance(hotelId: number, companyId: number) {
+        const company = await db.query.corporateAccounts.findFirst({
+            where: and(eq(corporateAccounts.id, companyId), eq(corporateAccounts.hotelId, hotelId))
+        });
+        if (!company) throw new NotFoundError('Corporate Account');
+
+        const entries = await db.query.corporateLedger.findMany({
+            where: and(eq(corporateLedger.corporateAccountId, companyId), eq(corporateLedger.hotelId, hotelId)),
+            orderBy: [desc(corporateLedger.createdAt)],
+            limit: 1
+        });
+
+        const balance = entries.length > 0 ? parseFloat(entries[0].balance) : 0;
+        return { ...company, balance };
     }
 };

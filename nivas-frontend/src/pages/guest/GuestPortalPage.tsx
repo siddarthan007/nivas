@@ -1733,14 +1733,6 @@ export default function GuestPortalPage() {
                 fetchRequests={fetchRequests}
                 onLogout={logout}
             />
-            {/* Floating AI concierge — self-hides if AI is off for this hotel. */}
-            <AiChatLauncher
-                endpoint="/guest/actions/concierge" field="message" sendHistory
-                title="Concierge" subtitle="Ask me anything"
-                intro="Namaste! 🙏 I can recommend dishes, answer questions about the hotel, and help you order room service or request housekeeping. Ask in Nepali or English."
-                suggestions={['What can I order for dinner?', 'What time is checkout?', 'How do I request housekeeping?']}
-                accent="var(--notion-green)"
-            />
         </>
     );
 }

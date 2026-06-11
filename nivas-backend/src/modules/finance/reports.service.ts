@@ -43,6 +43,7 @@ export const ReportsService = {
         const sales = await db.query.invoices.findMany({
             where: and(
                 eq(invoices.hotelId, hotelId),
+                eq(invoices.isVoided, false),
                 gte(invoices.createdAt, startDate),
                 lte(invoices.createdAt, endDate)
             ),
@@ -65,17 +66,14 @@ export const ReportsService = {
             const date = inv.createdAt?.toISOString().split('T')[0] || '';
             const total = parseFloat(inv.grandTotal);
             const vat = parseFloat(inv.vatAmount || '0');
-            // Simplified derivation: if VAT > 0, assumed taxable. 
-            // In real world, may have mixed items. But here we take invoice level.
-            let taxable = 0;
-            let exempt = 0;
+            const subTotal = parseFloat(inv.subTotal || '0');
+            const sc = parseFloat(inv.serviceCharge || '0');
+            const discount = parseFloat(inv.discountAmount || '0');
+            const netBase = subTotal + sc - discount;
 
-            if (vat > 0) {
-                // Back calculate or use predefined fields if available
-                taxable = parseFloat(inv.subTotal) + parseFloat(inv.serviceCharge || '0') - parseFloat(inv.discountAmount || '0');
-            } else {
-                exempt = parseFloat(inv.subTotal) + parseFloat(inv.serviceCharge || '0') - parseFloat(inv.discountAmount || '0');
-            }
+            // If VAT was charged, the net base is taxable; otherwise it's exempt.
+            const taxable = vat > 0 ? netBase : 0;
+            const exempt = vat > 0 ? 0 : netBase;
 
             return [
                 date,
@@ -121,7 +119,7 @@ export const ReportsService = {
             where: eq(hotels.id, hotelId),
             columns: { taxRate: true }
         });
-        const vatRate = parseFloat(hotel?.taxRate ?? '0.13');
+        const vatRate = parseFloat(hotel?.taxRate || '0.13');
 
         const purchases = await db.query.purchaseOrders.findMany({
             where: and(

@@ -22,7 +22,7 @@ export const AccountingService = {
         // Increment print count
         await db.update(invoices)
             .set({ printCount: currentPrintCount + 1 })
-            .where(eq(invoices.id, invoiceId));
+            .where(and(eq(invoices.id, invoiceId), eq(invoices.hotelId, hotelId)));
 
         const invoiceDate = invoice.createdAt ?? new Date();
         const dateBs = new NepaliDate(invoiceDate).format('YYYY-MM-DD');

@@ -86,8 +86,8 @@ export default function AdjustStockModal({ isOpen, onClose, item, onAdjust }: Pr
                     <Input
                         type="number"
                         label="Adjustment (+/-)"
-                        value={adj}
-                        onChange={e => setAdj(parseInt(e.target.value) || 0)}
+                        value={adj || ''}
+                        onChange={e => setAdj(e.target.value === '' ? 0 : parseInt(e.target.value))}
                         placeholder="+10 or -5"
                         required
                     />

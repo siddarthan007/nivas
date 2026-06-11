@@ -145,7 +145,7 @@ export default function CustomerDetailPage() {
                     <div style={{ display: 'flex', gap: 'var(--space-4)', textAlign: 'center' }}>
                         <div><div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--notion-text)' }}>{details.bookings?.length||0}</div><div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Stays</div></div>
                         <div><div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--notion-text)' }}>{details.orders?.length||0}</div><div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Orders</div></div>
-                        <div><div style={{ fontSize: '20px', fontWeight: '700', color: (financials?.stats.balance||0)>0?'var(--notion-red)':'var(--notion-green)' }}>Rs {(financials?.stats.balance||0).toLocaleString()}</div><div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Balance</div></div>
+                        <div><div style={{ fontSize: '20px', fontWeight: '700', color: (financials?.stats.balance||0)>0?'var(--notion-red)':'var(--notion-green)' }}>NPR {(financials?.stats.balance||0).toLocaleString()}</div><div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Balance</div></div>
                     </div>
                 </div>
 
@@ -206,7 +206,7 @@ export default function CustomerDetailPage() {
                                     <InfoRow label="Country" value={details.country} icon={<Globe size={14} />} />
                                     <InfoRow label="ID" value={details.idType?`${details.idType}: ${details.idNumber}`:undefined} icon={<Shield size={14} />} />
                                     <InfoRow label="PAN" value={details.panNumber} icon={<Shield size={14} />} />
-                                    <InfoRow label="Opening Due" value={details.openingDueAmount?`Rs ${Number(details.openingDueAmount).toLocaleString()}`:undefined} icon={<DollarSign size={14} />} />
+                                    <InfoRow label="Opening Due" value={details.openingDueAmount?`NPR ${Number(details.openingDueAmount).toLocaleString()}`:undefined} icon={<DollarSign size={14} />} />
                                     <InfoRow label="Member Since" value={details.createdAt?format(new Date(details.createdAt),'MMM d, yyyy'):undefined} icon={<Calendar size={14} />} />
                                 </div>
                                 <div style={{ padding: 'var(--space-5)', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)' }}>
@@ -231,7 +231,7 @@ export default function CustomerDetailPage() {
                                     <span style={{ fontWeight:'600',color:'var(--notion-text)' }}>#{o.orderNumber} — {o.orderType?.replace('_',' ')}</span>
                                     <span style={{ fontSize:'12px',padding:'2px 8px',borderRadius:'99px',fontWeight:'500',backgroundColor:'var(--notion-bg-tertiary)',color:'var(--notion-text-secondary)' }}>{o.status}</span>
                                 </div>
-                                <div style={{ fontSize:'13px',color:'var(--notion-text-secondary)' }}>{o.createdAt?format(new Date(o.createdAt),'MMM d, yyyy h:mm a'):''} · Rs {Number(o.totalAmount||0).toLocaleString()}</div>
+                                <div style={{ fontSize:'13px',color:'var(--notion-text-secondary)' }}>{o.createdAt?format(new Date(o.createdAt),'MMM d, yyyy h:mm a'):''} · NPR {Number(o.totalAmount||0).toLocaleString()}</div>
                             </div>))}
                         </div>}
                     </div>
@@ -248,7 +248,7 @@ export default function CustomerDetailPage() {
                                         <span style={{ fontWeight:'600',color:'var(--notion-text)' }}>Room {b.room?.number||b.roomId}</span>
                                         <span style={{ fontSize:'12px',padding:'2px 8px',borderRadius:'4px',fontWeight:'500',backgroundColor:active?'var(--notion-green-bg)':'var(--notion-bg-tertiary)',color:active?'var(--notion-green)':'var(--notion-text-secondary)' }}>{b.status}</span>
                                     </div>
-                                    <div style={{ fontSize:'13px',color:'var(--notion-text-secondary)' }}>{format(new Date(b.checkIn),'MMM d, yyyy')} – {format(new Date(b.checkOut),'MMM d, yyyy')} · Rs {Number(b.totalAmount||0).toLocaleString()}</div>
+                                    <div style={{ fontSize:'13px',color:'var(--notion-text-secondary)' }}>{format(new Date(b.checkIn),'MMM d, yyyy')} – {format(new Date(b.checkOut),'MMM d, yyyy')} · NPR {Number(b.totalAmount||0).toLocaleString()}</div>
                                 </div>);
                             })}
                         </div>}
@@ -262,15 +262,15 @@ export default function CustomerDetailPage() {
                             <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'var(--space-4)',marginBottom:'var(--space-4)' }}>
                                 <div style={{ padding:'16px',backgroundColor:'var(--notion-bg-secondary)',borderRadius:'var(--radius-lg)',border:'1px solid var(--notion-border)',textAlign:'center' }}>
                                     <div style={{ fontSize:'12px',color:'var(--notion-text-secondary)',textTransform:'uppercase',marginBottom:'4px' }}>Total Invoiced</div>
-                                    <div style={{ fontSize:'18px',fontWeight:'700',color:'var(--notion-text)' }}>Rs {financials.stats.totalInvoiced.toLocaleString()}</div>
+                                    <div style={{ fontSize:'18px',fontWeight:'700',color:'var(--notion-text)' }}>NPR {financials.stats.totalInvoiced.toLocaleString()}</div>
                                 </div>
                                 <div style={{ padding:'16px',backgroundColor:'var(--notion-bg-secondary)',borderRadius:'var(--radius-lg)',border:'1px solid var(--notion-border)',textAlign:'center' }}>
                                     <div style={{ fontSize:'12px',color:'var(--notion-text-secondary)',textTransform:'uppercase',marginBottom:'4px' }}>Total Paid</div>
-                                    <div style={{ fontSize:'18px',fontWeight:'700',color:'var(--notion-green)' }}>Rs {financials.stats.totalPaid.toLocaleString()}</div>
+                                    <div style={{ fontSize:'18px',fontWeight:'700',color:'var(--notion-green)' }}>NPR {financials.stats.totalPaid.toLocaleString()}</div>
                                 </div>
                                 <div style={{ padding:'16px',backgroundColor:'var(--notion-bg-secondary)',borderRadius:'var(--radius-lg)',border:'1px solid var(--notion-border)',textAlign:'center' }}>
                                     <div style={{ fontSize:'12px',color:'var(--notion-text-secondary)',textTransform:'uppercase',marginBottom:'4px' }}>Balance Due</div>
-                                    <div style={{ fontSize:'18px',fontWeight:'700',color:financials.stats.balance>0?'var(--notion-red)':'var(--notion-text)' }}>Rs {financials.stats.balance.toLocaleString()}</div>
+                                    <div style={{ fontSize:'18px',fontWeight:'700',color:financials.stats.balance>0?'var(--notion-red)':'var(--notion-text)' }}>NPR {financials.stats.balance.toLocaleString()}</div>
                                 </div>
                             </div>
                             <div style={{ backgroundColor:'var(--notion-bg-secondary)',borderRadius:'var(--radius-lg)',border:'1px solid var(--notion-border)',overflow:'hidden' }}>
@@ -288,8 +288,8 @@ export default function CustomerDetailPage() {
                                             return txs.map((tx,i)=>(<tr key={i} style={{borderBottom:'1px solid var(--notion-border)'}}>
                                                 <td style={{padding:'10px 16px',color:'var(--notion-text-secondary)',fontSize:'13px'}}>{format(tx.date,'MMM d, yyyy')}</td>
                                                 <td style={{padding:'10px 16px',color:'var(--notion-text)'}}>{tx.desc}</td>
-                                                <td style={{padding:'10px 16px',textAlign:'right',color:'var(--notion-red)',fontWeight:500}}>{tx.debit?`Rs ${tx.debit.toLocaleString()}`:'—'}</td>
-                                                <td style={{padding:'10px 16px',textAlign:'right',color:'var(--notion-green)',fontWeight:500}}>{tx.credit?`Rs ${tx.credit.toLocaleString()}`:'—'}</td>
+                                                <td style={{padding:'10px 16px',textAlign:'right',color:'var(--notion-red)',fontWeight:500}}>{tx.debit?`NPR ${tx.debit.toLocaleString()}`:'—'}</td>
+                                                <td style={{padding:'10px 16px',textAlign:'right',color:'var(--notion-green)',fontWeight:500}}>{tx.credit?`NPR ${tx.credit.toLocaleString()}`:'—'}</td>
                                             </tr>));
                                         })()}
                                     </tbody>

@@ -71,7 +71,7 @@ export interface Login2FAResponse {
 // Room Types
 // ============================================================================
 
-export type RoomStatus = 'AVAILABLE' | 'VACANT' | 'OCCUPIED' | 'DIRTY' | 'MAINTENANCE' | 'OUT_OF_ORDER';
+export type RoomStatus = 'AVAILABLE' | 'OCCUPIED' | 'CLEANING' | 'MAINTENANCE' | 'OUT_OF_ORDER';
 export type RoomType = string;
 
 export interface Room {
@@ -145,6 +145,8 @@ export interface Booking {
     totalAmount: number;
     advancePayment?: number;
     balanceAmount?: number;
+    creditBalance?: number;
+    isPaid?: boolean;
     notes?: string;
     guestPin?: string;
     createdAt: string;
@@ -166,6 +168,8 @@ export interface CreateBookingPayload {
     nationality?: string;
     idNumber?: string;
     idType?: string;
+    panNumber?: string;
+    vatNumber?: string;
     corporateAccountId?: number;
     travelAgentId?: number;
 }
@@ -192,6 +196,8 @@ export interface Order {
     orderNumber: string;
     roomId?: number;
     room?: Room;
+    bookingId?: string;
+    restaurantTableId?: number;
     customerName?: string;
     orderType: OrderType;
     status: OrderStatus;

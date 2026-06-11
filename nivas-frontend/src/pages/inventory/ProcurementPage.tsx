@@ -32,7 +32,7 @@ import {
 import { exportObjectsToCsv } from '@/lib/utils/export';
 
 import DateField from "@/components/ui/DateField";
-const formatCurrency = (amount: number | null | undefined) => `Rs ${(amount || 0).toLocaleString()}`;
+const formatCurrency = (amount: number | null | undefined) => `NPR ${(amount || 0).toLocaleString()}`;
 const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return '-';
     const date = new Date(dateStr);
@@ -171,8 +171,8 @@ function TableSkeleton() {
 interface POLineItem {
     itemId: number | '';
     itemName?: string;
-    quantity: number;
-    unitCost: number;
+    quantity: number | undefined;
+    unitCost: number | undefined;
 }
 
 function SearchableItemSelect({ items, selectedId, onSelect, placeholder }: {
@@ -411,12 +411,12 @@ function CreatePOModal({ isOpen, onClose, onSubmit, inventoryItems, vendors, onC
         )));
     };
 
-    const handleUpdateItem = (index: number, field: 'quantity' | 'unitCost', value: number) => {
+    const handleUpdateItem = (index: number, field: 'quantity' | 'unitCost', value: number | undefined) => {
         setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
     };
 
-    const totalAmount = items.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
-    const isValid = supplier.trim() && items.every(item => item.itemId !== '' && item.quantity > 0 && item.unitCost >= 0);
+    const totalAmount = items.reduce((sum, item) => sum + ((item.quantity ?? 0) * (item.unitCost ?? 0)), 0);
+    const isValid = supplier.trim() && items.every(item => item.itemId !== '' && (item.quantity ?? 0) > 0 && (item.unitCost ?? 0) >= 0);
 
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
@@ -427,8 +427,8 @@ function CreatePOModal({ isOpen, onClose, onSubmit, inventoryItems, vendors, onC
             vendorId,
             items: items.map(item => ({
                 itemId: Number(item.itemId),
-                quantity: item.quantity,
-                unitCost: item.unitCost,
+                quantity: item.quantity ?? 0,
+                unitCost: item.unitCost ?? 0,
             })),
             notes: notes.trim() || undefined,
             expectedDelivery: expectedDate || undefined,
@@ -484,9 +484,9 @@ function CreatePOModal({ isOpen, onClose, onSubmit, inventoryItems, vendors, onC
                                     onSelect={(id, itm) => handleSelectItem(index, id, itm)}
                                     placeholder="Select inventory item"
                                 />
-                                <Input type="number" min={1} value={item.quantity} onChange={event => handleUpdateItem(index, 'quantity', parseInt(event.target.value, 10) || 1)} placeholder="Qty" style={{ flex: 0.7 }} required />
-                                <Input type="number" min={0} step="0.01" value={item.unitCost} onChange={event => handleUpdateItem(index, 'unitCost', parseFloat(event.target.value) || 0)} placeholder="Unit cost" style={{ flex: 1 }} required />
-                                <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--notion-text)', minWidth: '90px', textAlign: 'right' }}>{formatCurrency(item.quantity * item.unitCost)}</div>
+                                <Input type="number" min={1} value={item.quantity ?? ''} onChange={event => handleUpdateItem(index, 'quantity', event.target.value === '' ? undefined : parseInt(event.target.value, 10))} placeholder="Qty" style={{ flex: 0.7 }} required />
+                                <Input type="number" min={0} step="0.01" value={item.unitCost ?? ''} onChange={event => handleUpdateItem(index, 'unitCost', event.target.value === '' ? undefined : parseFloat(event.target.value))} placeholder="Unit cost" style={{ flex: 1 }} required />
+                                <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--notion-text)', minWidth: '90px', textAlign: 'right' }}>{formatCurrency((item.quantity ?? 0) * (item.unitCost ?? 0))}</div>
                                 {items.length > 1 && (
                                     <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveItem(index)} style={{ color: 'var(--notion-red)', padding: '4px' }}>
                                         <XCircle size={14} />

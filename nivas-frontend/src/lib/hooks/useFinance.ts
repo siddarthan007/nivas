@@ -25,6 +25,8 @@ export interface Invoice {
     serviceCharge: string;
     discountAmount: string;
     vatAmount: string;
+    roomRevenue?: string;
+    fbRevenue?: string;
     grandTotal: string;
     fiscalYear: string;
     paymentStatus?: string;
@@ -339,12 +341,19 @@ export function useFinanceDashboard() {
 
             if (Array.isArray(tbData)) {
                 tbData.forEach((account: any) => {
-                    const name = account.account_name?.toLowerCase() || '';
+                    const name = (account.name || account.account_name || '')?.toLowerCase();
                     const balance = Number(account.balance) || 0;
-                    
-                    if (name.includes('receivable')) ar += balance;
-                    if (name.includes('payable')) ap += Math.abs(balance);
-                    if (name.includes('cash') || name.includes('bank')) cash += balance;
+                    const type = (account.type || '').toLowerCase();
+
+                    // Use account type when available, fallback to name heuristic.
+                    if (type === 'asset' && (name.includes('receivable'))) ar += balance;
+                    else if (!type && name.includes('receivable')) ar += balance;
+
+                    if (type === 'liability' && name.includes('payable')) ap += Math.abs(balance);
+                    else if (!type && name.includes('payable')) ap += Math.abs(balance);
+
+                    if (type === 'asset' && (name.includes('cash') || name.includes('bank'))) cash += balance;
+                    else if (!type && (name.includes('cash') || name.includes('bank'))) cash += balance;
                 });
             }
 

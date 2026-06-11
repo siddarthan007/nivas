@@ -81,13 +81,14 @@ export function useRooms() {
         return updateRoom(id, { status });
     };
 
-    // Computed stats
+    // Computed stats (must match actual backend room.status values)
     const stats = {
         total: rooms.length,
-        vacant: rooms.filter(r => r.status === 'VACANT').length,
+        available: rooms.filter(r => r.status === 'AVAILABLE').length,
         occupied: rooms.filter(r => r.status === 'OCCUPIED').length,
-        dirty: rooms.filter(r => r.status === 'DIRTY').length,
+        cleaning: rooms.filter(r => r.status === 'CLEANING').length,
         maintenance: rooms.filter(r => r.status === 'MAINTENANCE').length,
+        outOfOrder: rooms.filter(r => r.status === 'OUT_OF_ORDER').length,
     };
 
     return {

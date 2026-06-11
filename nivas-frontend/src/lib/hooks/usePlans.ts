@@ -86,9 +86,6 @@ export function usePlans() {
             setFeatures(featRes.value.data);
         } else {
             setFeatures([
-                { id: 'enableMultiCurrency', label: 'Multi-Currency Support', category: 'Core' },
-                { id: 'enableChannelManager', label: 'Channel Manager', category: 'Core' },
-                { id: 'enableAdvancedRevenue', label: 'Advanced Revenue Management', category: 'Core' },
                 { id: 'enableSmsNotifications', label: 'SMS Notifications', category: 'Notifications' },
                 { id: 'enableWhatsappNotifications', label: 'WhatsApp Notifications', category: 'Notifications' },
                 { id: 'enableEmailNotifications', label: 'Email Notifications', category: 'Notifications' },

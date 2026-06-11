@@ -116,14 +116,14 @@ function PlanCard({
             }}>
                 <div>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--notion-text)' }}>
-                        Rs {(monthlyPrice || 0).toLocaleString()}
+                        NPR {(monthlyPrice || 0).toLocaleString()}
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)' }}>per month</div>
                 </div>
                 {annualPrice && (
                     <div style={{ borderLeft: '1px solid var(--notion-border)', paddingLeft: 'var(--space-4)' }}>
                         <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--notion-text)' }}>
-                            Rs {(annualPrice || 0).toLocaleString()}
+                            NPR {(annualPrice || 0).toLocaleString()}
                         </div>
                         <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)' }}>per year</div>
                     </div>
@@ -413,7 +413,7 @@ function PlanModal({
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                         <div>
                             <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>
-                                Monthly Price (Rs ) *
+                                Monthly Price (NPR) *
                             </label>
                             <Input
                                 type="number"
@@ -428,7 +428,7 @@ function PlanModal({
                         </div>
                         <div>
                             <label style={{ display: 'block', fontSize: '12px', fontWeight: '500', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>
-                                Annual Price (Rs )
+                                Annual Price (NPR)
                             </label>
                             <Input
                                 type="number"

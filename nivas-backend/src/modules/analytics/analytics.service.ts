@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { bookings, orders, rooms, payments, housekeepingTasks, hotels, users, shifts, nightAudits, invoices, menuItems, purchaseOrders, guests } from '../../db/schema';
-import { eq, and, sql, gte, lte, count, sum, lt, desc, isNotNull } from 'drizzle-orm';
+import { eq, and, sql, gte, lte, count, sum, lt, desc, isNotNull, isNull, inArray } from 'drizzle-orm';
 
 export const AnalyticsService = {
     async getRealtimeDashboard(hotelId: number) {
@@ -46,11 +46,11 @@ export const AnalyticsService = {
             db.select({ value: count() }).from(bookings)
                 .where(and(eq(bookings.hotelId, hotelId), gte(bookings.checkOut, today), lt(bookings.checkOut, tomorrow))),
             db.select({ value: sum(invoices.grandTotal) }).from(invoices)
-                .where(and(eq(invoices.hotelId, hotelId), eq(invoices.paymentStatus, 'UNPAID'), gte(invoices.createdAt, today), lt(invoices.createdAt, tomorrow))),
+                .where(and(eq(invoices.hotelId, hotelId), inArray(invoices.paymentStatus, ['UNPAID', 'CREDIT']), gte(invoices.createdAt, today), lt(invoices.createdAt, tomorrow))),
             db.select({ value: sum(invoices.discountAmount) }).from(invoices)
                 .where(and(eq(invoices.hotelId, hotelId), gte(invoices.createdAt, today), lt(invoices.createdAt, tomorrow))),
             db.select({ value: sum(invoices.grandTotal) }).from(invoices)
-                .where(and(eq(invoices.hotelId, hotelId), eq(invoices.paymentStatus, 'UNPAID'))),
+                .where(and(eq(invoices.hotelId, hotelId), inArray(invoices.paymentStatus, ['UNPAID', 'CREDIT']))),
             db.select({ value: sum(purchaseOrders.totalCost) }).from(purchaseOrders)
                 .where(and(eq(purchaseOrders.hotelId, hotelId), gte(purchaseOrders.createdAt, today), lt(purchaseOrders.createdAt, tomorrow))),
             db.select({ value: count() }).from(orders)
@@ -198,16 +198,18 @@ export const AnalyticsService = {
             .groupBy(sql`DATE(${orders.createdAt})`)
             .orderBy(sql`DATE(${orders.createdAt})`);
 
-        // Split revenue straight from the SAME payments that make up the total:
-        // room/booking payments (bookingId) vs F&B order payments (orderId). The old
-        // night-audit derivation read 0 when an audit hadn't aggregated yet, dumping
-        // everything into "Other".
-        const [roomPay] = await db.select({ v: sum(payments.amount) }).from(payments)
-            .where(and(eq(payments.hotelId, hotelId), gte(payments.createdAt, startDate), isNotNull(payments.bookingId)));
-        const [fbPay] = await db.select({ v: sum(payments.amount) }).from(payments)
-            .where(and(eq(payments.hotelId, hotelId), gte(payments.createdAt, startDate), isNotNull(payments.orderId)));
-        const roomRev = parseFloat(roomPay?.v ?? '0');
-        const fbRev = parseFloat(fbPay?.v ?? '0');
+        // Revenue split: invoices already know the correct room vs F&B split at
+        // generation time (BillingService separates roomCharge and ordersTotal).
+        // Walk-in orders without a booking are added to F&B directly.
+        const [invRoom] = await db.select({ v: sum(invoices.roomRevenue) }).from(invoices)
+            .where(and(eq(invoices.hotelId, hotelId), gte(invoices.createdAt, startDate)));
+        const [invFb] = await db.select({ v: sum(invoices.fbRevenue) }).from(invoices)
+            .where(and(eq(invoices.hotelId, hotelId), gte(invoices.createdAt, startDate)));
+        const [walkInFb] = await db.select({ v: sum(orders.totalAmount) }).from(orders)
+            .where(and(eq(orders.hotelId, hotelId), gte(orders.createdAt, startDate), eq(orders.status, 'SERVED'), isNull(orders.bookingId)));
+
+        const roomRev = parseFloat(invRoom?.v ?? '0');
+        const fbRev = parseFloat(invFb?.v ?? '0') + parseFloat(walkInFb?.v ?? '0');
         const otherRev = Math.max(0, currentTotal - roomRev - fbRev);
 
         return {
@@ -480,7 +482,7 @@ export const AnalyticsService = {
 
         // Approximate if no night audits
         const roomsSold = auditLogs.length > 0
-            ? auditLogs.length * (parseFloat(auditLogs[0]?.occupancyPercentage ?? '0') / 100 * totalRooms)
+            ? auditLogs.reduce((sum, log) => sum + (parseFloat(log.occupancyPercentage ?? '0') / 100 * totalRooms), 0)
             : 0;
 
         // CALCULATIONS

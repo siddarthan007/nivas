@@ -28,9 +28,9 @@ export default function FinanceDashboardTab({ onNavigate }: FinanceDashboardTabP
     }
 
     const formatCurrency = (val: number) => {
-        if (val >= 100000) return `Rs ${(val / 100000).toFixed(1)}L`;
-        if (val >= 1000) return `Rs ${(val / 1000).toFixed(1)}K`;
-        return `Rs ${val.toFixed(0)}`;
+        if (val >= 100000) return `NPR ${(val / 100000).toFixed(1)}L`;
+        if (val >= 1000) return `NPR ${(val / 1000).toFixed(1)}K`;
+        return `NPR ${val.toFixed(0)}`;
     };
 
     return (
@@ -97,7 +97,7 @@ export default function FinanceDashboardTab({ onNavigate }: FinanceDashboardTabP
                                     return (
                                         <div style={{ backgroundColor: 'var(--notion-bg)', padding: '8px', border: '1px solid var(--notion-border)', borderRadius: '4px', fontSize: '12px' }}>
                                             <div style={{ color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>{label}</div>
-                                            <div style={{ fontWeight: '600' }}>Rs {payload[0].value.toLocaleString()}</div>
+                                            <div style={{ fontWeight: '600' }}>NPR {payload[0].value.toLocaleString()}</div>
                                         </div>
                                     );
                                 }} />
@@ -123,9 +123,6 @@ export default function FinanceDashboardTab({ onNavigate }: FinanceDashboardTabP
                     <Button variant="secondary" onClick={() => onNavigate('general-ledger')} style={{ justifyContent: 'flex-start', padding: 'var(--space-3)' }}>
                         <BookOpen size={16} style={{ marginRight: '8px' }} /> General Ledger
                     </Button>
-                    <Button variant="secondary" onClick={() => onNavigate('revenue')} style={{ justifyContent: 'flex-start', padding: 'var(--space-3)' }}>
-                        <TrendingUp size={16} style={{ marginRight: '8px' }} /> Revenue Analytics
-                    </Button>
                 </div>
             </div>
 
@@ -142,7 +139,7 @@ export default function FinanceDashboardTab({ onNavigate }: FinanceDashboardTabP
                                     <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>{inv.booking?.guestName || inv.guestName}</div>
                                 </div>
                                 <div style={{ textAlign: 'right' }}>
-                                    <div style={{ fontSize: '13px', fontWeight: '600' }}>Rs {Number(inv.grandTotal).toLocaleString()}</div>
+                                    <div style={{ fontSize: '13px', fontWeight: '600' }}>NPR {Number(inv.grandTotal).toLocaleString()}</div>
                                     <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)' }}>{new Date(inv.createdAt).toLocaleDateString()}</div>
                                 </div>
                             </div>
@@ -163,7 +160,7 @@ export default function FinanceDashboardTab({ onNavigate }: FinanceDashboardTabP
                                     <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>{pay.transactionId || 'Manual'}</div>
                                 </div>
                                 <div style={{ textAlign: 'right' }}>
-                                    <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--notion-green)' }}>+Rs {Number(pay.amount).toLocaleString()}</div>
+                                    <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--notion-green)' }}>+NPR {Number(pay.amount).toLocaleString()}</div>
                                     <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)' }}>{new Date(pay.createdAt).toLocaleDateString()}</div>
                                 </div>
                             </div>

@@ -22,7 +22,7 @@ export default function ForecastWidget() {
         { label: 'Next 60d', w: data.windows.d60 },
         { label: 'Next 90d', w: data.windows.d90 },
     ];
-    const money = (n: number) => `Rs ${Math.round(n).toLocaleString()}`;
+    const money = (n: number) => `NPR ${Math.round(n).toLocaleString()}`;
 
     return (
         <div style={{ background: 'var(--notion-bg-secondary)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-5)', marginBottom: 'var(--space-6)' }}>
@@ -31,7 +31,7 @@ export default function ForecastWidget() {
                     <TrendingUp size={18} style={{ color: 'var(--notion-blue)' }} />
                     <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--notion-text)' }}>Demand Forecast</div>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--notion-text-muted)' }}>ADR Rs {data.adr.toLocaleString()} · avg lead {data.avgLeadDays}d</div>
+                <div style={{ fontSize: 12, color: 'var(--notion-text-muted)' }}>ADR NPR {data.adr.toLocaleString()} · avg lead {data.avgLeadDays}d</div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-3)' }}>
                 {wins.map(({ label, w }) => (

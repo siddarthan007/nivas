@@ -46,6 +46,7 @@ export interface KitchenOrderItem {
     id: number;
     name: string;
     quantity: number;
+    price?: number;
     modifiers?: string[];
     status: 'PENDING' | 'PREPARING' | 'READY';
 }
@@ -70,9 +71,29 @@ export function useKitchen(): UseKitchenReturn {
         try {
             setIsLoading(true);
             setError(null);
-            const response = await api.get<KitchenOrder[]>('/orders?status=PENDING,PREPARING,READY&type=kitchen');
+            const response = await api.get<any[]>('/orders?status=PENDING,PREPARING,READY&type=kitchen');
             if (response.data) {
-                setOrders(response.data);
+                const mapped: KitchenOrder[] = response.data.map((o: any) => ({
+                    id: o.id,
+                    orderNumber: o.orderNumber,
+                    tableNumber: o.restaurantTable?.tableNumber || o.tableNumber,
+                    roomNumber: o.room?.number || o.roomNumber,
+                    orderType: o.orderType,
+                    status: o.status,
+                    priority: o.priority || 'NORMAL',
+                    notes: o.notes,
+                    createdAt: o.createdAt,
+                    estimatedTime: o.estimatedTime,
+                    items: (o.items || []).map((i: any) => ({
+                        id: i.id,
+                        name: i.menuItem?.name || i.name || `Item #${i.menuItemId}`,
+                        quantity: i.quantity,
+                        price: i.price ? parseFloat(i.price) : undefined,
+                        status: i.status || 'PENDING',
+                        modifiers: i.modifiers || i.notes ? [i.notes] : undefined,
+                    })),
+                }));
+                setOrders(mapped);
             }
         } catch (e) {
             const message = e instanceof ApiError ? e.message : 'Failed to fetch kitchen orders';

@@ -34,6 +34,7 @@ interface CreateTenantPayload {
     taxRate?: number;
     maxRooms?: number;
     maxUsers?: number;
+    billingCycle?: string;
 }
 
 export interface Payment {
@@ -109,6 +110,7 @@ export function useTenants() {
 
             if (data.packageId) payload.packageId = data.packageId;
             if (data.trialDays) payload.trialDays = data.trialDays;
+            if (data.billingCycle) payload.billingCycle = data.billingCycle;
 
             const response = await api.post<Tenant>('/super-admin/onboard', payload);
 

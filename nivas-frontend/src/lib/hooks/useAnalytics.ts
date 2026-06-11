@@ -46,9 +46,9 @@ export function useAnalytics() {
                 const mapped: DashboardStats = {
                     roomsTotal: raw.rooms?.total ?? raw.roomsTotal ?? 0,
                     roomsOccupied: roomBreakdown['OCCUPIED'] ?? raw.roomsOccupied ?? 0,
-                    roomsVacant: roomBreakdown['VACANT'] ?? roomBreakdown['AVAILABLE'] ?? raw.roomsVacant ?? 0,
-                    roomsDirty: roomBreakdown['DIRTY'] ?? raw.roomsDirty ?? 0,
-                    roomsClean: roomBreakdown['CLEAN'] ?? raw.roomsClean ?? 0,
+                    roomsVacant: roomBreakdown['AVAILABLE'] ?? raw.roomsVacant ?? 0,
+                    roomsDirty: roomBreakdown['CLEANING'] ?? raw.roomsDirty ?? 0,
+                    roomsClean: roomBreakdown['AVAILABLE'] ?? raw.roomsClean ?? 0,
                     roomsMaintenance: roomBreakdown['MAINTENANCE'] ?? raw.roomsMaintenance ?? 0,
                     todayArrivals: raw.today?.expectedCheckIns ?? raw.todayArrivals ?? 0,
                     todayDepartures: raw.today?.expectedCheckOuts ?? raw.todayDepartures ?? 0,

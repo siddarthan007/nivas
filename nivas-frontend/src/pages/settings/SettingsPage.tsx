@@ -503,7 +503,7 @@ function CouponsSection() {
                 <Input placeholder="Code * (e.g. WELCOME10)" value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} />
                 <select value={form.discountType} onChange={e => setForm({ ...form, discountType: e.target.value })} style={selectStyle}>
                     <option value="PERCENT">Percent (%)</option>
-                    <option value="FIXED">Fixed (Rs)</option>
+                    <option value="FIXED">Fixed (NPR)</option>
                 </select>
                 <Input type="number" placeholder="Discount value *" value={form.discountValue} onChange={e => setForm({ ...form, discountValue: e.target.value })} />
                 <select value={form.scope} onChange={e => setForm({ ...form, scope: e.target.value })} style={selectStyle}>
@@ -545,7 +545,7 @@ function CouponsSection() {
                                 <tr key={c.id} style={{ borderTop: '1px solid var(--notion-border)' }}>
                                     <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--notion-text)' }}>{c.code}</td>
                                     <td style={{ padding: '8px 12px', color: 'var(--notion-text-secondary)' }}>{c.discountType}</td>
-                                    <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--notion-text)' }}>{c.discountType === 'PERCENT' ? `${Number(c.discountValue)}%` : `Rs ${Number(c.discountValue)}`}</td>
+                                    <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--notion-text)' }}>{c.discountType === 'PERCENT' ? `${Number(c.discountValue)}%` : `NPR ${Number(c.discountValue)}`}</td>
                                     <td style={{ padding: '8px 12px', color: 'var(--notion-text-secondary)' }}>{c.scope}</td>
                                     <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--notion-text-secondary)' }}>{c.usedCount ?? 0}{(c.usageLimit ?? 0) > 0 ? `/${c.usageLimit}` : ''}</td>
                                     <td style={{ padding: '8px 12px' }}>
@@ -660,7 +660,7 @@ function PaymentGatewaySection() {
                 </div>
             )}
 
-            {/* Per-method scan-to-pay QRs — uploaded image shown at checkout for that method */}
+            {/* Per-method scan-to-pay QR — uploaded image shown at checkout for that method */}
             <div style={{ padding: 'var(--space-3)', background: 'var(--notion-bg-tertiary)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-4)' }}>
                 <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--notion-text)', marginBottom: 'var(--space-1)' }}>Scan-to-Pay QR Codes</div>
                 <p style={{ fontSize: 12, color: 'var(--notion-text-muted)', marginBottom: 'var(--space-3)' }}>Upload a QR image for each digital method you accept. The matching QR is shown to the guest during checkout.</p>
@@ -693,7 +693,7 @@ function PaymentGatewaySection() {
                             <option value="FIXED">Fixed amount</option>
                             <option value="PERCENT">% of booking total</option>
                         </select>
-                        <Input type="number" placeholder={cancellation.type === 'PERCENT' ? '% (e.g. 10)' : 'Amount'} value={cancellation.value} onChange={e => setCancellation({ ...cancellation, value: Number(e.target.value) })} />
+                        <Input type="number" placeholder={cancellation.type === 'PERCENT' ? '% (e.g. 10)' : 'Amount'} value={cancellation.value || ''} onChange={e => setCancellation({ ...cancellation, value: e.target.value === '' ? 0 : Number(e.target.value) })} />
                     </div>
                 )}
             </div>
@@ -840,19 +840,18 @@ function FiscalYearSection() {
 
     return (
         <SettingsSection title="Fiscal Year & Locale" icon={Clock}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
                 <div>
                     <label style={lbl}>Fiscal Year Start</label>
                     <Input value={form.fiscalYearStart} onChange={e => setForm({ ...form, fiscalYearStart: e.target.value })} placeholder="Shrawan 1 (e.g. 07-16)" />
                 </div>
                 <div>
-                    <label style={lbl}>Currency</label>
-                    <Input value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} placeholder="NPR" />
-                </div>
-                <div>
                     <label style={lbl}>Timezone</label>
                     <Input value={form.timezone} onChange={e => setForm({ ...form, timezone: e.target.value })} placeholder="Asia/Kathmandu" />
                 </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 'var(--space-4)', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
+                <span style={{ fontWeight: 500, color: 'var(--notion-text)' }}>Currency:</span> NPR (Nepalese Rupee)
             </div>
             <p style={{ fontSize: '12px', color: 'var(--notion-text-muted)', marginBottom: 'var(--space-3)' }}>Nepal fiscal year runs Shrawan→Ashad. Invoice numbering resets each fiscal year.</p>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -1194,7 +1193,7 @@ function MessagingProvidersSection() {
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--notion-text)', margin: 'var(--space-3) 0 var(--space-2)' }}>Email</div>
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
                 <Input placeholder="Mail server (e.g. smtp.gmail.com)" value={email.smtpHost} onChange={e => setEmail({ ...email, smtpHost: e.target.value })} />
-                <Input type="number" placeholder="Port (usually 587)" value={email.smtpPort} onChange={e => setEmail({ ...email, smtpPort: Number(e.target.value) })} />
+                <Input type="number" placeholder="Port (usually 587)" value={email.smtpPort || ''} onChange={e => setEmail({ ...email, smtpPort: e.target.value === '' ? 0 : Number(e.target.value) })} />
                 <Input placeholder="Email login / username" value={email.smtpUser} onChange={e => setEmail({ ...email, smtpUser: e.target.value })} />
                 <Input type="password" placeholder={flags.smtpPasswordSet ? '•••••••• (saved)' : 'Email password'} value={email.smtpPassword} onChange={e => setEmail({ ...email, smtpPassword: e.target.value })} />
                 <Input placeholder="Send emails from (address)" value={email.smtpFromEmail} onChange={e => setEmail({ ...email, smtpFromEmail: e.target.value })} />
@@ -1444,7 +1443,7 @@ function AmenitiesSection() {
                                     <tr key={a.id} style={{ borderTop: '1px solid var(--notion-border)' }}>
                                         <td style={{ padding: '8px 12px', fontWeight: 500, color: 'var(--notion-text)' }}>{a.name}</td>
                                         <td style={{ padding: '8px 12px', color: 'var(--notion-text-secondary)' }}>{a.category?.replace('_', ' ')}</td>
-                                        <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--notion-text)' }}>Rs {Number(a.price).toFixed(2)}{a.taxable ? '' : ' (no tax)'}</td>
+                                        <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--notion-text)' }}>NPR {Number(a.price || 0).toFixed(2)}{a.taxable ? '' : ' (no tax)'}</td>
                                         <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                                             <button onClick={() => toggle(a)} style={{ cursor: 'pointer', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '11px', fontWeight: 600, background: a.isActive ? 'var(--notion-green-bg)' : 'var(--notion-bg-tertiary)', color: a.isActive ? 'var(--notion-green)' : 'var(--notion-text-secondary)' }}>{a.isActive ? 'Active' : 'Inactive'}</button>
                                         </td>
@@ -1955,8 +1954,8 @@ export default function SettingsPage() {
                                             </label>
                                             <Input
                                                 type="number"
-                                                value={formData.taxRate}
-                                                onChange={e => setFormData({ ...formData, taxRate: Number(e.target.value) })}
+                                                value={formData.taxRate || ''}
+                                                onChange={e => setFormData({ ...formData, taxRate: e.target.value === '' ? 0 : Number(e.target.value) })}
                                                 min={0}
                                                 max={100}
                                             />
@@ -1967,8 +1966,8 @@ export default function SettingsPage() {
                                             </label>
                                             <Input
                                                 type="number"
-                                                value={formData.serviceCharge}
-                                                onChange={e => setFormData({ ...formData, serviceCharge: Number(e.target.value) })}
+                                                value={formData.serviceCharge || ''}
+                                                onChange={e => setFormData({ ...formData, serviceCharge: e.target.value === '' ? 0 : Number(e.target.value) })}
                                                 min={0}
                                                 max={100}
                                             />

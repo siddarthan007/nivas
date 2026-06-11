@@ -179,6 +179,15 @@ export const SaasAdminService = {
         for (const key of allowed) {
             if (data[key] !== undefined) updateData[key] = data[key];
         }
+        // Normalize rate fields the same way onboardHotel does: percent strings → decimals.
+        if (updateData.serviceChargeRate !== undefined) {
+            const v = updateData.serviceChargeRate;
+            updateData.serviceChargeRate = (typeof v === 'string' && v !== '' ? parseFloat(v) / 100 : (v ?? 0.10)).toString();
+        }
+        if (updateData.taxRate !== undefined) {
+            const v = updateData.taxRate;
+            updateData.taxRate = (typeof v === 'string' && v !== '' ? parseFloat(v) / 100 : (v ?? 0.13)).toString();
+        }
         const [updatedHotel] = await db.update(hotels)
             .set({
                 ...updateData,
@@ -321,7 +330,7 @@ export const SaasAdminService = {
 
         // Propagate the new feature set to every hotel on this plan so a plan edit
         // (e.g. turning AI on) reflects immediately. Full sync across known flags.
-        const FEATURE_KEYS = ['enableMultiCurrency', 'enableChannelManager', 'enableAdvancedRevenue', 'enableSmsNotifications', 'enableWhatsappNotifications', 'enableEmailNotifications', 'enableBanquets', 'enablePosIntegration', 'enableInventory', 'enableHousekeeping', 'enableGuestPortal', 'enableFonepay', 'enableCbms', 'enableAi'];
+        const FEATURE_KEYS = ['enableSmsNotifications', 'enableWhatsappNotifications', 'enableEmailNotifications', 'enableBanquets', 'enablePosIntegration', 'enableInventory', 'enableHousekeeping', 'enableGuestPortal', 'enableFonepay', 'enableCbms', 'enableAi'];
         const featSet = new Set(((updated.features || []) as string[]));
         const flags: Record<string, boolean> = {};
         for (const k of FEATURE_KEYS) flags[k] = featSet.has(k);
@@ -337,9 +346,6 @@ export const SaasAdminService = {
 
     getAvailableFeatures() {
         return [
-            { id: 'enableMultiCurrency', label: 'Multi-Currency Support', category: 'Core' },
-            { id: 'enableChannelManager', label: 'Channel Manager', category: 'Core' },
-            { id: 'enableAdvancedRevenue', label: 'Advanced Revenue Management', category: 'Core' },
             { id: 'enableSmsNotifications', label: 'SMS Notifications', category: 'Notifications' },
             { id: 'enableWhatsappNotifications', label: 'WhatsApp Notifications', category: 'Notifications' },
             { id: 'enableEmailNotifications', label: 'Email Notifications', category: 'Notifications' },
@@ -369,14 +375,12 @@ export const SaasAdminService = {
             { id: 'staff', label: 'Staff Management', category: 'HR' },
             { id: 'roles', label: 'Roles & Permissions', category: 'HR' },
             { id: 'finance', label: 'Finance', category: 'Analytics' },
-            { id: 'revenue', label: 'Revenue Management', category: 'Analytics' },
             { id: 'crm', label: 'CRM / Guest Management', category: 'CRM' },
             { id: 'events', label: 'Events & Banquets', category: 'Operations' },
             { id: 'kitchen', label: 'Kitchen Display', category: 'Operations' },
             { id: 'messages', label: 'Messaging', category: 'Communications' },
             { id: 'attendance', label: 'Attendance', category: 'HR' },
             { id: 'procurement', label: 'Procurement', category: 'Operations' },
-            { id: 'channel-manager', label: 'Channel Manager', category: 'Distribution' },
         ];
     },
 

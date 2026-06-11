@@ -7,9 +7,47 @@ import { StorageService } from '../storage/storage.service';
 
 export class RoomsService {
     static async getRooms(hotelId: number) {
-        return await db.query.rooms.findMany({
+        const roomList = await db.query.rooms.findMany({
             where: eq(rooms.hotelId, hotelId),
             orderBy: (rooms, { asc }) => [asc(rooms.number)]
+        });
+
+        // Fetch active bookings for all rooms in one query.
+        // A room with a CHECKED_IN guest is occupied regardless of its status
+        // column (handles data-consistency edge cases and mid-stay cleaning).
+        const allRoomIds = roomList.map(r => r.id);
+        if (allRoomIds.length === 0) return roomList;
+
+        const activeBookings = await db.query.bookings.findMany({
+            where: and(
+                eq(bookings.hotelId, hotelId),
+                inArray(bookings.roomId, allRoomIds),
+                eq(bookings.status, 'CHECKED_IN')
+            ),
+            columns: {
+                id: true,
+                roomId: true,
+                guestName: true,
+                guestPhone: true,
+                checkIn: true,
+                checkOut: true,
+            }
+        });
+
+        const bookingByRoom = new Map(activeBookings.map(b => [b.roomId, b]));
+
+        return roomList.map(room => {
+            const booking = bookingByRoom.get(room.id);
+            if (!booking) return room;
+            return {
+                ...room,
+                currentBooking: {
+                    id: booking.id,
+                    guestName: booking.guestName,
+                    checkIn: booking.checkIn,
+                    checkOut: booking.checkOut,
+                }
+            };
         });
     }
 
@@ -119,7 +157,7 @@ export class RoomsService {
             where: and(
                 eq(bookings.roomId, roomId),
                 eq(bookings.hotelId, hotelId),
-                inArray(bookings.status, ['CONFIRMED', 'CHECKED_IN'])
+                inArray(bookings.status, ['PENDING', 'CONFIRMED', 'CHECKED_IN'])
             ),
             columns: { id: true },
         });

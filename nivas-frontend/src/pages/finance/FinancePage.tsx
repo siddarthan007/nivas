@@ -15,7 +15,6 @@ import type { Invoice, Payment } from '@/lib/hooks/useFinance';
 // Sub-pages
 import NightAuditPanel from './NightAuditPage';
 import GLPage from './GLPage';
-import RevenuePage from '../revenue/RevenuePage';
 import CustomerLedgerPage from './CustomerLedgerPage';
 import TransactionHistoryPage from './TransactionHistoryPage';
 import BalanceSheetPage from './BalanceSheetPage';
@@ -101,7 +100,7 @@ export default function FinancePage() {
         const tabFromUrl = params.get('tab');
         const bookingIdFromUrl = params.get('bookingId');
         // Only accept known tabs — a bad/legacy deep link must not blank the page.
-        const VALID_TABS = ['overview', 'invoices', 'payments', 'credit-notes', 'customer-ledger', 'shifts', 'exports', 'night-audit', 'general-ledger'];
+        const VALID_TABS = ['overview', 'invoices', 'payments', 'credit-notes', 'customer-ledger', 'shifts', 'exports', 'night-audit', 'general-ledger', 'revenue', 'outstanding', 'transactions', 'profit-loss', 'balance-sheet'];
         if (tabFromUrl && VALID_TABS.includes(tabFromUrl)) {
             setActiveTab(tabFromUrl);
         }
@@ -189,7 +188,7 @@ export default function FinancePage() {
                         </div>
                         <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                             {['overview', 'invoices', 'payments', 'credit-notes', 'customer-ledger', 'shifts', 'exports', 'night-audit'].includes(activeTab) && (
-                                <Button variant="secondary" onClick={() => { fetchInvoices(); fetchPayments(); }} disabled={isLoading}>
+                                <Button variant="secondary" onClick={() => { fetchInvoices(); fetchPayments(); fetchCreditNotes(); checkCurrentShift(); }} disabled={isLoading}>
                                     <RefreshCw size={14} style={{ marginRight: '6px' }} />
                                     Refresh
                                 </Button>
@@ -225,7 +224,6 @@ export default function FinancePage() {
                     )}
 
                     {activeTab === 'general-ledger' && <GLPage />}
-                    {activeTab === 'revenue' && <RevenuePage />}
                     {activeTab === 'customer-ledger' && <CustomerLedgerPage invoices={invoices} payments={payments} creditNotes={creditNotes} isLoading={isLoading} />}
                     {activeTab === 'transactions' && <TransactionHistoryPage invoices={invoices} payments={payments} creditNotes={creditNotes} isLoading={isLoading} />}
                     {activeTab === 'profit-loss' && <ProfitLossPage />}

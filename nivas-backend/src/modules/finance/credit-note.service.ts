@@ -55,13 +55,14 @@ export const CreditNoteService = {
 
             // Post GL reversal: reverse the original invoice entry
             const arAccount = await GLService.getOrCreateControlAccount(hotelId, '1100', 'Accounts Receivable', 'ASSET', tx);
-            const revAccount = await GLService.getOrCreateControlAccount(hotelId, '4000', 'Room Revenue', 'REVENUE', tx);
+            const roomRevAccount = await GLService.getOrCreateControlAccount(hotelId, '4000', 'Room Revenue', 'REVENUE', tx);
+            const fbRevAccount = await GLService.getOrCreateControlAccount(hotelId, '4100', 'F&B Revenue', 'REVENUE', tx);
             const taxAccount = await GLService.getOrCreateControlAccount(hotelId, '2100', 'Sales Tax Payable', 'LIABILITY', tx);
             const discountAccount = await GLService.getOrCreateControlAccount(hotelId, '4900', 'Sales Discounts', 'EXPENSE', tx);
 
             const grandTotal = parseFloat(invoice.grandTotal);
-            const subTotal = parseFloat(invoice.subTotal);
-            const serviceCharge = parseFloat(invoice.serviceCharge || '0');
+            const roomRev = parseFloat(invoice.roomRevenue || '0');
+            const fbRev = parseFloat(invoice.fbRevenue || '0');
             const vatAmount = parseFloat(invoice.vatAmount || '0');
             const discountAmount = parseFloat(invoice.discountAmount || '0');
 
@@ -72,10 +73,13 @@ export const CreditNoteService = {
             if (discountAmount > 0) {
                 reversalLines.push({ accountId: discountAccount!.id, debit: 0, credit: discountAmount, description: `CN reversal - Discount` });
             }
-            // Debit Revenue (reverse original credit)
-            const revenueAmt = subTotal + serviceCharge;
-            if (revenueAmt > 0) {
-                reversalLines.push({ accountId: revAccount!.id, debit: revenueAmt, credit: 0, description: `CN reversal - Revenue` });
+            // Debit Room Revenue (reverse original credit)
+            if (roomRev > 0) {
+                reversalLines.push({ accountId: roomRevAccount!.id, debit: roomRev, credit: 0, description: `CN reversal - Room Revenue` });
+            }
+            // Debit F&B Revenue (reverse original credit)
+            if (fbRev > 0) {
+                reversalLines.push({ accountId: fbRevAccount!.id, debit: fbRev, credit: 0, description: `CN reversal - F&B Revenue` });
             }
             // Debit Tax (reverse original credit)
             if (vatAmount > 0) {

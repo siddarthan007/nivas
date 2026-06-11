@@ -1,5 +1,5 @@
 import { db } from '../../db';
-import { kotPrinters, orders } from '../../db/schema';
+import { kotPrinters, orders, rooms, restaurantTables } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { NotFoundError, BusinessLogicError } from '../../utils/errors';
 import { ThermalPrinter, PrinterTypes, CharacterSet } from 'node-thermal-printer';
@@ -14,6 +14,7 @@ import { ThermalPrinter, PrinterTypes, CharacterSet } from 'node-thermal-printer
 
 export interface KotPrintPayload {
     orderNumber: string;
+    receiptNumber: string;
     orderType: string;
     table?: string;
     room?: string;
@@ -57,13 +58,13 @@ export const KotPrintService = {
         printer.println('Kitchen Order Ticket');
         printer.drawLine();
 
-        // --- Order meta: order# + time on one line (saves paper); only show fields that exist ---
+        // --- Order meta: receipt # + order # + time; always show room/table for context ---
         printer.alignLeft();
         printer.bold(true);
-        printer.leftRight(`#${payload.orderNumber}`, time);
+        printer.leftRight(`Receipt: ${payload.receiptNumber}`, time);
         printer.bold(false);
-        if (payload.table && payload.table !== 'N/A') printer.println(`Table: ${payload.table}`);
-        if (payload.room && payload.room !== 'N/A') printer.println(`Room: ${payload.room}`);
+        printer.println(`Order #: ${payload.orderNumber}`);
+        printer.println(`Table: ${payload.table || 'N/A'}  |  Room: ${payload.room || 'N/A'}`);
         // Order type only when it's not a plain dine-in (kitchen already assumes dine-in).
         if (payload.orderType && payload.orderType !== 'DINE_IN') {
             printer.bold(true);
@@ -104,6 +105,7 @@ export const KotPrintService = {
     async testPrint(ipAddress: string, port: number, printerName: string): Promise<void> {
         await this.printToNetworkPrinter(ipAddress, port, {
             orderNumber: 'TEST',
+            receiptNumber: 'TEST',
             orderType: 'DINE_IN',
             station: printerName || 'Test Printer',
             items: [{ name: 'Test item — printer OK', quantity: 1 }],
@@ -123,6 +125,25 @@ export const KotPrintService = {
         });
 
         if (!order) throw new NotFoundError('Order');
+
+        // Fallback: direct lookups if Drizzle relations didn't populate
+        let roomNumber = (order as any).room?.number?.toString() || '';
+        let tableNumber = (order as any).restaurantTable?.tableNumber || '';
+
+        if (!roomNumber && order.roomId) {
+            const roomRow = await db.query.rooms.findFirst({
+                where: eq(rooms.id, order.roomId),
+                columns: { number: true }
+            });
+            if (roomRow) roomNumber = String(roomRow.number);
+        }
+        if (!tableNumber && order.restaurantTableId) {
+            const tableRow = await db.query.restaurantTables.findFirst({
+                where: eq(restaurantTables.id, order.restaurantTableId),
+                columns: { tableNumber: true }
+            });
+            if (tableRow) tableNumber = tableRow.tableNumber;
+        }
 
         const printers = await db.query.kotPrinters.findMany({
             where: and(eq(kotPrinters.hotelId, hotelId), eq(kotPrinters.isActive, true))
@@ -161,9 +182,10 @@ export const KotPrintService = {
             if (route.items.length === 0) continue;
             const payload: KotPrintPayload = {
                 orderNumber: order.orderNumber,
+                receiptNumber: order.orderNumber,
                 orderType: order.orderType || 'DINE_IN',
-                table: (order as any).restaurantTable?.tableNumber || 'N/A',
-                room: (order as any).room?.number?.toString() || 'N/A',
+                table: tableNumber || 'N/A',
+                room: roomNumber || 'N/A',
                 station: route.printer.station || route.printer.name,
                 items: route.items,
                 notes: (order as any).notes || undefined,

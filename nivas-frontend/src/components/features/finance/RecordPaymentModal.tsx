@@ -18,6 +18,7 @@ export default function RecordPaymentModal({ isOpen, onClose, onSubmit }: Record
         amount: 0,
         paymentMethod: 'CASH',
     });
+    const [linkType, setLinkType] = useState<'booking' | 'order' | 'none'>('none');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -25,6 +26,7 @@ export default function RecordPaymentModal({ isOpen, onClose, onSubmit }: Record
         setIsSubmitting(true);
         const payload: RecordPaymentPayload = { ...formData };
         if (!payload.bookingId) delete payload.bookingId;
+        if (!payload.orderId) delete payload.orderId;
         if (!payload.transactionId) delete payload.transactionId;
         if (!payload.notes) delete payload.notes;
         const success = await onSubmit(payload);
@@ -38,27 +40,76 @@ export default function RecordPaymentModal({ isOpen, onClose, onSubmit }: Record
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Record Payment">
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Booking ID (optional)
-                    </label>
-                    <Input
-                        type="text"
-                        value={formData.bookingId || ''}
-                        onChange={e => setFormData({ ...formData, bookingId: e.target.value })}
-                        placeholder="Link payment to a booking"
-                    />
+                <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+                    <button
+                        type="button"
+                        onClick={() => { setLinkType('none'); setFormData({ ...formData, bookingId: undefined, orderId: undefined }); }}
+                        style={{
+                            padding: '6px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)',
+                            backgroundColor: linkType === 'none' ? 'var(--notion-blue-bg)' : 'var(--notion-bg-secondary)',
+                            color: linkType === 'none' ? 'var(--notion-blue)' : 'var(--notion-text-secondary)',
+                            cursor: 'pointer', fontSize: '12px', fontWeight: 500,
+                        }}
+                    >Unlinked</button>
+                    <button
+                        type="button"
+                        onClick={() => { setLinkType('booking'); setFormData({ ...formData, orderId: undefined }); }}
+                        style={{
+                            padding: '6px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)',
+                            backgroundColor: linkType === 'booking' ? 'var(--notion-blue-bg)' : 'var(--notion-bg-secondary)',
+                            color: linkType === 'booking' ? 'var(--notion-blue)' : 'var(--notion-text-secondary)',
+                            cursor: 'pointer', fontSize: '12px', fontWeight: 500,
+                        }}
+                    >Booking</button>
+                    <button
+                        type="button"
+                        onClick={() => { setLinkType('order'); setFormData({ ...formData, bookingId: undefined }); }}
+                        style={{
+                            padding: '6px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)',
+                            backgroundColor: linkType === 'order' ? 'var(--notion-blue-bg)' : 'var(--notion-bg-secondary)',
+                            color: linkType === 'order' ? 'var(--notion-blue)' : 'var(--notion-text-secondary)',
+                            cursor: 'pointer', fontSize: '12px', fontWeight: 500,
+                        }}
+                    >Order</button>
                 </div>
+
+                {linkType === 'booking' && (
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
+                            Booking ID
+                        </label>
+                        <Input
+                            type="text"
+                            value={formData.bookingId || ''}
+                            onChange={e => setFormData({ ...formData, bookingId: e.target.value })}
+                            placeholder="Link payment to a booking"
+                        />
+                    </div>
+                )}
+
+                {linkType === 'order' && (
+                    <div>
+                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
+                            Order ID
+                        </label>
+                        <Input
+                            type="text"
+                            value={formData.orderId || ''}
+                            onChange={e => setFormData({ ...formData, orderId: e.target.value })}
+                            placeholder="Link payment to an order"
+                        />
+                    </div>
+                )}
 
                 <div>
                     <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                        Amount (Rs ) *
+                        Amount (NPR) *
                     </label>
                     <Input
                         type="number"
                         min={0}
-                        value={formData.amount}
-                        onChange={e => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
+                        value={formData.amount || ''}
+                        onChange={e => setFormData({ ...formData, amount: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
                         required
                     />
                 </div>

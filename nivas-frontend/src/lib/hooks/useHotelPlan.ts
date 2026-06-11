@@ -12,7 +12,8 @@ interface HotelPlanInfo {
     planCode: string;
     maxRooms: number | null;
     maxUsers: number | null;
-    features: string[];
+    features: string[];        // human-readable labels (display)
+    featureIds: string[];      // raw feature IDs (checks)
     modules: string[];
     allowedRoles: string[];
     trialDays: number;
@@ -30,6 +31,7 @@ const DEFAULT_PLAN: HotelPlanInfo = {
     maxRooms: null,
     maxUsers: null,
     features: [],
+    featureIds: [],
     modules: [],
     allowedRoles: [],
     trialDays: 14,
@@ -87,7 +89,8 @@ function mapPlanResponse(data: any): HotelPlanInfo {
         planCode: pkg?.code || 'TRIAL',
         maxRooms: pkg?.maxRooms || null,
         maxUsers: pkg?.maxUsers || null,
-        features: pkg?.features || [],
+        features: pkg?.features || [],          // human-readable labels for display
+        featureIds: pkg?.featureIds || pkg?.features || [], // raw IDs for hasFeature checks
         modules: pkg?.modules || [],
         allowedRoles: pkg?.allowedRoles || [],
         trialDays: pkg?.trialDays || 14,
@@ -181,9 +184,9 @@ export function useHotelPlan() {
     }, [plan.modules]);
 
     const hasFeature = useCallback((featureId: string): boolean => {
-        if (plan.features.length === 0) return true;
-        return plan.features.includes(featureId);
-    }, [plan.features]);
+        if (plan.featureIds.length === 0) return true;
+        return plan.featureIds.includes(featureId);
+    }, [plan.featureIds]);
 
     const isRoleAllowed = useCallback((roleName: string): boolean => {
         // If no allowed roles set, allow all (backwards compat / default behavior)

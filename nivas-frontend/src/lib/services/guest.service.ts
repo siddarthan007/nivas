@@ -21,6 +21,7 @@ export interface Guest {
     idType?: string;
     idNumber?: string;
     panNumber?: string;
+    vatNumber?: string;
     openingDueAmount?: string;
     photoUrl?: string;
     signatureUrl?: string;
@@ -48,6 +49,7 @@ export interface CreateGuestPayload {
     idType?: string;
     idNumber?: string;
     panNumber?: string;
+    vatNumber?: string;
     openingDueAmount?: string;
     photoUrl?: string;
     signatureUrl?: string;

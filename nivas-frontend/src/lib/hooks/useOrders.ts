@@ -94,6 +94,38 @@ export function useOrders() {
         }
     };
 
+    const addItemsToOrder = async (id: string, items: { menuItemId: number; quantity: number; price: number; notes?: string }[]) => {
+        setIsLoading(true);
+        try {
+            const res = await api.post<{ data: { order: Order; newItems: any[] } }>(`/orders/${id}/items`, { items });
+            await fetchOrders();
+            toast.success('Items added to order');
+            return res.data?.data || null;
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to add items');
+            toast.error(msg);
+            return null;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const updateOrderItem = async (orderId: string, itemId: number, data: { quantity?: number; notes?: string }) => {
+        setIsLoading(true);
+        try {
+            await api.patch(`/orders/${orderId}/items/${itemId}`, data);
+            await fetchOrders();
+            toast.success('Item updated');
+            return true;
+        } catch (err: unknown) {
+            const msg = getErrorMessage(err, 'Failed to update item');
+            toast.error(msg);
+            return false;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     return {
         orders,
         isLoading,
@@ -102,6 +134,8 @@ export function useOrders() {
         createOrder,
         updateOrderStatus,
         cancelOrder,
-        updateOrder
+        updateOrder,
+        addItemsToOrder,
+        updateOrderItem
     };
 }

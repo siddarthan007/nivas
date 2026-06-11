@@ -100,7 +100,7 @@ export const upsellController = new Elysia({ prefix: '/upsells' })
                 id: r.id,
                 name: r.name,
                 serviceType: r.serviceType,
-                price: parseFloat(r.servicePrice ?? '0'),
+                price: parseFloat(r.servicePrice || '0'),
                 message: r.displayMessage
             }));
 
@@ -125,7 +125,7 @@ export const upsellController = new Elysia({ prefix: '/upsells' })
                     availableRoom: {
                         id: availableRoom.id,
                         number: availableRoom.number,
-                        rate: parseFloat(availableRoom.rate ?? '0')
+                        rate: parseFloat(availableRoom.rate || '0')
                     },
                     upgradePrice: rule.upgradePrice ? parseFloat(rule.upgradePrice) : null,
                     upgradePercentage: rule.upgradePercentage ? parseFloat(rule.upgradePercentage) : null,
@@ -138,9 +138,9 @@ export const upsellController = new Elysia({ prefix: '/upsells' })
             bookingId: booking.id,
             guestName: booking.guestName,
             currentRoom: {
-                id: booking.room.id,
-                number: booking.room.number,
-                type: booking.room.type
+                id: (booking.room as any).id,
+                number: (booking.room as any).number,
+                type: (booking.room as any).type
             },
             roomUpgrades: upgradeOptions,
             serviceUpsells

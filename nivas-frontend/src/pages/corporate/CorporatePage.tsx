@@ -505,22 +505,22 @@ export default function CorporatePage() {
                             />
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)' }}>
                                 <Input
-                                    label="Contract Rate ($)"
+                                    label="Contract Rate (NPR)"
                                     type="number"
-                                    value={companyForm.contractRate}
-                                    onChange={e => setCompanyForm({ ...companyForm, contractRate: Number(e.target.value) })}
+                                    value={companyForm.contractRate || ''}
+                                    onChange={e => setCompanyForm({ ...companyForm, contractRate: e.target.value === '' ? 0 : Number(e.target.value) })}
                                 />
                                 <Input
                                     label="Discount (%)"
                                     type="number"
-                                    value={companyForm.discountPercentage}
-                                    onChange={e => setCompanyForm({ ...companyForm, discountPercentage: Number(e.target.value) })}
+                                    value={companyForm.discountPercentage || ''}
+                                    onChange={e => setCompanyForm({ ...companyForm, discountPercentage: e.target.value === '' ? 0 : Number(e.target.value) })}
                                 />
                                 <Input
-                                    label="Credit Limit ($)"
+                                    label="Credit Limit (NPR)"
                                     type="number"
-                                    value={companyForm.creditLimit}
-                                    onChange={e => setCompanyForm({ ...companyForm, creditLimit: Number(e.target.value) })}
+                                    value={companyForm.creditLimit || ''}
+                                    onChange={e => setCompanyForm({ ...companyForm, creditLimit: e.target.value === '' ? 0 : Number(e.target.value) })}
                                 />
                             </div>
                         </>

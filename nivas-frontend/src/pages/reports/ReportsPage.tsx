@@ -191,7 +191,7 @@ function RevenueBreakdown({
                             </span>
                         </div>
                         <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>
-                            Rs {(item.value || 0).toLocaleString()}
+                            NPR {(Number(item.value) || 0).toLocaleString()}
                         </span>
                     </div>
                 ))}
@@ -477,14 +477,14 @@ export default function ReportsPage() {
                                 <MetricCard
                                     title="Average Daily Rate"
                                     value={metrics?.adr || 0}
-                                    prefix="Rs "
+                                    prefix="NPR "
                                     icon={DollarSign}
                                     color="var(--notion-green)"
                                 />
                                 <MetricCard
                                     title="RevPAR"
                                     value={metrics?.revpar || 0}
-                                    prefix="Rs "
+                                    prefix="NPR "
                                     icon={TrendingUp}
                                     color="var(--notion-blue)"
                                 />
@@ -514,7 +514,7 @@ export default function ReportsPage() {
                                 <MetricCard
                                     title="Total Revenue"
                                     value={revenue?.totalRevenue || 0}
-                                    prefix="Rs "
+                                    prefix="NPR "
                                     icon={DollarSign}
                                     trend={revenue?.comparison ? {
                                         value: revenue.comparison.change,
@@ -573,8 +573,8 @@ export default function ReportsPage() {
                                                 </defs>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--notion-border)" />
                                                 <XAxis dataKey="date" tick={{ fill: 'var(--notion-text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} dy={8} />
-                                                <YAxis tick={{ fill: 'var(--notion-text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `Rs ${(v / 1000).toFixed(0)}k`} />
-                                                <Tooltip contentStyle={{ backgroundColor: 'var(--notion-bg)', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)' }} formatter={(v: any) => `Rs ${Number(v).toLocaleString()}`} />
+                                                <YAxis tick={{ fill: 'var(--notion-text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `NPR ${(v / 1000).toFixed(0)}k`} />
+                                                <Tooltip contentStyle={{ backgroundColor: 'var(--notion-bg)', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)' }} formatter={(v: any) => `NPR ${Number(v).toLocaleString()}`} />
                                                 <Area type="monotone" dataKey="amount" stroke="var(--notion-green)" fill="url(#revGrad)" strokeWidth={2} />
                                             </AreaChart>
                                         </ResponsiveContainer>
@@ -597,8 +597,8 @@ export default function ReportsPage() {
                                                 </defs>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--notion-border)" />
                                                 <XAxis dataKey="date" tick={{ fill: 'var(--notion-text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} dy={8} />
-                                                <YAxis tick={{ fill: 'var(--notion-text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `Rs ${(v / 1000).toFixed(0)}k`} />
-                                                <Tooltip contentStyle={{ backgroundColor: 'var(--notion-bg)', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)' }} formatter={(v: any) => `Rs ${Number(v).toLocaleString()}`} />
+                                                <YAxis tick={{ fill: 'var(--notion-text-secondary)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `NPR ${(v / 1000).toFixed(0)}k`} />
+                                                <Tooltip contentStyle={{ backgroundColor: 'var(--notion-bg)', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)' }} formatter={(v: any) => `NPR ${Number(v).toLocaleString()}`} />
                                                 <Area type="monotone" dataKey="amount" stroke="var(--notion-orange)" fill="url(#fbGrad)" strokeWidth={2} />
                                             </AreaChart>
                                         </ResponsiveContainer>

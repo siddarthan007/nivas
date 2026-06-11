@@ -180,7 +180,7 @@ export function useSaaSBilling(): UseSaaSBillingReturn {
 
             const normalizedPackages = (packagesRes.data || []).map((pkg) => mapPackage(pkg as Record<string, any>));
             const billingContext = subscriptionRes.data;
-            const normalizedHotel = billingContext
+            const normalizedHotel = billingContext?.hotel
                 ? {
                     id: billingContext.hotel.id,
                     name: billingContext.hotel.name,

@@ -17,6 +17,12 @@ interface SettingsFeatures {
     smsNotifications: boolean;
     enableHotel: boolean;
     enableFoodAndBeverage: boolean;
+    enableFonepay: boolean;
+    enableWhatsappNotifications: boolean;
+    enableBanquets: boolean;
+    enablePosIntegration: boolean;
+    enableCbms: boolean;
+    enableAi: boolean;
 }
 
 export interface SettingsViewModel {
@@ -79,6 +85,11 @@ export interface SettingsViewModel {
     enableHotel?: boolean;
     enableFoodAndBeverage?: boolean;
     enableFonepay?: boolean;
+    enableWhatsappNotifications?: boolean;
+    enableBanquets?: boolean;
+    enablePosIntegration?: boolean;
+    enableCbms?: boolean;
+    enableAi?: boolean;
 }
 
 function flattenSettings(raw: any): SettingsViewModel {

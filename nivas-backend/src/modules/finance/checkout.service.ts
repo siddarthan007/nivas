@@ -84,7 +84,7 @@ export const CheckoutService = {
     async preview(hotelId: number, bookingId: string): Promise<CheckoutPreview> {
         const booking = await BookingsService.getBookingById(hotelId, bookingId);
 
-        if (booking.status !== 'CHECKED_IN' && booking.status !== 'CONFIRMED') {
+        if (booking.status !== 'CHECKED_IN') {
             throw new BusinessLogicError(`Cannot checkout a booking with status: ${booking.status}`);
         }
 
@@ -122,17 +122,20 @@ export const CheckoutService = {
         // Build itemized list
         const itemized: CheckoutPreview['itemized'] = [];
 
-        // Room charges from folio
-        folio.forEach(charge => {
-            itemized.push({
-                description: charge.description,
-                category: charge.type === 'ROOM_CHARGE' ? 'ROOM' : 'EXTRA',
-                quantity: 1,
-                rate: parseFloat(charge.amount),
-                amount: parseFloat(charge.amount),
-                date: charge.date ? new Date(charge.date) : new Date(),
+        // Room charges from folio (exclude order-linked charges to avoid double-counting
+        // with the order items section below — BillingService already excludes them.)
+        folio
+            .filter(charge => charge.orderId === null)
+            .forEach(charge => {
+                itemized.push({
+                    description: charge.description,
+                    category: charge.type === 'ROOM_CHARGE' ? 'ROOM' : 'EXTRA',
+                    quantity: 1,
+                    rate: parseFloat(charge.amount),
+                    amount: parseFloat(charge.amount),
+                    date: charge.date ? new Date(charge.date) : new Date(),
+                });
             });
-        });
 
         // F&B from orders
         orderList.forEach(order => {
@@ -155,14 +158,14 @@ export const CheckoutService = {
             bookingId: booking.id,
             guestName: booking.guestName,
             guestId: booking.guestId || null,
-            roomNumber: `${booking.room?.number || ''}`,
-            roomType: booking.room?.type || '',
+            roomNumber: `${(booking.room as any)?.number || ''}`,
+            roomType: (booking.room as any)?.type || '',
             checkIn: new Date(booking.checkIn),
             checkOut: new Date(booking.checkOut),
             charges: {
                 roomCharges: billingSummary.roomCharge,
                 foodBeverage: billingSummary.ordersTotal,
-                extras: 0,
+                extras: Math.max(0, billingSummary.subTotal - billingSummary.roomCharge - billingSummary.ordersTotal),
                 subTotal: billingSummary.subTotal,
                 serviceCharge: billingSummary.serviceCharge,
                 vat: billingSummary.vat,
@@ -179,6 +182,7 @@ export const CheckoutService = {
                 }))
             },
             balanceDue: billingSummary.dueAmount,
+            creditBalance: parseFloat(booking.creditBalance || '0'),
             itemized,
         };
     },
@@ -191,7 +195,6 @@ export const CheckoutService = {
         const preview = await this.preview(hotelId, bookingId);
         const balanceDue = preview.balanceDue;
         const discount = data.discount || 0;
-        const finalBalance = Math.max(0, balanceDue - discount);
 
         let totalPaymentAmount = 0;
         const paymentsRecorded: any[] = [];
@@ -219,6 +222,11 @@ export const CheckoutService = {
                 throw new BusinessLogicError('Cannot check out a cancelled booking');
             }
 
+            // Apply any existing guest credit toward the bill.
+            const existingCredit = parseFloat(bookingData.creditBalance || '0');
+            const originalBalance = Math.max(0, balanceDue - discount);
+            const finalBalance = Math.max(0, originalBalance - existingCredit);
+
             // 1. Record all payments
             for (const pay of data.payments) {
                 if (pay.amount <= 0) continue;
@@ -235,7 +243,7 @@ export const CheckoutService = {
                 totalPaymentAmount += pay.amount;
             }
 
-            // 2. Calculate final balance after payments and discount
+            // 2. Calculate final balance after payments, discount, and existing credit
             const remainingBalance = Math.max(0, finalBalance - totalPaymentAmount);
 
             // 3. Generate invoice (reuse checkout tx for atomicity)
@@ -256,7 +264,7 @@ export const CheckoutService = {
             const cashAccount = await GLService.getOrCreateControlAccount(hotelId, '1000', 'Cash', 'ASSET', tx);
             const bankAccount = await GLService.getOrCreateControlAccount(hotelId, '1010', 'Bank', 'ASSET', tx);
 
-            if (data.payLater || remainingBalance > 0.01) {
+            if (remainingBalance > 0.01) {
                 isCredit = true;
                 await tx.update(invoices)
                     .set({
@@ -303,11 +311,20 @@ export const CheckoutService = {
                 );
             }
 
+            // Calculate any overpayment that becomes guest credit.
+            // totalCovered = new payments + existing credit already on file.
+            const totalCovered = totalPaymentAmount + existingCredit;
+            const newOverpayment = totalCovered > originalBalance ? totalCovered - originalBalance : 0;
+            if (newOverpayment > 0.01) {
+                isCredit = false; // Bill is settled; excess is stored as transferable credit.
+            }
+
             // 5. Mark booking as checked out
             await tx.update(bookings)
                 .set({
                     status: 'CHECKED_OUT',
                     isPaid: !isCredit,
+                    creditBalance: newOverpayment > 0.01 ? newOverpayment.toFixed(2) : '0',
                     updatedAt: new Date(),
                 })
                 .where(eq(bookings.id, bookingId));
@@ -330,10 +347,11 @@ export const CheckoutService = {
                 bookingId,
                 {
                     guestName: bookingData.guestName,
-                    roomNumber: bookingData.room?.number,
+                    roomNumber: (bookingData.room as any)?.number,
                     totalPaid: totalPaymentAmount,
                     discount,
                     balanceDue: remainingBalance,
+                    creditBalance: newOverpayment > 0.01 ? newOverpayment : 0,
                     isCredit,
                     invoiceNumber: inv.invoiceNumber,
                 }
@@ -417,18 +435,19 @@ export const CheckoutService = {
             guestInvoices = await db.query.invoices.findMany({
                 where: and(
                     eq(invoices.hotelId, hotelId),
-                    sql`${invoices.bookingId} IN ${bookingIds}`
+                    inArray(invoices.bookingId, bookingIds)
                 ),
                 orderBy: [desc(invoices.createdAt)]
             });
         }
 
-        // Calculate totals
-        const totalCharges = guestInvoices.reduce((sum, inv) =>
+        // Calculate totals (exclude voided invoices — they were reversed via credit note)
+        const activeInvoices = guestInvoices.filter(inv => !inv.isVoided);
+        const totalCharges = activeInvoices.reduce((sum, inv) =>
             sum + parseFloat(inv.grandTotal), 0);
         const totalPaid = guestPayments.reduce((sum, p) =>
             sum + parseFloat(p.amount), 0);
-        const totalCredits = guestInvoices
+        const totalCredits = activeInvoices
             .filter(inv => inv.paymentStatus === 'CREDIT')
             .reduce((sum, inv) => sum + parseFloat(inv.grandTotal), 0);
 

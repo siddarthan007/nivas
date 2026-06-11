@@ -1,5 +1,5 @@
 import { db } from '../../db';
-import { payments, bookings, purchaseOrders, purchaseOrderItems, inventoryItems } from '../../db/schema';
+import { payments, invoices, purchaseOrders, purchaseOrderItems, inventoryItems } from '../../db/schema';
 import { eq, and, gte, lte } from 'drizzle-orm';
 
 const escapeXml = (unsafe: string) => unsafe.replace(/[<>&'"]/g, (c) => {
@@ -20,39 +20,81 @@ export const TallyService = {
         const endDate = new Date(dateStr);
         endDate.setHours(23, 59, 59, 999);
 
-        const sales = await db.query.bookings.findMany({
+        // Use invoices (full revenue incl. F&B + taxes), not just bookings.totalAmount.
+        const sales = await db.query.invoices.findMany({
             where: and(
-                eq(bookings.hotelId, hotelId),
-                eq(bookings.status, 'CHECKED_OUT'),
-                gte(bookings.updatedAt, startDate),
-                lte(bookings.updatedAt, endDate)
+                eq(invoices.hotelId, hotelId),
+                eq(invoices.isVoided, false),
+                gte(invoices.createdAt, startDate),
+                lte(invoices.createdAt, endDate)
             ),
-            with: { room: true }
+            with: { booking: { with: { room: true } } }
         });
 
         let voucherXml = '';
 
-        for (const sale of sales) {
-            const vDate: string = (sale.updatedAt?.toISOString().split('T')[0] ?? dateStr).replace(/-/g, '');
-            const amount = parseFloat(sale.totalAmount || '0');
+        for (const inv of sales) {
+            const vDate: string = (inv.createdAt?.toISOString().split('T')[0] ?? dateStr).replace(/-/g, '');
+            const roomRev = parseFloat(inv.roomRevenue || '0');
+            const fbRev = parseFloat(inv.fbRevenue || '0');
+            const vat = parseFloat(inv.vatAmount || '0');
+            const sc = parseFloat(inv.serviceCharge || '0');
+            const discount = parseFloat(inv.discountAmount || '0');
+            const grandTotal = parseFloat(inv.grandTotal || '0');
+            const guestName = inv.guestName || (inv.booking?.guestName ?? 'Guest');
+            const roomNum = inv.booking?.room?.number ?? 'N/A';
+
+            let ledgerEntries = '';
+            if (roomRev > 0) {
+                ledgerEntries += `
+              <ALLLEDGERENTRIES.LIST>
+               <LEDGERNAME>Room Income</LEDGERNAME>
+               <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+               <AMOUNT>${roomRev.toFixed(2)}</AMOUNT>
+              </ALLLEDGERENTRIES.LIST>`;
+            }
+            if (fbRev > 0) {
+                ledgerEntries += `
+              <ALLLEDGERENTRIES.LIST>
+               <LEDGERNAME>F&B Income</LEDGERNAME>
+               <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+               <AMOUNT>${fbRev.toFixed(2)}</AMOUNT>
+              </ALLLEDGERENTRIES.LIST>`;
+            }
+            if (vat > 0) {
+                ledgerEntries += `
+              <ALLLEDGERENTRIES.LIST>
+               <LEDGERNAME>VAT Output</LEDGERNAME>
+               <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+               <AMOUNT>${vat.toFixed(2)}</AMOUNT>
+              </ALLLEDGERENTRIES.LIST>`;
+            }
+            // Discount is contra-revenue — debit it to reduce income.
+            if (discount > 0) {
+                ledgerEntries += `
+              <ALLLEDGERENTRIES.LIST>
+               <LEDGERNAME>Sales Discounts</LEDGERNAME>
+               <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+               <AMOUNT>-${discount.toFixed(2)}</AMOUNT>
+              </ALLLEDGERENTRIES.LIST>`;
+            }
+            // Debit the counter-party (Cash or AR depending on payment status)
+            const partyLedger = inv.paymentStatus === 'PAID' ? 'Cash' : 'Accounts Receivable';
+            ledgerEntries += `
+              <ALLLEDGERENTRIES.LIST>
+               <LEDGERNAME>${partyLedger}</LEDGERNAME>
+               <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+               <AMOUNT>-${grandTotal.toFixed(2)}</AMOUNT>
+              </ALLLEDGERENTRIES.LIST>`;
 
             voucherXml += `
             <TALLYMESSAGE xmlns:UDF="TallyUDF">
              <VOUCHER VCHTYPE="Sales" ACTION="Create" OBJVIEW="Invoice Voucher View">
               <DATE>${vDate}</DATE>
-              <NARRATION>Room Sales - Room ${sale.room.number} - Guest ${escapeXml(sale.guestName)}</NARRATION>
+              <NARRATION>Invoice ${inv.invoiceNumber} - Room ${roomNum} - Guest ${escapeXml(guestName)}</NARRATION>
               <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
-              <PARTYLEDGERNAME>Cash</PARTYLEDGERNAME>
-              <ALLLEDGERENTRIES.LIST>
-               <LEDGERNAME>Room Income</LEDGERNAME>
-               <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
-               <AMOUNT>${amount}</AMOUNT>
-              </ALLLEDGERENTRIES.LIST>
-              <ALLLEDGERENTRIES.LIST>
-               <LEDGERNAME>Cash</LEDGERNAME>
-               <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
-               <AMOUNT>-${amount}</AMOUNT>
-              </ALLLEDGERENTRIES.LIST>
+              <PARTYLEDGERNAME>${partyLedger}</PARTYLEDGERNAME>
+              ${ledgerEntries}
              </VOUCHER>
             </TALLYMESSAGE>`;
         }
@@ -139,6 +181,15 @@ export const TallyService = {
                 ? `Receipt for Room ${r.booking.room.number} - ${escapeXml(r.booking.guestName)}`
                 : `Receipt - ${r.paymentMethod}`;
 
+            // Map payment method to proper Tally ledger.
+            const method = (r.paymentMethod || 'CASH').toString().toUpperCase();
+            const cashLedger = method === 'CASH' ? 'Cash'
+                : method === 'CARD' ? 'Bank - Card'
+                : method === 'BANK_TRANSFER' ? 'Bank - Transfer'
+                : method === 'ESEWA' || method === 'KHALTI' || method === 'FONEPAY' || method === 'CONNECT_IPS'
+                    ? 'Digital Wallet'
+                    : 'Cash';
+
             voucherXml += `
             <TALLYMESSAGE xmlns:UDF="TallyUDF">
              <VOUCHER VCHTYPE="Receipt" ACTION="Create">
@@ -146,7 +197,7 @@ export const TallyService = {
               <NARRATION>${narration}</NARRATION>
               <VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME>
               <ALLLEDGERENTRIES.LIST>
-               <LEDGERNAME>Cash</LEDGERNAME>
+               <LEDGERNAME>${cashLedger}</LEDGERNAME>
                <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
                <AMOUNT>-${amount.toFixed(2)}</AMOUNT>
               </ALLLEDGERENTRIES.LIST>

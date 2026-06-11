@@ -165,6 +165,7 @@ function TenantCard({
 
     // Brief storage usage shown on the card (server-cached, so cheap on re-render).
     const [usage, setUsage] = useState<{ database: { totalRows: number }; storage: { pretty: string } } | null>(null);
+    const [logoError, setLogoError] = useState(false);
     useEffect(() => {
         let alive = true;
         api.get<any>(`/saas-admin/tenants/${tenant.id}/usage`).then(r => { if (alive) setUsage(r.data); }).catch(() => {});
@@ -200,9 +201,16 @@ function TenantCard({
                         color: 'var(--notion-blue)',
                         overflow: 'hidden',
                     }}>
-                        {tenant.logoUrl
-                            ? <img src={tenant.logoUrl} alt={tenant.name || 'logo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            : <Building2 size={22} />}
+                        {tenant.logoUrl && !logoError ? (
+                            <img
+                                src={tenant.logoUrl}
+                                alt={tenant.name || 'logo'}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                onError={() => setLogoError(true)}
+                            />
+                        ) : (
+                            <Building2 size={22} />
+                        )}
                     </div>
                     <div>
                         <div style={{
@@ -441,11 +449,9 @@ function TenantFormModal({
             // Convert numeric string fields to numbers; keep decimal fields as strings
             payload.maxRooms = payload.maxRooms ? parseInt(payload.maxRooms, 10) : undefined;
             payload.maxUsers = payload.maxUsers ? parseInt(payload.maxUsers, 10) : undefined;
-            // On EDIT the rate fields are entered as percent (10) → store as decimal (0.10).
-            if (isEdit) {
-                if (payload.serviceChargeRate) payload.serviceChargeRate = String((parseFloat(payload.serviceChargeRate) || 0) / 100);
-                if (payload.taxRate) payload.taxRate = String((parseFloat(payload.taxRate) || 0) / 100);
-            }
+            payload.serviceChargeRate = payload.serviceChargeRate || '10';
+            payload.taxRate = payload.taxRate || '13';
+            // Rate fields are always sent as percent strings (e.g. '10'); backend normalizes.
             await onSubmit(payload);
             if (!isEdit) setFormData({ name: '', slug: '', ownerName: '', email: '', phone: '', address: '', website: '', logoUrl: '', panNumber: '', vatNumber: '', serviceChargeRate: '10', taxRate: '13', maxRooms: '50', maxUsers: '10', planType: '', packageId: null, ownerPassword: '', licenseDuration: 'trial' });
             onClose();
@@ -464,11 +470,17 @@ function TenantFormModal({
     };
 
     const activePlans = plans.filter(p => p.isActive);
-    const planOptions = activePlans.map(p => ({ value: p.code, label: `${p.name} (Rs ${parseFloat(p.monthlyPrice || '0').toLocaleString()}/mo)` }));
+    const planOptions = activePlans.map(p => ({ value: p.code, label: `${p.name} (NPR ${parseFloat(p.monthlyPrice || '0').toLocaleString()}/mo)` }));
 
     const handlePlanChange = (planCode: string) => {
         const selected = activePlans.find(p => p.code === planCode);
-        setFormData(prev => ({ ...prev, planType: planCode, packageId: selected?.id || null }));
+        setFormData(prev => ({
+            ...prev,
+            planType: planCode,
+            packageId: selected?.id || null,
+            maxRooms: selected?.maxRooms ? String(selected.maxRooms) : prev.maxRooms,
+            maxUsers: selected?.maxUsers ? String(selected.maxUsers) : prev.maxUsers,
+        }));
     };
 
     const labelStyle = { fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' } as const;
@@ -495,7 +507,7 @@ function TenantFormModal({
                     </div>
                     <div>
                         <label style={labelStyle}>Logo</label>
-                        <ImageUpload value={formData.logoUrl} onChange={(url: string) => setFormData({ ...formData, logoUrl: url })} />
+                        <ImageUpload value={formData.logoUrl} onChange={(url: string | null) => setFormData({ ...formData, logoUrl: url || '' })} />
                     </div>
                 </div>
                 <div>
@@ -522,7 +534,7 @@ function TenantFormModal({
                 {!isEdit && (
                     <div>
                         <label style={labelStyle}>Admin Password *</label>
-                        <Input type="password" value={formData.ownerPassword} onChange={(e: any) => setFormData({ ...formData, ownerPassword: e.target.value })} placeholder="Min 6 characters" required />
+                        <Input type="password" value={formData.ownerPassword} onChange={(e: any) => setFormData({ ...formData, ownerPassword: e.target.value })} placeholder="Min 8 characters" required />
                     </div>
                 )}
 
@@ -781,7 +793,7 @@ function PlatformMessagingPanel() {
                     <div style={{ fontSize: 13, fontWeight: 600 }}>Email (SMTP)</div>
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8 }}>
                         <input style={inp} placeholder="SMTP host" value={email.smtpHost} onChange={e => setEmail({ ...email, smtpHost: e.target.value })} />
-                        <input style={inp} type="number" placeholder="Port" value={email.smtpPort} onChange={e => setEmail({ ...email, smtpPort: Number(e.target.value) })} />
+                        <input style={inp} type="number" placeholder="Port" value={email.smtpPort || ''} onChange={e => setEmail({ ...email, smtpPort: e.target.value === '' ? 0 : Number(e.target.value) })} />
                         <input style={inp} placeholder="SMTP username" value={email.smtpUser} onChange={e => setEmail({ ...email, smtpUser: e.target.value })} />
                         <input style={inp} type="password" placeholder={flags.smtpPasswordSet ? '•••• (set)' : 'SMTP password'} value={email.smtpPassword} onChange={e => setEmail({ ...email, smtpPassword: e.target.value })} />
                         <input style={inp} placeholder="From email" value={email.smtpFromEmail} onChange={e => setEmail({ ...email, smtpFromEmail: e.target.value })} />
@@ -993,7 +1005,7 @@ export default function TenantsPage() {
                                     <div>
                                         <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Total Payments</div>
                                         <div style={{ fontSize: '20px', fontWeight: '600', color: 'var(--notion-green)' }}>
-                                            Rs {financesModal.payments.reduce((sum: number, p: any) => sum + parseFloat(p.amount || '0'), 0).toLocaleString()}
+                                            NPR {financesModal.payments.reduce((sum: number, p: any) => sum + parseFloat(p.amount || '0'), 0).toLocaleString()}
                                         </div>
                                     </div>
                                     <div>
@@ -1021,7 +1033,7 @@ export default function TenantsPage() {
                                                     {new Date(payment.createdAt).toLocaleDateString()}
                                                 </td>
                                                 <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: '500', color: 'var(--notion-green)' }}>
-                                                    Rs {parseFloat(payment.amount).toLocaleString()}
+                                                    NPR {parseFloat(payment.amount).toLocaleString()}
                                                 </td>
                                                 <td style={{ padding: '10px 8px', color: 'var(--notion-text-secondary)' }}>
                                                     {payment.billingCycle || 'N/A'}

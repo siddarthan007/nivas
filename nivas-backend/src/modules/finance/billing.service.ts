@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { orders, payments, hotels, folioCharges } from '../../db/schema';
-import { eq, and, sum, desc, isNull } from 'drizzle-orm';
+import { eq, and, or, sum, desc, isNull, sql, ne } from 'drizzle-orm';
 import { NotFoundError } from '../../utils/errors';
 import { BookingsService } from '../bookings/bookings.service';
 
@@ -23,6 +23,7 @@ export interface BillingSummary {
     vat: number;
     grandTotal: number;
     paidAmount: number;
+    creditBalance: number;
     dueAmount: number;
 }
 
@@ -43,28 +44,41 @@ export const BillingService = {
 
         if (!hotel) throw new NotFoundError('Hotel');
 
-        const serviceChargeRate = parseFloat(hotel.serviceChargeRate ?? '0.10');
-        const taxRate = parseFloat(hotel.taxRate ?? '0.13');
+        const serviceChargeRate = parseFloat(hotel.serviceChargeRate || '0.10');
+        const taxRate = parseFloat(hotel.taxRate || '0.13');
 
         const booking = await BookingsService.getBookingById(hotelId, bookingId);
 
         // Room/misc folio charges only. Exclude order-linked charges — F&B orders
         // are summed separately below, so counting them here too would double-bill.
-        const [chargesResult] = await db.select({ total: sum(folioCharges.amount) })
+        // We separate ROOM_CHARGE (posted by night audit) from extras so the base
+        // room rate is never lost when staff manually adds a folio charge.
+        const [roomFolioResult] = await db.select({ total: sum(folioCharges.amount) })
             .from(folioCharges)
             .where(and(
                 eq(folioCharges.bookingId, bookingId),
-                isNull(folioCharges.orderId)
+                eq(folioCharges.type, 'ROOM_CHARGE')
             ));
 
-        // Fallback to booking total if no folio charges exist (e.g. before first night audit)
-        let roomCharge = parseFloat(chargesResult?.total ?? '0');
-        if (roomCharge === 0 && booking.totalAmount) {
-            roomCharge = parseFloat(booking.totalAmount);
-        }
+        const [extraFolioResult] = await db.select({ total: sum(folioCharges.amount) })
+            .from(folioCharges)
+            .where(and(
+                eq(folioCharges.bookingId, bookingId),
+                isNull(folioCharges.orderId),
+                ne(folioCharges.type, 'ROOM_CHARGE')
+            ));
 
-        // Get orders for this booking (Served only)
-        const [ordersResult] = await db.select({ total: sum(orders.totalAmount) })
+        const roomFolioTotal = parseFloat(roomFolioResult?.total ?? '0');
+        const extraFolioTotal = parseFloat(extraFolioResult?.total ?? '0');
+
+        // If night audit posted room charges, use those (they equal booking total).
+        // Otherwise use the booking total as the base rate.
+        let roomCharge = roomFolioTotal > 0 ? roomFolioTotal : parseFloat(booking.totalAmount || '0');
+        roomCharge += extraFolioTotal;
+
+        // Get orders for this booking (Served only) — use subTotal (pre-tax) so
+        // hotel-wide service charge + VAT are computed on the raw F&B amount.
+        const [ordersResult] = await db.select({ total: sum(orders.subTotal) })
             .from(orders)
             .where(and(
                 eq(orders.bookingId, bookingId),
@@ -88,7 +102,8 @@ export const BillingService = {
         const serviceCharge = subTotal * serviceChargeRate;
         const vat = (subTotal + serviceCharge) * taxRate;
         const grandTotal = subTotal + serviceCharge + vat;
-        const dueAmount = grandTotal - paidAmount;
+        const creditBalance = parseFloat(booking.creditBalance || '0');
+        const dueAmount = Math.max(0, grandTotal - paidAmount - creditBalance);
 
         return {
             roomCharge,
@@ -100,6 +115,7 @@ export const BillingService = {
             vat,
             grandTotal,
             paidAmount,
+            creditBalance,
             dueAmount
         };
     },
@@ -143,7 +159,10 @@ export const BillingService = {
         const lineItems: GuestBillLineItem[] = [];
         const chargedOrderIds = new Set(charges.filter(c => c.orderId).map(c => c.orderId as string));
 
+        // Exclude order-linked folio charges — they are represented by the order items below,
+        // so including them here would double-bill against the summary totals.
         for (const c of charges) {
+            if (c.orderId) continue;
             lineItems.push({
                 id: `charge-${c.id}`,
                 category: c.type || 'ROOM_CHARGE',

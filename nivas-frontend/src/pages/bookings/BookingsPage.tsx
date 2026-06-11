@@ -195,6 +195,8 @@ function CreateBookingModal({
         advancePayment: 0,
         source: 'WALK_IN',
         nationality: '',
+        panNumber: '',
+        vatNumber: '',
         corporateAccountId: undefined,
         travelAgentId: undefined,
     });
@@ -375,7 +377,7 @@ function CreateBookingModal({
                             options={availableRooms.map(r => ({
                                 value: r.id,
                                 label: `Room ${r.number}`,
-                                subtitle: `${r.type} — Rs ${r.rate}/night`
+                                subtitle: `${r.type} — NPR ${r.rate}/night`
                             }))}
                         />
                     </div>
@@ -394,11 +396,11 @@ function CreateBookingModal({
                                         Room {selectedRoom.number} — {selectedRoom.type}
                                     </div>
                                     <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', marginTop: '2px' }}>
-                                        {nights} night{nights !== 1 ? 's' : ''} × Rs {selectedRoom.rate?.toLocaleString()}
+                                        {nights} night{nights !== 1 ? 's' : ''} × NPR {selectedRoom.rate?.toLocaleString()}
                                     </div>
                                 </div>
                                 <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--notion-blue)' }}>
-                                    Rs {(formData.totalAmount || 0).toLocaleString()}
+                                    NPR {(formData.totalAmount || 0).toLocaleString()}
                                 </div>
                             </div>
                         </div>
@@ -450,8 +452,8 @@ function CreateBookingModal({
                         <NationalitySelect label="Nationality" value={formData.nationality || ''} onChange={val => setFormData({ ...formData, nationality: val })} />
                         <div>
                             <label style={labelStyle}>Guests</label>
-                            <Input type="number" min={1} value={formData.guestCount}
-                                onChange={e => setFormData({ ...formData, guestCount: Number(e.target.value) })}
+                            <Input type="number" min={1} value={formData.guestCount || ''}
+                                onChange={e => setFormData({ ...formData, guestCount: e.target.value === '' ? 0 : Number(e.target.value) })}
                             />
                         </div>
                     </div>
@@ -477,6 +479,21 @@ function CreateBookingModal({
                             <label style={labelStyle}>ID Number</label>
                             <Input placeholder="Enter ID number" value={formData.idNumber || ''}
                                 onChange={e => setFormData({ ...formData, idNumber: e.target.value })} disabled={isExistingGuest}
+                            />
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                        <div>
+                            <label style={labelStyle}>PAN Number</label>
+                            <Input placeholder="e.g., 123456789" value={formData.panNumber || ''}
+                                onChange={e => setFormData({ ...formData, panNumber: e.target.value })} disabled={isExistingGuest}
+                            />
+                        </div>
+                        <div>
+                            <label style={labelStyle}>VAT Number</label>
+                            <Input placeholder="e.g., 301234567" value={formData.vatNumber || ''}
+                                onChange={e => setFormData({ ...formData, vatNumber: e.target.value })} disabled={isExistingGuest}
                             />
                         </div>
                     </div>
@@ -514,16 +531,16 @@ function CreateBookingModal({
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                         <div>
-                            <label style={labelStyle}>Total Amount (Rs ) *</label>
-                            <Input type="number" required value={formData.totalAmount}
-                                onChange={e => setFormData({ ...formData, totalAmount: Number(e.target.value) })}
+                            <label style={labelStyle}>Total Amount (NPR) *</label>
+                            <Input type="number" required value={formData.totalAmount || ''}
+                                onChange={e => setFormData({ ...formData, totalAmount: e.target.value === '' ? 0 : Number(e.target.value) })}
                                 icon={<CreditCard size={14} />}
                             />
                         </div>
                         <div>
-                            <label style={labelStyle}>Advance Payment (Rs )</label>
-                            <Input type="number" value={formData.advancePayment}
-                                onChange={e => setFormData({ ...formData, advancePayment: Number(e.target.value) })}
+                            <label style={labelStyle}>Advance Payment (NPR)</label>
+                            <Input type="number" value={formData.advancePayment || ''}
+                                onChange={e => setFormData({ ...formData, advancePayment: e.target.value === '' ? 0 : Number(e.target.value) })}
                             />
                         </div>
                     </div>
@@ -591,7 +608,7 @@ function CreateBookingModal({
                                 Balance Due
                             </span>
                             <span style={{ fontSize: '16px', fontWeight: '700', color: (formData.totalAmount - (formData.advancePayment || 0)) > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>
-                                Rs {((formData.totalAmount || 0) - (formData.advancePayment || 0)).toLocaleString()}
+                                NPR {((formData.totalAmount || 0) - (formData.advancePayment || 0)).toLocaleString()}
                             </span>
                         </div>
                     )}
@@ -706,8 +723,8 @@ function EditBookingModal({
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                     <div>
-                        <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Total Amount (Rs )</label>
-                        <Input type="number" value={formData.totalAmount} onChange={e => setFormData({ ...formData, totalAmount: Number(e.target.value) })} />
+                        <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Total Amount (NPR)</label>
+                        <Input type="number" value={formData.totalAmount || ''} onChange={e => setFormData({ ...formData, totalAmount: e.target.value === '' ? 0 : Number(e.target.value) })} />
                     </div>
                     <div>
                         <label className="block text-xs text-[var(--notion-text-secondary)] mb-1">Source</label>
@@ -786,7 +803,7 @@ function ChangeRoomModal({
 
     if (!booking) return null;
 
-    const availableRooms = rooms.filter(r => r.status === 'AVAILABLE' || r.status === 'VACANT');
+    const availableRooms = rooms.filter(r => r.status === 'AVAILABLE');
 
     const handleConfirm = async () => {
         if (!selectedRoom) return;
@@ -812,7 +829,7 @@ function ChangeRoomModal({
                         onChange={e => setSelectedRoom(e.target.value ? Number(e.target.value) : null)}
                         options={[
                             { value: '', label: 'Select a room...' },
-                            ...availableRooms.map(r => ({ value: r.id.toString(), label: `Room ${r.number} - ${r.type} (Rs ${r.rate})` })),
+                            ...availableRooms.map(r => ({ value: r.id.toString(), label: `Room ${r.number} - ${r.type} (NPR ${r.rate})` })),
                         ]}
                     />
                 </div>
@@ -828,7 +845,7 @@ function ChangeRoomModal({
 export default function BookingsPage() {
     const { bookings, isLoading, pagination, fetchBookings, createBooking, checkIn, checkOut, getCheckoutPreview, processCheckout, updateBooking, cancelBooking, extendStay, changeRoom } = useBookings();
     const [activeTab, setActiveTab] = useState<'list' | 'gantt'>('list');
-    const [segment, setSegment] = useState<BookingSegment>('all');
+    const [segment, setSegment] = useState<BookingSegment>('active');
     const [currentPage, setCurrentPage] = useState(1);
     const [pageLimit, setPageLimit] = useState(20);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -935,6 +952,7 @@ export default function BookingsPage() {
                 {activeTab === 'list' && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
                         {([
+                            { key: 'active', label: 'Active' },
                             { key: 'all', label: 'All' },
                             { key: 'arrivals', label: 'Arrivals' },
                             { key: 'inhouse', label: 'In-house' },
@@ -1067,10 +1085,10 @@ export default function BookingsPage() {
                                                 </div>
                                             </td>
                                             <td style={{ padding: '12px 16px', fontWeight: '500' }}>
-                                                Rs {(booking.totalAmount ?? 0).toLocaleString()}
+                                                NPR {(booking.totalAmount ?? 0).toLocaleString()}
                                                 {booking.advancePayment !== undefined && booking.advancePayment > 0 && (
                                                     <span style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', display: 'block' }}>
-                                                        Adv: Rs {booking.advancePayment}
+                                                        Adv: NPR {booking.advancePayment}
                                                     </span>
                                                 )}
                                             </td>

@@ -6,7 +6,7 @@ import { KotPrintService } from './kot-print.service';
 import { createResponse } from '../../utils/response.helper';
 import { ValidationError, NotFoundError } from '../../utils/errors';
 import { db } from '../../db';
-import { kotPrinters, orders, restaurantTables } from '../../db/schema';
+import { kotPrinters, orders, restaurantTables, rooms } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
 
 export const kotController = new Elysia({ prefix: '/orders/kot' })
@@ -121,7 +121,16 @@ export const kotController = new Elysia({ prefix: '/orders/kot' })
 
         if (!order) throw new NotFoundError('Order');
 
-        // restaurantTable has no relation defined → look it up directly for the ticket.
+        // Fallback lookups if Drizzle relations didn't populate
+        let roomNumber = (order as any).room?.number || '';
+        if (!roomNumber && order.roomId) {
+            const roomRow = await db.query.rooms.findFirst({
+                where: eq(rooms.id, order.roomId),
+                columns: { number: true }
+            });
+            if (roomRow) roomNumber = String(roomRow.number);
+        }
+
         const table = (order as any).restaurantTableId
             ? await db.query.restaurantTables.findFirst({ where: eq(restaurantTables.id, (order as any).restaurantTableId), columns: { tableNumber: true } })
             : null;
@@ -170,10 +179,11 @@ export const kotController = new Elysia({ prefix: '/orders/kot' })
             },
             printContent: {
                 header: `=== KITCHEN ORDER TICKET ===`,
+                receiptNumber: order.orderNumber,
                 orderNumber: order.orderNumber,
                 orderType: order.orderType,
                 table: table?.tableNumber || 'N/A',
-                room: (order as any).room?.number || 'N/A',
+                room: roomNumber || 'N/A',
                 time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
                 date: new Date().toLocaleDateString('en-US'),
                 items: r.items.map((item, idx) => ({

@@ -48,6 +48,8 @@ export const bookingsController = new Elysia({ prefix: '/bookings' })
             nationality: t.Optional(t.String()),
             idNumber: t.Optional(t.String()),
             idType: t.Optional(t.String()),
+            panNumber: t.Optional(t.String()),
+            vatNumber: t.Optional(t.String()),
             corporateAccountId: t.Optional(t.Number()),
             travelAgentId: t.Optional(t.Number())
         }),
@@ -96,6 +98,7 @@ export const bookingsController = new Elysia({ prefix: '/bookings' })
             limit: t.Optional(t.String()),
             segment: t.Optional(t.Union([
                 t.Literal('all'),
+                t.Literal('active'),
                 t.Literal('arrivals'),
                 t.Literal('reservations'),
                 t.Literal('inhouse'),

@@ -38,6 +38,7 @@ import {
     Globe,
     Shield,
     DollarSign,
+    Banknote,
     Home,
     Trash2,
     Eye,
@@ -58,6 +59,35 @@ import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal';
 import { useModuleConfig } from '@/lib/hooks/useModuleConfig';
 
 import DateField from "@/components/ui/DateField";
+
+function getGuestDisplayName(guest: GuestSearchResult | GuestDetails | null | undefined): string {
+    if (!guest) return 'Unknown Guest';
+    const name = guest.fullName?.trim();
+    if (name) return name;
+    if (guest.uniqueId?.trim()) return `Guest #${guest.uniqueId.trim()}`;
+    if (guest.phone?.trim()) return guest.phone.trim();
+    if (guest.email?.trim()) return guest.email.trim();
+    if (guest.idNumber?.trim()) return `ID: ${guest.idNumber.trim()}`;
+    return 'Unknown Guest';
+}
+
+function getGuestInitial(guest: GuestSearchResult | GuestDetails | null | undefined): string {
+    const name = getGuestDisplayName(guest);
+    if (name === 'Unknown Guest') return '?';
+    return name.charAt(0).toUpperCase();
+}
+
+function getGuestSubtitle(guest: GuestSearchResult | GuestDetails | null | undefined): string | null {
+    if (!guest) return null;
+    const name = guest.fullName?.trim();
+    if (name) return null;
+    if (guest.uniqueId?.trim()) return `Unique ID: ${guest.uniqueId.trim()}`;
+    if (guest.phone?.trim()) return `Phone: ${guest.phone.trim()}`;
+    if (guest.email?.trim()) return `Email: ${guest.email.trim()}`;
+    if (guest.idNumber?.trim()) return `ID: ${guest.idNumber.trim()}`;
+    return null;
+}
+
 export default function GuestPage() {
     const router = useRouter();
     const [guests, setGuests] = useState<GuestSearchResult[]>([]);
@@ -71,8 +101,6 @@ export default function GuestPage() {
 
     const debouncedSearch = useDebounce(searchQuery, 300);
 
-    // Modal states
-    const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<GuestSearchResult | null>(null);
 
@@ -110,48 +138,11 @@ export default function GuestPage() {
         }
     };
 
-    const [createNationality, setCreateNationality] = useState('');
-
     const { config } = useModuleConfig();
     const isHotelEnabled = config.enableHotel;
     const isFbEnabled = config.enableFoodAndBeverage;
     const isMixed = isHotelEnabled && isFbEnabled;
     const isRestaurantOnly = !isHotelEnabled && isFbEnabled;
-
-    const handleCreateGuest = async (e: React.FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
-        const formData = new FormData(e.currentTarget);
-        const firstName = formData.get('firstName') as string;
-        const lastName = formData.get('lastName') as string;
-        try {
-            await GuestService.create({
-                firstName,
-                lastName,
-                fullName: `${firstName} ${lastName}`.trim(),
-                uniqueId: formData.get('uniqueId') as string,
-                phone: formData.get('phone') as string,
-                email: formData.get('email') as string,
-                fatherName: formData.get('fatherName') as string || undefined,
-                dob: formData.get('dob') as string || undefined,
-                occupation: formData.get('occupation') as string || undefined,
-                nationality: createNationality || undefined,
-                city: formData.get('city') as string || undefined,
-                country: formData.get('country') as string || undefined,
-                idType: formData.get('idType') as string || undefined,
-                idNumber: formData.get('idNumber') as string || undefined,
-                panNumber: formData.get('panNumber') as string || undefined,
-                openingDueAmount: formData.get('openingDueAmount') as string || undefined,
-                customerType: (formData.get('customerType') as CustomerType) || (isRestaurantOnly ? 'RESTAURANT_CUSTOMER' : 'HOTEL_GUEST'),
-                notes: formData.get('notes') as string || undefined,
-            });
-            toast.success('Customer created');
-            setIsCreateOpen(false);
-            setCreateNationality('');
-            fetchGuests();
-        } catch (error) {
-            toast.error('Failed to create customer');
-        }
-    };
 
     const clearFilters = () => {
         setFilters({});
@@ -199,7 +190,7 @@ export default function GuestPage() {
                         <Button variant="secondary" onClick={handleExport} disabled={loading}>
                             <Download size={14} style={{ marginRight: '8px' }} /> Export
                         </Button>
-                        <Button onClick={() => setIsCreateOpen(true)} variant="primary">
+                        <Button onClick={() => router.push('/hotel/guests/new')} variant="primary">
                             <Plus size={14} style={{ marginRight: '8px' }} /> {isRestaurantOnly ? 'Add Customer' : 'Add Customer / Guest'}
                         </Button>
                     </div>
@@ -364,6 +355,7 @@ export default function GuestPage() {
                                     <SortableTh field="fullName" label="Name" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                                     <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Contact</th>
                                     <SortableTh field="panNumber" label="PAN" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
+                                    <SortableTh field="vatNumber" label="VAT" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                                     <SortableTh field="customerType" label="Type" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                                     <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Status</th>
                                     <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Actions</th>
@@ -372,7 +364,7 @@ export default function GuestPage() {
                             <tbody style={{ borderTop: '1px solid var(--notion-border)' }}>
                                 {loading ? (
                                     <tr>
-                                        <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
+                                        <td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
                                             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
                                                 <Loader2 className="animate-spin" size={20} /> Loading...
                                             </div>
@@ -380,7 +372,7 @@ export default function GuestPage() {
                                     </tr>
                                 ) : guests.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
+                                        <td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>
                                             No customers found matching your criteria.
                                         </td>
                                     </tr>
@@ -398,14 +390,17 @@ export default function GuestPage() {
                                                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                         fontSize: '12px', fontWeight: '600', color: 'var(--notion-text-secondary)'
                                                     }}>
-                                                        {(guest.fullName?.[0] || '?').toUpperCase()}
+                                                        {getGuestInitial(guest)}
                                                     </div>
                                                     <div>
                                                         <div style={{ fontWeight: '500', color: 'var(--notion-text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                            {guest.fullName}
+                                                            {getGuestDisplayName(guest)}
                                                             {guest.isVip && <Star size={12} style={{ color: 'var(--notion-yellow)', fill: 'var(--notion-yellow)' }} />}
                                                         </div>
-                                                        {guest.notes && <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', marginTop: '2px', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{guest.notes}</div>}
+                                                        {getGuestSubtitle(guest) && (
+                                                            <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)', marginTop: '2px' }}>{getGuestSubtitle(guest)}</div>
+                                                        )}
+                                                        {guest.notes && guest.fullName?.trim() && <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', marginTop: '2px', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{guest.notes}</div>}
                                                     </div>
                                                 </div>
                                             </td>
@@ -425,6 +420,9 @@ export default function GuestPage() {
                                             </td>
                                             <td style={{ padding: '12px 16px', color: 'var(--notion-text-secondary)', fontSize: '13px' }}>
                                                 {guest.panNumber || '—'}
+                                            </td>
+                                            <td style={{ padding: '12px 16px', color: 'var(--notion-text-secondary)', fontSize: '13px' }}>
+                                                {guest.vatNumber || '—'}
                                             </td>
                                             <td style={{ padding: '12px 16px' }}>
                                                 <span style={{
@@ -524,147 +522,6 @@ export default function GuestPage() {
                     </div>
                 )}
 
-                {/* Create Modal */}
-                <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title={isRestaurantOnly ? 'Add New Customer' : 'Add New Customer / Guest'} size="lg" onSubmit={() => { (document.getElementById('guest-create-form') as HTMLFormElement)?.requestSubmit(); }}>
-                    <form id="guest-create-form" onSubmit={handleCreateGuest} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                        {/* Basic fields (always shown) */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                            <Input name="firstName" label="First Name *" required placeholder="Chandra" icon={<Users size={14} />} />
-                            <Input name="lastName" label="Last Name *" required placeholder="Karki" icon={<Users size={14} />} />
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                            <Input name="uniqueId" label="Unique ID *" required placeholder="260607X3W9" icon={<Shield size={14} />} />
-                            <Input name="phone" label="Phone Number" placeholder="9851187548" icon={<Phone size={14} />} />
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                            <Input name="email" label="Email Address" type="email" placeholder="john@example.com" icon={<Mail size={14} />} />
-                            <Input name="city" label="City" placeholder="kathmandu" icon={<MapPin size={14} />} />
-                        </div>
-                        <Input name="country" label="Country" placeholder="Nepal" icon={<Globe size={14} />} />
-
-                        {/* Full fields (hidden for restaurant-only basic mode) */}
-                        {!isRestaurantOnly && (
-                            <>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                                    <Input name="fatherName" label="Father Name" placeholder="Father Name" icon={<Users size={14} />} />
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>DOB</label>
-                                        <input
-                                            name="dob"
-                                            type="date"
-                                            style={{
-                                                width: '100%', padding: '8px', backgroundColor: 'var(--notion-bg)',
-                                                border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)',
-                                                fontSize: '14px', outline: 'none', color: 'var(--notion-text)'
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                                    <Input name="occupation" label="Occupation" placeholder="Occupation" />
-                                    <NationalitySelect
-                                        label="Nationality"
-                                        value={createNationality}
-                                        onChange={setCreateNationality}
-                                    />
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                                    <Input name="panNumber" label="PAN" placeholder="PAN" />
-                                    <Input name="openingDueAmount" label="Opening Due Amount" type="number" placeholder="0.00" icon={<DollarSign size={14} />} />
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>ID Type</label>
-                                        <select
-                                            name="idType"
-                                            defaultValue=""
-                                            style={{
-                                                width: '100%', padding: '8px', backgroundColor: 'var(--notion-bg)',
-                                                border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)',
-                                                fontSize: '14px', outline: 'none', color: 'var(--notion-text)'
-                                            }}
-                                        >
-                                            <option value="">Select ID Type</option>
-                                            <option value="Citizenship">Citizenship</option>
-                                            <option value="Passport">Passport</option>
-                                            <option value="Voter ID">Voter ID</option>
-                                            <option value="National ID">National ID</option>
-                                            <option value="Driver's License">Driver's License</option>
-                                            <option value="Aadhar Card">Aadhar Card</option>
-                                        </select>
-                                    </div>
-                                    <Input name="idNumber" label="ID Number" placeholder="ID number" />
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>Photo</label>
-                                        <input
-                                            name="photoUrl"
-                                            type="file"
-                                            accept="image/*"
-                                            style={{ width: '100%', fontSize: '13px', color: 'var(--notion-text)' }}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label style={{ display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>Signature</label>
-                                        <input
-                                            name="signatureUrl"
-                                            type="file"
-                                            accept="image/*"
-                                            style={{ width: '100%', fontSize: '13px', color: 'var(--notion-text)' }}
-                                        />
-                                    </div>
-                                </div>
-                            </>
-                        )}
-
-                        {/* Customer type selector for mixed properties */}
-                        {isMixed && (
-                            <div>
-                                <label style={{ display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>Customer Type</label>
-                                <select
-                                    name="customerType"
-                                    defaultValue="HOTEL_GUEST"
-                                    style={{
-                                        width: '100%', padding: '8px', backgroundColor: 'var(--notion-bg)',
-                                        border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)',
-                                        fontSize: '14px', outline: 'none', color: 'var(--notion-text)'
-                                    }}
-                                >
-                                    <option value="HOTEL_GUEST">Hotel Guest</option>
-                                    <option value="RESTAURANT_CUSTOMER">Restaurant Customer</option>
-                                    <option value="BOTH">Both</option>
-                                </select>
-                            </div>
-                        )}
-
-                        <div>
-                            <label style={{ display: 'block', fontSize: '12px', color: 'var(--notion-text-secondary)', marginBottom: '4px' }}>Notes</label>
-                            <textarea
-                                name="notes"
-                                rows={3}
-                                style={{
-                                    width: '100%',
-                                    padding: '8px',
-                                    backgroundColor: 'var(--notion-bg)',
-                                    border: '1px solid var(--notion-border)',
-                                    borderRadius: 'var(--radius-md)',
-                                    fontSize: '14px',
-                                    outline: 'none',
-                                    color: 'var(--notion-text)'
-                                }}
-                                placeholder="Allergies, preferences, special requests..."
-                            ></textarea>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', paddingTop: 'var(--space-2)' }}>
-                            <Button type="button" variant="secondary" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
-                            <Button type="submit" variant="primary">
-                                <Save size={14} style={{ marginRight: '6px' }} /> {isRestaurantOnly ? 'Create Customer' : 'Create Customer'}
-                            </Button>
-                        </div>
-                    </form>
-                </Modal>
-
                 {/* Guest Details Modal */}
                 <GuestDetailsModal
                     isOpen={!!selectedGuestId}
@@ -680,14 +537,14 @@ export default function GuestPage() {
                         if (!deleteTarget) return;
                         try {
                             await GuestService.delete(deleteTarget.id);
-                            toast.success(`Guest "${deleteTarget.fullName}" deleted`);
+                            toast.success(`Guest "${getGuestDisplayName(deleteTarget)}" deleted`);
                             fetchGuests();
                         } catch (err: any) {
                             toast.error(err.message || 'Failed to delete guest');
                         }
                     }}
                     title="Delete Guest"
-                    message={`Are you sure you want to delete "${deleteTarget?.fullName}"? This action cannot be undone.`}
+                    message={`Are you sure you want to delete "${getGuestDisplayName(deleteTarget)}"? This action cannot be undone.`}
                     confirmText="Delete Guest"
                     isDestructive
                 />
@@ -745,6 +602,7 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                     idType: detailsData.idType || '',
                     idNumber: detailsData.idNumber || '',
                     panNumber: detailsData.panNumber || '',
+                    vatNumber: detailsData.vatNumber || '',
                     openingDueAmount: detailsData.openingDueAmount || '',
                     customerType: detailsData.customerType || 'HOTEL_GUEST',
                     address: detailsData.address || '',
@@ -802,14 +660,15 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                             fontSize: '20px', fontWeight: '700', color: 'var(--notion-blue)',
                             flexShrink: 0,
                         }}>
-                            {details.fullName?.charAt(0)?.toUpperCase() || '?'}
+                            {getGuestInitial(details)}
                         </div>
                         <div style={{ flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--notion-text)', margin: 0 }}>{details.fullName}</h2>
+                                <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--notion-text)', margin: 0 }}>{getGuestDisplayName(details)}</h2>
                                 {details.isVip && <span style={{ fontSize: '11px', backgroundColor: 'var(--notion-yellow-bg)', color: 'var(--notion-yellow)', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}><Star size={10} /> VIP</span>}
                                 {details.isBanned && <span style={{ fontSize: '11px', backgroundColor: 'var(--notion-red-bg)', color: 'var(--notion-red)', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}><Ban size={10} /> Banned</span>}
                             </div>
+                            {getGuestSubtitle(details) && <div style={{ fontSize: '12px', color: 'var(--notion-text-muted)', marginTop: '2px' }}>{getGuestSubtitle(details)}</div>}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '4px', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
                                 {details.phone && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Phone size={12} /> {details.phone}</span>}
                                 {details.email && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Mail size={12} /> {details.email}</span>}
@@ -964,6 +823,10 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                 <Input value={editForm.panNumber} onChange={(e: any) => setEditForm({ ...editForm, panNumber: e.target.value })} />
                                             </div>
                                             <div>
+                                                <label style={labelStyle}>VAT Number</label>
+                                                <Input value={editForm.vatNumber} onChange={(e: any) => setEditForm({ ...editForm, vatNumber: e.target.value })} />
+                                            </div>
+                                            <div>
                                                 <label style={labelStyle}>Opening Due</label>
                                                 <Input value={editForm.openingDueAmount} onChange={(e: any) => setEditForm({ ...editForm, openingDueAmount: e.target.value })} />
                                             </div>
@@ -1040,6 +903,13 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <label style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>VAT</label>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--notion-text)' }}>
+                                                    <span style={{ color: 'var(--notion-text-muted)' }}><Shield size={14} /></span>
+                                                    {details.vatNumber || '—'}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                                 <label style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Unique ID</label>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--notion-text)' }}>
                                                     <span style={{ color: 'var(--notion-text-muted)' }}><Shield size={14} /></span>
@@ -1073,12 +943,12 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                 <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Orders</div>
                                             </div>
                                             <div style={{ padding: '12px', backgroundColor: 'var(--notion-bg-tertiary)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
-                                                <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--notion-text)' }}>Rs {(financials?.stats.totalInvoiced || 0).toLocaleString()}</div>
+                                                <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--notion-text)' }}>NPR {(financials?.stats.totalInvoiced || 0).toLocaleString()}</div>
                                                 <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Total Spend</div>
                                             </div>
                                             <div style={{ padding: '12px', backgroundColor: 'var(--notion-bg-tertiary)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
                                                 <div style={{ fontSize: '20px', fontWeight: '700', color: (financials?.stats.balance || 0) > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>
-                                                    Rs {(financials?.stats.balance || 0).toLocaleString()}
+                                                    NPR {(financials?.stats.balance || 0).toLocaleString()}
                                                 </div>
                                                 <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase' }}>Balance</div>
                                             </div>
@@ -1147,7 +1017,7 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                     </div>
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
                                                         <span>{format(new Date(booking.checkIn), 'MMM d, yyyy')} – {format(new Date(booking.checkOut), 'MMM d')}</span>
-                                                        <span style={{ fontWeight: '600' }}>Rs {Number(booking.totalAmount || 0).toLocaleString()}</span>
+                                                        <span style={{ fontWeight: '600' }}>NPR {Number(booking.totalAmount || 0).toLocaleString()}</span>
                                                     </div>
                                                     {/* Orders under this booking */}
                                                     {booking.orders && booking.orders.length > 0 && (
@@ -1162,7 +1032,7 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                                     color: 'var(--notion-text-secondary)',
                                                                 }}>
                                                                     <span>#{order.orderNumber} — {order.items?.length || 0} items</span>
-                                                                    <span>Rs {Number(order.totalAmount || 0).toLocaleString()}</span>
+                                                                    <span>NPR {Number(order.totalAmount || 0).toLocaleString()}</span>
                                                                 </div>
                                                             ))}
                                                             {booking.orders.length > 3 && (
@@ -1213,7 +1083,7 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                 </div>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
                                                     <span>{order.createdAt ? format(new Date(order.createdAt), 'MMM d, yyyy h:mm a') : ''}</span>
-                                                    <span style={{ fontWeight: '600' }}>Rs {Number(order.totalAmount || 0).toLocaleString()}</span>
+                                                    <span style={{ fontWeight: '600' }}>NPR {Number(order.totalAmount || 0).toLocaleString()}</span>
                                                 </div>
                                                 {order.items && order.items.length > 0 && (
                                                     <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--notion-divider)' }}>
@@ -1224,7 +1094,7 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                                 color: 'var(--notion-text-secondary)',
                                                             }}>
                                                                 <span>{item.quantity}× {item.menuItem?.name || 'Item'}</span>
-                                                                <span>Rs {Number(item.quantity * (item.price || 0)).toLocaleString()}</span>
+                                                                <span>NPR {Number(item.quantity * (item.price || 0)).toLocaleString()}</span>
                                                             </div>
                                                         ))}
                                                         {order.items.length > 3 && (
@@ -1248,16 +1118,16 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-4)' }}>
                                         <div style={{ padding: '16px', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)', textAlign: 'center' }}>
                                             <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Total Invoiced</div>
-                                            <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--notion-text)' }}>Rs {financials.stats.totalInvoiced.toLocaleString()}</div>
+                                            <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--notion-text)' }}>NPR {financials.stats.totalInvoiced.toLocaleString()}</div>
                                         </div>
                                         <div style={{ padding: '16px', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)', textAlign: 'center' }}>
                                             <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Total Paid</div>
-                                            <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--notion-green)' }}>Rs {financials.stats.totalPaid.toLocaleString()}</div>
+                                            <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--notion-green)' }}>NPR {financials.stats.totalPaid.toLocaleString()}</div>
                                         </div>
                                         <div style={{ padding: '16px', backgroundColor: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--notion-border)', textAlign: 'center' }}>
                                             <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Balance Due</div>
                                             <div style={{ fontSize: '18px', fontWeight: '700', color: financials.stats.balance > 0 ? 'var(--notion-red)' : 'var(--notion-text)' }}>
-                                                Rs {financials.stats.balance.toLocaleString()}
+                                                NPR {financials.stats.balance.toLocaleString()}
                                             </div>
                                         </div>
                                     </div>
@@ -1275,7 +1145,7 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                             width: '100%',
                                         }}
                                     >
-                                        <CreditCard size={14} /> Record Payment — Rs {financials.stats.balance.toLocaleString()} due
+                                        <CreditCard size={14} /> Record Payment — NPR {financials.stats.balance.toLocaleString()} due
                                     </button>
                                 )}
 
@@ -1327,9 +1197,9 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                             <th style={{ padding: '10px 12px' }}>Type</th>
                                                             <th style={{ padding: '10px 12px' }}>Ref #</th>
                                                             <th style={{ padding: '10px 12px' }}>Description</th>
-                                                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Debit (Rs )</th>
-                                                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Credit (Rs )</th>
-                                                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Balance (Rs )</th>
+                                                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Debit (NPR )</th>
+                                                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Credit (NPR )</th>
+                                                            <th style={{ padding: '10px 12px', textAlign: 'right' }}>Balance (NPR )</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -1348,13 +1218,13 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                                 <td style={{ padding: '10px 12px', fontWeight: '500', color: 'var(--notion-text)' }}>{row.ref}</td>
                                                                 <td style={{ padding: '10px 12px', color: 'var(--notion-text-secondary)' }}>{row.description}</td>
                                                                 <td style={{ padding: '10px 12px', textAlign: 'right', color: row.debit > 0 ? 'var(--notion-red)' : 'var(--notion-text-secondary)' }}>
-                                                                    {row.debit > 0 ? `Rs ${row.debit.toLocaleString()}` : '—'}
+                                                                    {row.debit > 0 ? `NPR ${row.debit.toLocaleString()}` : '—'}
                                                                 </td>
                                                                 <td style={{ padding: '10px 12px', textAlign: 'right', color: row.credit > 0 ? 'var(--notion-green)' : 'var(--notion-text-secondary)' }}>
-                                                                    {row.credit > 0 ? `Rs ${row.credit.toLocaleString()}` : '—'}
+                                                                    {row.credit > 0 ? `NPR ${row.credit.toLocaleString()}` : '—'}
                                                                 </td>
                                                                 <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '600', color: row.balance > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>
-                                                                    Rs {row.balance.toLocaleString()}
+                                                                    NPR {row.balance.toLocaleString()}
                                                                 </td>
                                                             </tr>
                                                         ))}
@@ -1362,9 +1232,9 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                                                     <tfoot style={{ backgroundColor: 'var(--notion-bg-secondary)', borderTop: '2px solid var(--notion-border)' }}>
                                                         <tr>
                                                             <td colSpan={4} style={{ padding: '10px 12px', fontWeight: '600', fontSize: '12px', textTransform: 'uppercase', color: 'var(--notion-text-secondary)' }}>Totals</td>
-                                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: 'var(--notion-red)' }}>Rs {(financials?.stats.totalInvoiced || 0).toLocaleString()}</td>
-                                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: 'var(--notion-green)' }}>Rs {(financials?.stats.totalPaid || 0).toLocaleString()}</td>
-                                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: (financials?.stats.balance || 0) > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>Rs {(financials?.stats.balance || 0).toLocaleString()}</td>
+                                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: 'var(--notion-red)' }}>NPR {(financials?.stats.totalInvoiced || 0).toLocaleString()}</td>
+                                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: 'var(--notion-green)' }}>NPR {(financials?.stats.totalPaid || 0).toLocaleString()}</td>
+                                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: (financials?.stats.balance || 0) > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>NPR {(financials?.stats.balance || 0).toLocaleString()}</td>
                                                         </tr>
                                                     </tfoot>
                                                 </table>
@@ -1388,13 +1258,13 @@ function GuestDetailsModal({ isOpen, guestId, onClose }: { isOpen: boolean; gues
                 onSuccess={() => fetchData()}
                 context={paymentBookingId ? {
                     bookingId: paymentBookingId,
-                    guestName: details?.fullName,
+                    guestName: getGuestDisplayName(details),
                     totalDue: financials?.stats.balance || 0,
-                    label: `Guest: ${details?.fullName || 'Unknown'}`,
+                    label: `Guest: ${getGuestDisplayName(details)}`,
                 } : {
-                    guestName: details?.fullName,
+                    guestName: getGuestDisplayName(details),
                     totalDue: financials?.stats.balance || 0,
-                    label: `Guest: ${details?.fullName || 'Unknown'}`,
+                    label: `Guest: ${getGuestDisplayName(details)}`,
                 }}
             />
         </Modal>

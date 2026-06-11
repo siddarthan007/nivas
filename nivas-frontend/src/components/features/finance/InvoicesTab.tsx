@@ -23,9 +23,15 @@ function InvoiceDetailModal({ invoice, onClose, onVoid }: {
     const grandTotal = parseFloat(invoice.grandTotal) || 0;
 
     const lineItems = [
-        { label: 'Subtotal (Room + Misc)', value: subTotal },
+        { label: 'Room Charges', value: subTotal - (invoice.lineItems?.reduce((s, li) => s + (li.description?.toLowerCase().includes('order') || li.description?.toLowerCase().includes('f&b') ? li.amount : 0), 0) || 0) },
         ...(serviceCharge > 0 ? [{ label: 'Service Charge', value: serviceCharge }] : []),
     ].filter(i => i.value > 0);
+    // Append F&B line items from invoice detail if available
+    const fbItems = invoice.lineItems?.filter(li =>
+        li.description?.toLowerCase().includes('order') ||
+        li.description?.toLowerCase().includes('f&b')
+    ) || [];
+    fbItems.forEach(fb => lineItems.push({ label: fb.description, value: fb.amount }));
 
     return (
         <Modal isOpen={!!invoice} onClose={onClose} title={`Invoice ${invoice.invoiceNumber}`} size="lg">
@@ -83,25 +89,25 @@ function InvoiceDetailModal({ invoice, onClose, onVoid }: {
                             {lineItems.map(item => (
                                 <tr key={item.label} style={{ borderBottom: '1px solid var(--notion-border)' }}>
                                     <td style={{ padding: '10px 14px', color: 'var(--notion-text)' }}>{item.label}</td>
-                                    <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--notion-text)' }}>Rs {item.value.toLocaleString()}</td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--notion-text)' }}>NPR {item.value.toLocaleString()}</td>
                                 </tr>
                             ))}
                             {discount > 0 && (
                                 <tr style={{ borderBottom: '1px solid var(--notion-border)' }}>
                                     <td style={{ padding: '10px 14px', color: 'var(--notion-text)' }}>Discount</td>
-                                    <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--notion-green)' }}>-Rs {discount.toLocaleString()}</td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--notion-green)' }}>-NPR {discount.toLocaleString()}</td>
                                 </tr>
                             )}
                             {vat > 0 && (
                                 <tr style={{ borderBottom: '1px solid var(--notion-border)' }}>
                                     <td style={{ padding: '10px 14px', color: 'var(--notion-text)' }}>VAT</td>
-                                    <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--notion-text)' }}>Rs {vat.toLocaleString()}</td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--notion-text)' }}>NPR {vat.toLocaleString()}</td>
                                 </tr>
                             )}
                             <tr style={{ backgroundColor: 'var(--notion-bg-secondary)' }}>
                                 <td style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--notion-text)' }}>Grand Total</td>
                                 <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 700, fontSize: '16px', color: 'var(--notion-text)' }}>
-                                    Rs {grandTotal.toLocaleString()}
+                                    NPR {grandTotal.toLocaleString()}
                                 </td>
                             </tr>
                         </tbody>
@@ -278,7 +284,7 @@ export default function InvoicesTab({ invoices, isLoading, onVoid }: InvoicesTab
                                         </div>
                                     </td>
                                     <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: 'var(--notion-text)' }}>
-                                        Rs {(parseFloat(inv.grandTotal) || 0).toLocaleString()}
+                                        NPR {(parseFloat(inv.grandTotal) || 0).toLocaleString()}
                                     </td>
                                     <td style={{ padding: '10px 14px' }}>
                                         {inv.isVoided ? (

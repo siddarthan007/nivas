@@ -43,8 +43,8 @@ export const SettingsService = {
             tax: {
                 panNumber: hotel.panNumber,
                 vatNumber: hotel.vatNumber,
-                serviceChargeRate: parseFloat(hotel.serviceChargeRate ?? '0.10') * 100,
-                taxRate: parseFloat(hotel.taxRate ?? '0.13') * 100,
+                serviceChargeRate: parseFloat(hotel.serviceChargeRate || '0.10') * 100,
+                taxRate: parseFloat(hotel.taxRate || '0.13') * 100,
             },
             regional: {
                 currency: hotel.currency,

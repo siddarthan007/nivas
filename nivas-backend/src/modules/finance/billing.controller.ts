@@ -1,6 +1,6 @@
 import { Elysia, t } from 'elysia';
 import { db } from '../../db';
-import { orders, payments } from '../../db/schema';
+import { bookings, orders, payments } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { PERMISSIONS } from '../../config/permissions';
@@ -20,8 +20,8 @@ export const billingController = new Elysia({ prefix: '/billing' })
 
         const currentBooking = await db.query.bookings.findFirst({
             where: and(
-                eq(orders.id, bookingId),
-                eq(orders.hotelId, user.hotelId)
+                eq(bookings.id, bookingId),
+                eq(bookings.hotelId, user.hotelId)
             )
         });
 

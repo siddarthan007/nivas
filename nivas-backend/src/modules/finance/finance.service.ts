@@ -1,9 +1,10 @@
 import { db } from '../../db';
-import { payments, bookings, orders, folioCharges, invoices } from '../../db/schema';
+import { payments, bookings, orders, invoices } from '../../db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { BusinessLogicError, NotFoundError } from '../../utils/errors';
 import { AuditService } from '../system/audit.service';
 import { GLService } from './gl.service';
+import { BillingService } from './billing.service';
 import { syncTableStatus } from '../operations/table-status.service';
 
 export class FinanceService {
@@ -20,18 +21,23 @@ export class FinanceService {
                 recordedById: userId
             }).returning();
 
-            // Smart isPaid: only mark paid if cumulative payments cover totalAmount
+            // Smart isPaid: only mark paid if cumulative payments cover the ACTUAL
+            // billing grandTotal (room + F&B + taxes + extras), not just the original
+            // booking.totalAmount which is only the room rate at reservation time.
             if (data.bookingId) {
-                const booking = await tx.query.bookings.findFirst({
-                    where: and(eq(bookings.id, data.bookingId), eq(bookings.hotelId, hotelId)),
-                    columns: { totalAmount: true }
-                });
+                const billing = await BillingService.calculateBillingSummary(hotelId, data.bookingId);
                 const [payResult] = await tx.select({ total: sql<string>`COALESCE(SUM(${payments.amount}),0)` })
                     .from(payments)
                     .where(and(eq(payments.bookingId, data.bookingId), eq(payments.hotelId, hotelId)));
                 const cumulative = parseFloat(payResult?.total || '0');
-                const totalAmt = parseFloat(booking?.totalAmount || '0');
-                if (cumulative >= totalAmt && totalAmt > 0) {
+                // Include any prior overpayment credit stored on the booking.
+                const bookingRow = await tx.query.bookings.findFirst({
+                    where: and(eq(bookings.id, data.bookingId), eq(bookings.hotelId, hotelId)),
+                    columns: { creditBalance: true }
+                });
+                const creditBal = parseFloat(bookingRow?.creditBalance || '0');
+                const totalAmt = billing.grandTotal;
+                if ((cumulative + creditBal) >= totalAmt && totalAmt > 0) {
                     await tx.update(bookings)
                         .set({ isPaid: true, updatedAt: new Date() })
                         .where(and(eq(bookings.id, data.bookingId), eq(bookings.hotelId, hotelId)));
@@ -54,12 +60,25 @@ export class FinanceService {
 
             let lines: { accountId: number; debit: number; credit: number; description: string }[];
             if (data.orderId) {
-                // Order payment: Debit Cash/Bank, Credit F&B Revenue
-                const revAccount = await GLService.getOrCreateControlAccount(hotelId, '4100', 'F&B Revenue', 'REVENUE', tx);
-                lines = [
-                    { accountId: debitAccount!.id, debit: data.amount, credit: 0, description: `Order payment via ${data.paymentMethod}` },
-                    { accountId: revAccount!.id, debit: 0, credit: data.amount, description: 'F&B Revenue' }
-                ];
+                const order = await tx.query.orders.findFirst({
+                    where: and(eq(orders.id, data.orderId), eq(orders.hotelId, hotelId)),
+                    columns: { bookingId: true }
+                });
+                if (order?.bookingId) {
+                    // Booking-linked order payment: settles AR (guest folio), not direct revenue
+                    const arAccount = await GLService.getOrCreateControlAccount(hotelId, '1100', 'Accounts Receivable', 'ASSET', tx);
+                    lines = [
+                        { accountId: debitAccount!.id, debit: data.amount, credit: 0, description: `Order payment via ${data.paymentMethod}` },
+                        { accountId: arAccount!.id, debit: 0, credit: data.amount, description: 'AR Credit - Order Payment' }
+                    ];
+                } else {
+                    // Walk-in order payment: direct cash sale → F&B Revenue
+                    const revAccount = await GLService.getOrCreateControlAccount(hotelId, '4100', 'F&B Revenue', 'REVENUE', tx);
+                    lines = [
+                        { accountId: debitAccount!.id, debit: data.amount, credit: 0, description: `Order payment via ${data.paymentMethod}` },
+                        { accountId: revAccount!.id, debit: 0, credit: data.amount, description: 'F&B Revenue' }
+                    ];
+                }
             } else {
                 // Booking payment: Debit Cash/Bank, Credit AR
                 const arAccount = await GLService.getOrCreateControlAccount(hotelId, '1100', 'Accounts Receivable', 'ASSET', tx);
@@ -182,7 +201,15 @@ export class FinanceService {
             const revAccount = await GLService.getOrCreateControlAccount(hotelId, '4100', 'F&B Revenue', 'REVENUE', tx);
             const isCash = (existing.paymentMethod as string).toLowerCase() === 'cash';
             const debitAccount = isCash ? cashAccount : bankAccount;
-            const creditAccount = existing.orderId ? revAccount : arAccount;
+            // Determine whether the original payment credited AR (booking-linked) or Revenue (walk-in).
+            let creditAccount = arAccount;
+            if (existing.orderId) {
+                const order = await tx.query.orders.findFirst({
+                    where: and(eq(orders.id, existing.orderId), eq(orders.hotelId, hotelId)),
+                    columns: { bookingId: true },
+                });
+                creditAccount = order?.bookingId ? arAccount : revAccount;
+            }
 
             await GLService.postJournalEntry(
                 hotelId,
@@ -207,60 +234,6 @@ export class FinanceService {
         });
 
         return reversalPayment;
-    }
-
-    static async getCustomerFolio(hotelId: number, guestId: string) {
-        // Fetch bookings linked to this guest
-        const guestBookings = await db.query.bookings.findMany({
-            where: and(eq(bookings.hotelId, hotelId), eq(bookings.guestId, guestId)),
-            orderBy: (b, { desc }) => [desc(b.createdAt)]
-        });
-
-        // Fetch orders linked to this guest
-        const guestOrders = await db.query.orders.findMany({
-            where: and(eq(orders.hotelId, hotelId), eq(orders.guestId, guestId)),
-            with: { items: true },
-            orderBy: (o, { desc }) => [desc(o.createdAt)]
-        });
-
-        const bookingIds = guestBookings.map(b => b.id);
-        const orderIds = guestOrders.map(o => o.id);
-
-        // Get actual folio charges for all bookings
-        let folioList: any[] = [];
-        if (bookingIds.length > 0) {
-            folioList = await db.query.folioCharges.findMany({
-                where: and(eq(folioCharges.hotelId, hotelId), sql`${folioCharges.bookingId} IN ${bookingIds}`)
-            });
-        }
-
-        // Get payments using proper query
-        let guestPayments: any[] = [];
-        if (bookingIds.length > 0 || orderIds.length > 0) {
-            guestPayments = await db.query.payments.findMany({
-                where: and(
-                    eq(payments.hotelId, hotelId),
-                    sql`${payments.bookingId} IN ${bookingIds} OR ${payments.orderId} IN ${orderIds}`
-                ),
-                orderBy: (p, { desc }) => [desc(p.createdAt)]
-            });
-        }
-
-        const totalCharges = folioList.reduce((sum, c) => sum + parseFloat(c.amount || '0'), 0)
-                           + guestOrders.reduce((sum, o) => sum + parseFloat(o.totalAmount || '0'), 0);
-        const totalPaid = guestPayments.reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0);
-
-        return {
-            bookings: guestBookings,
-            orders: guestOrders,
-            folioCharges: folioList,
-            payments: guestPayments,
-            summary: {
-                totalCharges,
-                totalPaid,
-                balanceDue: totalCharges - totalPaid
-            }
-        };
     }
 }
 

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useInventory, type Warehouse, type Vendor } from '@/lib/hooks/useInventory';
+import { api } from '@/lib/api';
+import { toast } from 'sonner';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -167,7 +169,7 @@ export default function InventoryPage() {
                     <StatCard label="Total Items" value={stats.total} color="var(--notion-blue)" icon={<Package size={20} />} />
                     <StatCard label="Active" value={stats.active} color="var(--notion-green)" icon={<BarChart3 size={20} />} />
                     <StatCard label="Low Stock" value={stats.lowStock} color="var(--notion-red)" icon={<AlertTriangle size={20} />} />
-                    <StatCard label="Total Value" value={'Rs ' + (stats.totalValue || 0).toLocaleString()} color="var(--notion-green)" icon={<BarChart3 size={20} />} />
+                    <StatCard label="Total Value" value={'NPR ' + (Number(stats.totalValue) || 0).toLocaleString()} color="var(--notion-green)" icon={<BarChart3 size={20} />} />
                 </div>
 
                 <div style={{ display: 'flex', gap: 'var(--space-1)', borderBottom: '1px solid var(--notion-divider)', marginBottom: 'var(--space-6)' }}>
@@ -256,7 +258,7 @@ export default function InventoryPage() {
                             <div style={{ marginBottom: 'var(--space-4)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
                                 <div style={{ padding: '10px 16px', background: 'var(--notion-bg-secondary)', fontSize: 13, fontWeight: 600, display: 'flex', justifyContent: 'space-between' }}>
                                     <span>Payables aging (owed to suppliers)</span>
-                                    <span style={{ color: 'var(--notion-red)' }}>Total Rs {(Number(apAging.totals.total) || 0).toLocaleString()}</span>
+                                    <span style={{ color: 'var(--notion-red)' }}>Total NPR {(Number(apAging.totals.total) || 0).toLocaleString()}</span>
                                 </div>
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
@@ -269,11 +271,11 @@ export default function InventoryPage() {
                                             {apAging.vendors.map((v: any) => (
                                                 <tr key={v.vendorId} style={{ borderBottom: '1px solid var(--notion-divider)' }}>
                                                     <td style={{ padding: '8px 16px', fontWeight: 500 }}>{v.vendorName}</td>
-                                                    <td style={{ padding: '8px 16px', textAlign: 'right' }}>{v.current ? `Rs ${v.current.toLocaleString()}` : '–'}</td>
-                                                    <td style={{ padding: '8px 16px', textAlign: 'right', color: v.d30 ? 'var(--notion-orange)' : undefined }}>{v.d30 ? `Rs ${v.d30.toLocaleString()}` : '–'}</td>
-                                                    <td style={{ padding: '8px 16px', textAlign: 'right', color: v.d60 ? 'var(--notion-orange)' : undefined }}>{v.d60 ? `Rs ${v.d60.toLocaleString()}` : '–'}</td>
-                                                    <td style={{ padding: '8px 16px', textAlign: 'right', color: v.d90 ? 'var(--notion-red)' : undefined }}>{v.d90 ? `Rs ${v.d90.toLocaleString()}` : '–'}</td>
-                                                    <td style={{ padding: '8px 16px', textAlign: 'right', fontWeight: 600 }}>Rs {(Number(v.total) || 0).toLocaleString()}</td>
+                                                    <td style={{ padding: '8px 16px', textAlign: 'right' }}>{v.current ? `NPR ${(Number(v.current) || 0).toLocaleString()}` : '–'}</td>
+                                                    <td style={{ padding: '8px 16px', textAlign: 'right', color: v.d30 ? 'var(--notion-orange)' : undefined }}>{v.d30 ? `NPR ${(Number(v.d30) || 0).toLocaleString()}` : '–'}</td>
+                                                    <td style={{ padding: '8px 16px', textAlign: 'right', color: v.d60 ? 'var(--notion-orange)' : undefined }}>{v.d60 ? `NPR ${(Number(v.d60) || 0).toLocaleString()}` : '–'}</td>
+                                                    <td style={{ padding: '8px 16px', textAlign: 'right', color: v.d90 ? 'var(--notion-red)' : undefined }}>{v.d90 ? `NPR ${(Number(v.d90) || 0).toLocaleString()}` : '–'}</td>
+                                                    <td style={{ padding: '8px 16px', textAlign: 'right', fontWeight: 600 }}>NPR {(Number(v.total) || 0).toLocaleString()}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -499,7 +501,7 @@ export default function InventoryPage() {
                                 <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Items Stored</div>
                             </div>
                             <div style={{ background: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)' }}>
-                                <div style={{ fontSize: '20px', fontWeight: 700 }}>Rs {(whFinanceData.totalValue || 0).toLocaleString()}</div>
+                                <div style={{ fontSize: '20px', fontWeight: 700 }}>NPR {(whFinanceData.totalValue || 0).toLocaleString()}</div>
                                 <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Total Value</div>
                             </div>
                         </div>
@@ -514,7 +516,7 @@ export default function InventoryPage() {
                                         <tr key={it.id} style={{ borderBottom: '1px solid var(--notion-border)' }}>
                                             <td style={{ padding: '8px' }}>{it.name}</td>
                                             <td style={{ padding: '8px', textAlign: 'right' }}>{it.quantity || 0}</td>
-                                            <td style={{ padding: '8px', textAlign: 'right' }}>Rs {((it.unitCost || 0) * (it.quantity || 0)).toLocaleString()}</td>
+                                            <td style={{ padding: '8px', textAlign: 'right' }}>NPR {((it.unitCost || 0) * (it.quantity || 0)).toLocaleString()}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -538,12 +540,12 @@ export default function InventoryPage() {
                                 <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Received POs</div>
                             </div>
                             <div style={{ background: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)' }}>
-                                <div style={{ fontSize: '20px', fontWeight: 700 }}>Rs {(Number(vendorFinanceData.totalSpend) || 0).toLocaleString()}</div>
+                                <div style={{ fontSize: '20px', fontWeight: 700 }}>NPR {(Number(vendorFinanceData.totalSpend) || 0).toLocaleString()}</div>
                                 <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Total Purchased</div>
                             </div>
                             <div style={{ background: (Number(vendorFinanceData.outstanding) || 0) > 0 ? 'var(--notion-red-bg)' : 'var(--notion-green-bg)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)' }}>
-                                <div style={{ fontSize: '20px', fontWeight: 700, color: (Number(vendorFinanceData.outstanding) || 0) > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>Rs {(Number(vendorFinanceData.outstanding) || 0).toLocaleString()}</div>
-                                <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Outstanding (paid Rs {(Number(vendorFinanceData.totalPaid) || 0).toLocaleString()})</div>
+                                <div style={{ fontSize: '20px', fontWeight: 700, color: (Number(vendorFinanceData.outstanding) || 0) > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>NPR {(Number(vendorFinanceData.outstanding) || 0).toLocaleString()}</div>
+                                <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Outstanding (paid NPR {(Number(vendorFinanceData.totalPaid) || 0).toLocaleString()})</div>
                             </div>
                         </div>
                         <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: 'var(--space-3)' }}>Purchase Orders</h4>
@@ -556,7 +558,7 @@ export default function InventoryPage() {
                                     {vendorFinanceData.purchaseOrders.map((po: any) => (
                                         <tr key={po.id} style={{ borderBottom: '1px solid var(--notion-border)' }}>
                                             <td style={{ padding: '8px' }}>{po.poNumber || po.id}</td>
-                                            <td style={{ padding: '8px', textAlign: 'right' }}>Rs {(po.totalCost || 0).toLocaleString()}</td>
+                                            <td style={{ padding: '8px', textAlign: 'right' }}>NPR {(po.totalCost || 0).toLocaleString()}</td>
                                             <td style={{ padding: '8px', color: 'var(--notion-text-secondary)' }}>{po.receivedDate ? new Date(po.receivedDate).toLocaleDateString() : '-'}</td>
                                         </tr>
                                     ))}
@@ -573,7 +575,7 @@ export default function InventoryPage() {
                                             <tr key={p.id} style={{ borderBottom: '1px solid var(--notion-border)' }}>
                                                 <td style={{ padding: '8px', color: 'var(--notion-text-secondary)' }}>{new Date(p.createdAt).toLocaleDateString()}</td>
                                                 <td style={{ padding: '8px' }}>{p.paymentMethod || 'CASH'}{p.reference ? ` · ${p.reference}` : ''}</td>
-                                                <td style={{ padding: '8px', textAlign: 'right', color: 'var(--notion-green)', fontWeight: 600 }}>Rs {(Number(p.amount) || 0).toLocaleString()}</td>
+                                                <td style={{ padding: '8px', textAlign: 'right', color: 'var(--notion-green)', fontWeight: 600 }}>NPR {(Number(p.amount) || 0).toLocaleString()}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -584,7 +586,7 @@ export default function InventoryPage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-4)' }}>
                             <Button
                                 onClick={async () => {
-                                    const amt = window.prompt(`Pay supplier "${vendorFinanceTarget.name}". Amount (outstanding Rs ${(Number(vendorFinanceData.outstanding) || 0).toLocaleString()}):`);
+                                    const amt = window.prompt(`Pay supplier "${vendorFinanceTarget.name}". Amount (outstanding NPR ${(Number(vendorFinanceData.outstanding) || 0).toLocaleString()}):`);
                                     const amount = parseFloat(amt || '');
                                     if (!amount || amount <= 0) return;
                                     try {

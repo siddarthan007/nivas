@@ -1,11 +1,10 @@
 import { db } from '../../db';
-import { bookings, rooms, hotels, channelManagerSettings, channelSyncLogs, tenantFeatures, users, guests, folioCharges } from '../../db/schema';
+import { bookings, rooms, hotels, tenantFeatures, users, guests, folioCharges } from '../../db/schema';
 import { eq, and, or, ilike, desc, asc, gt, lte, lt, ne, inArray, sql, type SQL } from 'drizzle-orm';
 import { BusinessLogicError, ConflictError, NotFoundError, ValidationError } from '../../utils/errors';
 import { logAction } from '../system/audit.service';
 import { NotificationChannelService } from '../notifications/notification-channel.service';
 import { JobService } from '../system/job.service';
-import { RevenueService } from '../revenue/revenue.service';
 import { logger } from '../../shared/logger';
 import { GuestService } from '../crm/guest.service';
 import { getPaginationResult } from '../../utils/response.helper';
@@ -49,28 +48,15 @@ export class BookingsService {
             });
             if (!room) throw new NotFoundError('Room');
 
-            // Apply dynamic pricing if no explicit totalAmount provided
+            // Calculate total from base price * nights if no explicit totalAmount provided
             let finalAmount = data.totalAmount;
             if (!finalAmount || finalAmount <= 0) {
                 if (room) {
                     const basePrice = parseFloat(room.rate || '0');
-                    try {
-                        const pricing = await RevenueService.calculateDynamicPrice(
-                            hotelId,
-                            basePrice,
-                            data.checkIn,
-                            room.type || 'STANDARD'
-                        );
-                        const nights = Math.max(1, Math.ceil(
-                            (new Date(data.checkOut).getTime() - new Date(data.checkIn).getTime()) / (1000 * 60 * 60 * 24)
-                        ));
-                        finalAmount = pricing.adjustedPrice * nights;
-                    } catch {
-                        const nights = Math.max(1, Math.ceil(
-                            (new Date(data.checkOut).getTime() - new Date(data.checkIn).getTime()) / (1000 * 60 * 60 * 24)
-                        ));
-                        finalAmount = basePrice * nights;
-                    }
+                    const nights = Math.max(1, Math.ceil(
+                        (new Date(data.checkOut).getTime() - new Date(data.checkIn).getTime()) / (1000 * 60 * 60 * 24)
+                    ));
+                    finalAmount = basePrice * nights;
                 }
             }
 
@@ -108,6 +94,8 @@ export class BookingsService {
                         nationality: data.nationality,
                         idNumber: data.idNumber,
                         idType: data.idType,
+                        panNumber: data.panNumber,
+                        vatNumber: data.vatNumber,
                     }).returning();
                     if (!newGuest) throw new Error('Failed to create guest profile');
                     guestId = newGuest.id;
@@ -208,6 +196,10 @@ export class BookingsService {
         let orderBy: SQL[] = [desc(bookings.createdAt)];
 
         switch (segment) {
+            case 'active':
+                conditions.push(inArray(bookings.status, ['CONFIRMED', 'CHECKED_IN']));
+                orderBy = [asc(bookings.checkIn)];
+                break;
             case 'arrivals':
                 conditions.push(eq(bookings.status, 'CONFIRMED'), lte(bookings.checkIn, endOfToday));
                 orderBy = [asc(bookings.checkIn)];
@@ -264,6 +256,15 @@ export class BookingsService {
                 throw new BusinessLogicError(`Cannot check in a booking with status: ${existing.status}`);
             }
 
+            // Only allow check-in on the booking date or later
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const checkInDate = new Date(existing.checkIn);
+            checkInDate.setHours(0, 0, 0, 0);
+            if (checkInDate > today) {
+                throw new BusinessLogicError(`Cannot check in a future booking. Check-in date is ${checkInDate.toLocaleDateString()}.`);
+            }
+
             const [updatedBooking] = await tx.update(bookings)
                 .set({
                     status: 'CHECKED_IN',
@@ -307,6 +308,14 @@ export class BookingsService {
 
     static async checkOut(hotelId: number, userId: string, bookingId: string, ipAddress?: string) {
         const result = await db.transaction(async (tx) => {
+            const existing = await tx.query.bookings.findFirst({
+                where: and(eq(bookings.id, bookingId), eq(bookings.hotelId, hotelId))
+            });
+            if (!existing) throw new NotFoundError('Booking');
+            if (existing.status !== 'CHECKED_IN') {
+                throw new BusinessLogicError(`Cannot check out a booking with status: ${existing.status}`);
+            }
+
             const [updatedBooking] = await tx.update(bookings)
                 .set({
                     status: 'CHECKED_OUT',
@@ -701,10 +710,6 @@ export class BookingsService {
                 }
             ).catch(err => logger.error({ err }, '[Booking] Notification failed'));
 
-            // Channel Sync
-            this.syncBookingToChannels(hotelId, booking, room)
-                .catch(err => logger.error({ err }, '[Booking] Channel sync failed'));
-
             // Auto-populate the CRM with this guest (matched by phone).
             GuestService.upsertFromBooking(hotelId, {
                 fullName: booking.guestName, phone: booking.guestPhone,
@@ -760,45 +765,4 @@ export class BookingsService {
         }
     }
 
-    private static async syncBookingToChannels(hotelId: number, booking: any, room: any) {
-        try {
-            const features = await db.query.tenantFeatures.findFirst({
-                where: eq(tenantFeatures.hotelId, hotelId)
-            });
-
-            if (!features?.enableChannelManager) return;
-
-            const channels = await db.query.channelManagerSettings.findMany({
-                where: and(
-                    eq(channelManagerSettings.hotelId, hotelId),
-                    eq(channelManagerSettings.isActive, true),
-                    eq(channelManagerSettings.syncAvailability, true)
-                )
-            });
-
-            for (const channel of channels) {
-                await db.insert(channelSyncLogs).values({
-                    hotelId,
-                    channelSettingId: channel.id,
-                    syncType: 'AVAILABILITY_PUSH',
-                    direction: 'OUTBOUND',
-                    status: 'SUCCESS',
-                    recordsProcessed: 1,
-                    requestPayload: {
-                        bookingId: booking.id,
-                        roomType: room?.type,
-                        checkIn: booking.checkIn,
-                        checkOut: booking.checkOut,
-                        action: 'BLOCK'
-                    }
-                });
-
-                await db.update(channelManagerSettings)
-                    .set({ lastSyncAt: new Date() })
-                    .where(eq(channelManagerSettings.id, channel.id));
-            }
-        } catch (err) {
-            logger.error({ err }, '[Channel Manager] Sync failed');
-        }
-    }
 }

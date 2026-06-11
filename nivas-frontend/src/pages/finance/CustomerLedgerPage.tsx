@@ -64,7 +64,7 @@ export default function CustomerLedgerPage({ invoices, payments, creditNotes, is
     const ledgers: CustomerLedger[] = useMemo(() => {
         const map = new Map<string, CustomerLedger>();
 
-        invoices.forEach(inv => {
+        invoices.filter(inv => !inv.isVoided).forEach(inv => {
             const bid = inv.bookingId || inv.id;
             if (!map.has(bid)) {
                 map.set(bid, {
@@ -125,7 +125,8 @@ export default function CustomerLedgerPage({ invoices, payments, creditNotes, is
             });
         });
 
-        creditNotes.forEach(cn => {
+        const voidedInvoiceIds = new Set(invoices.filter(i => i.isVoided).map(i => i.id));
+        creditNotes.filter(cn => !voidedInvoiceIds.has(cn.originalInvoiceId)).forEach(cn => {
             const original = invoices.find(i => i.id === cn.originalInvoiceId);
             const bid = original?.bookingId || cn.originalInvoiceId;
             const name = original?.guestName || cn.originalInvoice?.guestName || 'Credit Note';

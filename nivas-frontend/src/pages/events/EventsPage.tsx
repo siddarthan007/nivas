@@ -36,12 +36,15 @@ import {
     Receipt,
     User,
     Search,
+    ChevronLeft,
+    ChevronRight,
+    Check,
 } from 'lucide-react';
 import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal';
 import { useCRM } from '@/lib/hooks/useCRM';
 
 const formatInputDate = (date: Date) => date.toISOString().slice(0, 10);
-const formatCurrency = (amount?: number) => `Rs ${(amount || 0).toLocaleString()}`;
+const formatCurrency = (amount?: number) => `NPR ${(amount || 0).toLocaleString()}`;
 
 type TabId = 'bookings' | 'calendar' | 'venues' | 'history';
 
@@ -247,11 +250,11 @@ function CreateVenueModal({ isOpen, onClose, onSubmit }: {
         <Modal isOpen={isOpen} onClose={onClose} title="Add Venue">
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                 <Input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="Venue Name *" required />
-                <Input type="number" min={1} value={formData.capacity} onChange={e => setFormData({ ...formData, capacity: parseInt(e.target.value, 10) || 50 })} placeholder="Capacity" />
+                <Input type="number" min={1} value={formData.capacity || ''} onChange={e => setFormData({ ...formData, capacity: e.target.value === '' ? 0 : parseInt(e.target.value, 10) })} placeholder="Capacity" />
                 <Input value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} placeholder="Description" />
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                    <Input type="number" min={0} value={formData.baseRateHalf || ''} onChange={e => setFormData({ ...formData, baseRateHalf: parseFloat(e.target.value) || undefined })} placeholder="Half-day Rate (Rs)" style={{ flex: 1 }} />
-                    <Input type="number" min={0} value={formData.baseRateFull || ''} onChange={e => setFormData({ ...formData, baseRateFull: parseFloat(e.target.value) || undefined })} placeholder="Full-day Rate (Rs)" style={{ flex: 1 }} />
+                    <Input type="number" min={0} value={formData.baseRateHalf || ''} onChange={e => setFormData({ ...formData, baseRateHalf: parseFloat(e.target.value) || undefined })} placeholder="Half-day Rate (NPR)" style={{ flex: 1 }} />
+                    <Input type="number" min={0} value={formData.baseRateFull || ''} onChange={e => setFormData({ ...formData, baseRateFull: parseFloat(e.target.value) || undefined })} placeholder="Full-day Rate (NPR)" style={{ flex: 1 }} />
                 </div>
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
                     <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</Button>
@@ -298,11 +301,11 @@ function EditVenueModal({ isOpen, onClose, venue, onSubmit }: {
         <Modal isOpen={isOpen} onClose={onClose} title="Edit Venue">
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                 <Input value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="Venue Name *" required />
-                <Input type="number" min={1} value={formData.capacity || 50} onChange={e => setFormData({ ...formData, capacity: parseInt(e.target.value, 10) || 50 })} placeholder="Capacity" />
+                <Input type="number" min={1} value={formData.capacity || ''} onChange={e => setFormData({ ...formData, capacity: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })} placeholder="Capacity" />
                 <Input value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} placeholder="Description" />
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                    <Input type="number" min={0} value={formData.baseRateHalf || ''} onChange={e => setFormData({ ...formData, baseRateHalf: parseFloat(e.target.value) || undefined })} placeholder="Half-day Rate (Rs)" style={{ flex: 1 }} />
-                    <Input type="number" min={0} value={formData.baseRateFull || ''} onChange={e => setFormData({ ...formData, baseRateFull: parseFloat(e.target.value) || undefined })} placeholder="Full-day Rate (Rs)" style={{ flex: 1 }} />
+                    <Input type="number" min={0} value={formData.baseRateHalf || ''} onChange={e => setFormData({ ...formData, baseRateHalf: parseFloat(e.target.value) || undefined })} placeholder="Half-day Rate (NPR)" style={{ flex: 1 }} />
+                    <Input type="number" min={0} value={formData.baseRateFull || ''} onChange={e => setFormData({ ...formData, baseRateFull: parseFloat(e.target.value) || undefined })} placeholder="Full-day Rate (NPR)" style={{ flex: 1 }} />
                 </div>
                 <Input value={(formData.amenities || []).join(', ')} onChange={e => setFormData({ ...formData, amenities: e.target.value.split(',').map(value => value.trim()).filter(Boolean) })} placeholder="Amenities (comma separated)" />
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
@@ -321,6 +324,7 @@ function CreateBookingModal({ isOpen, onClose, onSubmit, venues }: {
     venues: Venue[];
 }) {
     const { searchGuests, guests: crmGuests } = useCRM();
+    const [step, setStep] = useState(1);
     const [formData, setFormData] = useState<CreateBookingPayload>({
         banquetId: 0,
         eventName: '',
@@ -342,6 +346,11 @@ function CreateBookingModal({ isOpen, onClose, onSubmit, venues }: {
         }
     }, [formData.banquetId, venues]);
 
+    // Reset step when modal opens
+    useEffect(() => {
+        if (isOpen) setStep(1);
+    }, [isOpen]);
+
     const resetForm = () => {
         setFormData({
             banquetId: venues[0]?.id || 0,
@@ -356,6 +365,7 @@ function CreateBookingModal({ isOpen, onClose, onSubmit, venues }: {
         setDateRange([new Date(), null]);
         setIsMultiDay(false);
         setGuestSearch('');
+        setStep(1);
     };
 
     const handleDateRangeChange = (update: [Date | null, Date | null]) => {
@@ -379,8 +389,7 @@ function CreateBookingModal({ isOpen, onClose, onSubmit, venues }: {
         setGuestSearch('');
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSubmit = async () => {
         setIsSubmitting(true);
         const success = await onSubmit(formData);
         setIsSubmitting(false);
@@ -393,130 +402,166 @@ function CreateBookingModal({ isOpen, onClose, onSubmit, venues }: {
     const selectedVenue = venues.find(v => v.id === formData.banquetId);
     const suggestedAmount = selectedVenue?.baseRateFull ? Number(selectedVenue.baseRateFull) : undefined;
 
+    const canProceed = () => {
+        if (step === 1) return formData.banquetId && formData.eventName.trim() && formData.eventDate;
+        if (step === 2) return formData.contactName.trim() && formData.contactPhone.trim();
+        return true;
+    };
+
+    const stepLabelStyle: React.CSSProperties = {
+        fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em',
+        textAlign: 'center', whiteSpace: 'nowrap',
+    };
+
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Create Booking" size="lg" onSubmit={() => { (document.getElementById('event-booking-form') as HTMLFormElement)?.requestSubmit(); }}>
-            <form id="event-booking-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                <Select
-                    value={formData.banquetId}
-                    onChange={e => setFormData({ ...formData, banquetId: parseInt(e.target.value, 10) || 0 })}
-                    fullWidth
-                    options={venues.map(venue => ({ value: venue.id, label: venue.name }))}
-                />
-                {selectedVenue && (selectedVenue.baseRateHalf || selectedVenue.baseRateFull) && (
-                    <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
-                        Venue rates: {selectedVenue.baseRateHalf && `Half-day ${formatCurrency(Number(selectedVenue.baseRateHalf))}`} {selectedVenue.baseRateFull && `Full-day ${formatCurrency(Number(selectedVenue.baseRateFull))}`}
+        <Modal isOpen={isOpen} onClose={onClose} title="New Banquet Booking" size="lg">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                {/* Step indicator */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', marginBottom: 'var(--space-2)', position: 'relative' }}>
+                    <div style={{ position: 'absolute', top: '14px', left: '25%', right: '25%', display: 'flex' }}>
+                        <div style={{ flex: 1, height: '2px', backgroundColor: step > 1 ? 'var(--notion-blue)' : 'var(--notion-border)' }} />
+                    </div>
+                    {[
+                        { num: 1, label: 'Event Details' },
+                        { num: 2, label: 'Contact & Billing' },
+                        { num: 3, label: 'Confirm' },
+                    ].map(s => (
+                        <div key={s.num} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', zIndex: 1 }}>
+                            <div style={{
+                                width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: '12px', fontWeight: '600',
+                                backgroundColor: step >= s.num ? 'var(--notion-blue)' : 'var(--notion-bg-secondary)',
+                                color: step >= s.num ? 'white' : 'var(--notion-text-secondary)',
+                                border: step >= s.num ? 'none' : '1px solid var(--notion-border)',
+                            }}>
+                                {step > s.num ? <Check size={14} /> : s.num}
+                            </div>
+                            <span style={{ ...stepLabelStyle, marginTop: '6px', color: step >= s.num ? 'var(--notion-blue)' : 'var(--notion-text-secondary)' }}>{s.label}</span>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Step 1: Event Details */}
+                {step === 1 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                        <Select
+                            value={formData.banquetId}
+                            onChange={e => setFormData({ ...formData, banquetId: parseInt(e.target.value, 10) || 0 })}
+                            fullWidth
+                            options={venues.map(venue => ({ value: venue.id, label: venue.name }))}
+                        />
+                        {selectedVenue && (selectedVenue.baseRateHalf || selectedVenue.baseRateFull) && (
+                            <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
+                                Venue rates: {selectedVenue.baseRateHalf && `Half-day ${formatCurrency(Number(selectedVenue.baseRateHalf))}`} {selectedVenue.baseRateFull && `Full-day ${formatCurrency(Number(selectedVenue.baseRateFull))}`}
+                            </div>
+                        )}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                            <Input value={formData.eventName} onChange={e => setFormData({ ...formData, eventName: e.target.value })} placeholder="Event Name *" required />
+                            <Select
+                                value={formData.eventType || ''}
+                                onChange={e => {
+                                    const nextValue = e.target.value as CreateBookingPayload['eventType'] | '';
+                                    setFormData({ ...formData, eventType: nextValue || undefined });
+                                }}
+                                fullWidth
+                                options={[
+                                    { value: '', label: 'Select Event Type' },
+                                    { value: 'WEDDING', label: 'Wedding' },
+                                    { value: 'CONFERENCE', label: 'Conference' },
+                                    { value: 'BIRTHDAY', label: 'Birthday' },
+                                    { value: 'CORPORATE', label: 'Corporate' },
+                                    { value: 'OTHER', label: 'Other' },
+                                ]}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                            <input type="checkbox" id="multiDay" checked={isMultiDay} onChange={e => {
+                                setIsMultiDay(e.target.checked);
+                                if (!e.target.checked) {
+                                    setFormData(current => ({ ...current, endDate: undefined }));
+                                    setDateRange([dateRange[0], null]);
+                                }
+                            }} style={{ accentColor: 'var(--notion-blue)' }} />
+                            <label htmlFor="multiDay" style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', cursor: 'pointer' }}>Multi-day event</label>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)' }}>
+                            {isMultiDay ? (
+                                <CustomDatePicker label="Event Dates" selectsRange startDate={dateRange[0]} endDate={dateRange[1]} onChange={handleDateRangeChange as any} minDate={new Date()} required />
+                            ) : (
+                                <CustomDatePicker label="Event Date" selected={formData.eventDate ? new Date(formData.eventDate) : null} onChange={date => setFormData({ ...formData, eventDate: date ? formatInputDate(date) : '' })} minDate={new Date()} required />
+                            )}
+                            <TimePicker label="Start Time" value={formData.startTime} onChange={v => setFormData({ ...formData, startTime: v })} />
+                            <TimePicker label="End Time" value={formData.endTime} onChange={v => setFormData({ ...formData, endTime: v })} />
+                        </div>
+                        <Input type="number" min={1} value={formData.expectedGuests || ''} onChange={e => setFormData({ ...formData, expectedGuests: e.target.value === '' ? 1 : parseInt(e.target.value, 10) })} placeholder="Expected Guests *" required />
                     </div>
                 )}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                    <Input value={formData.eventName} onChange={e => setFormData({ ...formData, eventName: e.target.value })} placeholder="Event Name *" required />
-                    <Select
-                        value={formData.eventType || ''}
-                        onChange={e => {
-                            const nextValue = e.target.value as CreateBookingPayload['eventType'] | '';
-                            setFormData({ ...formData, eventType: nextValue || undefined });
-                        }}
-                        fullWidth
-                        options={[
-                            { value: '', label: 'Select Event Type' },
-                            { value: 'WEDDING', label: 'Wedding' },
-                            { value: 'CONFERENCE', label: 'Conference' },
-                            { value: 'BIRTHDAY', label: 'Birthday' },
-                            { value: 'CORPORATE', label: 'Corporate' },
-                            { value: 'OTHER', label: 'Other' },
-                        ]}
-                    />
-                </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                    <input
-                        type="checkbox"
-                        id="multiDay"
-                        checked={isMultiDay}
-                        onChange={e => {
-                            setIsMultiDay(e.target.checked);
-                            if (!e.target.checked) {
-                                setFormData(current => ({ ...current, endDate: undefined }));
-                                setDateRange([dateRange[0], null]);
-                            }
-                        }}
-                        style={{ accentColor: 'var(--notion-blue)' }}
-                    />
-                    <label htmlFor="multiDay" style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', cursor: 'pointer' }}>Multi-day event</label>
-                </div>
-
-                {/* Date & Time row — consistent 3-column grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)', width: '100%' }}>
-                    {isMultiDay ? (
-                        <CustomDatePicker
-                            label="Event Dates"
-                            selectsRange
-                            startDate={dateRange[0]}
-                            endDate={dateRange[1]}
-                            onChange={handleDateRangeChange as any}
-                            minDate={new Date()}
-                            required
-                        />
-                    ) : (
-                        <CustomDatePicker
-                            label="Event Date"
-                            selected={formData.eventDate ? new Date(formData.eventDate) : null}
-                            onChange={date => setFormData({ ...formData, eventDate: date ? formatInputDate(date) : '' })}
-                            minDate={new Date()}
-                            required
-                        />
-                    )}
-                    <TimePicker label="Start Time" value={formData.startTime} onChange={v => setFormData({ ...formData, startTime: v })} />
-                    <TimePicker label="End Time" value={formData.endTime} onChange={v => setFormData({ ...formData, endTime: v })} />
-                </div>
-
-                <div style={{ position: 'relative' }}>
-                    <Input
-                        type="text"
-                        value={guestSearch}
-                        onChange={e => {
-                            setGuestSearch(e.target.value);
-                            if (e.target.value.length > 1) searchGuests(e.target.value);
-                        }}
-                        placeholder="Search customer from CRM..."
-                        icon={<Search size={16} />}
-                    />
-                    {guestSearch && crmGuests.length > 0 && (
-                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1000, maxHeight: '200px', overflowY: 'auto' }}>
-                            {crmGuests.map(guest => (
-                                <button
-                                    key={guest.id}
-                                    type="button"
-                                    onClick={() => handleGuestSelect(guest)}
-                                    style={{ width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', borderBottom: '1px solid var(--notion-border)', cursor: 'pointer', fontSize: '13px', color: 'var(--notion-text)' }}
-                                >
-                                    {[guest.firstName, guest.lastName].filter(Boolean).join(' ')} {guest.phone && `(${guest.phone})`}
-                                </button>
-                            ))}
+                {/* Step 2: Contact & Billing */}
+                {step === 2 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                        <div style={{ position: 'relative' }}>
+                            <Input type="text" value={guestSearch} onChange={e => { setGuestSearch(e.target.value); if (e.target.value.length > 1) searchGuests(e.target.value); }} placeholder="Search customer from CRM..." icon={<Search size={16} />} />
+                            {guestSearch && crmGuests.length > 0 && (
+                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1000, maxHeight: '200px', overflowY: 'auto' }}>
+                                    {crmGuests.map(guest => (
+                                        <button key={guest.id} type="button" onClick={() => handleGuestSelect(guest)} style={{ width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', borderBottom: '1px solid var(--notion-border)', cursor: 'pointer', fontSize: '13px', color: 'var(--notion-text)' }}>
+                                            {[guest.firstName, guest.lastName].filter(Boolean).join(' ')} {guest.phone && `(${guest.phone})`}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {formData.guestId && <div style={{ fontSize: '12px', color: 'var(--notion-green)', marginTop: '4px' }}>Linked to CRM guest</div>}
                         </div>
-                    )}
-                    {formData.guestId && (
-                        <div style={{ fontSize: '12px', color: 'var(--notion-green)', marginTop: '4px' }}>
-                            Linked to CRM guest
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                            <Input value={formData.contactName} onChange={e => setFormData({ ...formData, contactName: e.target.value })} placeholder="Contact Name *" required />
+                            <Input value={formData.contactPhone} onChange={e => setFormData({ ...formData, contactPhone: e.target.value })} placeholder="Contact Phone *" required />
                         </div>
-                    )}
-                </div>
+                        <Input value={formData.contactEmail} onChange={e => setFormData({ ...formData, contactEmail: e.target.value })} placeholder="Contact Email" />
+                        <textarea value={formData.specialRequirements || ''} onChange={e => setFormData({ ...formData, specialRequirements: e.target.value })} placeholder="Special requests, dietary needs, setup notes..." rows={3} style={{ width: '100%', padding: '8px', backgroundColor: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)', fontSize: '14px', outline: 'none', color: 'var(--notion-text)', resize: 'vertical' }} />
+                        <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+                            <Input type="number" min={0} value={formData.totalAmount || ''} onChange={e => setFormData({ ...formData, totalAmount: parseFloat(e.target.value) || undefined })} placeholder={`Total Amount${suggestedAmount ? ` (suggested: ${formatCurrency(suggestedAmount)})` : ''}`} style={{ flex: 1 }} />
+                            <Input type="number" min={0} value={formData.advanceAmount || ''} onChange={e => setFormData({ ...formData, advanceAmount: parseFloat(e.target.value) || undefined })} placeholder="Advance Amount" style={{ flex: 1 }} />
+                        </div>
+                    </div>
+                )}
 
-                <Input value={formData.contactName} onChange={e => setFormData({ ...formData, contactName: e.target.value })} placeholder="Contact Name *" required />
-                <Input value={formData.contactPhone} onChange={e => setFormData({ ...formData, contactPhone: e.target.value })} placeholder="Contact Phone *" required />
-                <Input type="number" min={1} value={formData.expectedGuests} onChange={e => setFormData({ ...formData, expectedGuests: parseInt(e.target.value, 10) || 1 })} placeholder="Expected Guests" required />
+                {/* Step 3: Review */}
+                {step === 3 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                        <div style={{ backgroundColor: 'var(--notion-bg)', borderRadius: 'var(--radius-md)', border: '1px solid var(--notion-border)', padding: 'var(--space-4)' }}>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)', marginBottom: 'var(--space-3)' }}>Booking Summary</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
+                                <div><strong style={{ color: 'var(--notion-text)' }}>Venue:</strong> {selectedVenue?.name || '—'}</div>
+                                <div><strong style={{ color: 'var(--notion-text)' }}>Event:</strong> {formData.eventName || '—'}</div>
+                                <div><strong style={{ color: 'var(--notion-text)' }}>Date:</strong> {formData.eventDate}{formData.endDate ? ` – ${formData.endDate}` : ''}</div>
+                                <div><strong style={{ color: 'var(--notion-text)' }}>Time:</strong> {formData.startTime} – {formData.endTime}</div>
+                                <div><strong style={{ color: 'var(--notion-text)' }}>Guests:</strong> {formData.expectedGuests || '—'}</div>
+                                <div><strong style={{ color: 'var(--notion-text)' }}>Type:</strong> {formData.eventType || '—'}</div>
+                                <div><strong style={{ color: 'var(--notion-text)' }}>Contact:</strong> {formData.contactName} {formData.contactPhone && `(${formData.contactPhone})`}</div>
+                                <div><strong style={{ color: 'var(--notion-text)' }}>Total:</strong> {formData.totalAmount ? formatCurrency(formData.totalAmount) : '—'}</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
-                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                    <Input type="number" min={0} value={formData.totalAmount || ''} onChange={e => setFormData({ ...formData, totalAmount: parseFloat(e.target.value) || undefined })} placeholder={`Total Amount${suggestedAmount ? ` (suggested: ${formatCurrency(suggestedAmount)})` : ''}`} style={{ flex: 1 }} />
-                    <Input type="number" min={0} value={formData.advanceAmount || ''} onChange={e => setFormData({ ...formData, advanceAmount: parseFloat(e.target.value) || undefined })} placeholder="Advance Amount" style={{ flex: 1 }} />
-                </div>
-
-                <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                    <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</Button>
-                    <Button type="submit" disabled={isSubmitting || !formData.banquetId || !formData.eventName.trim() || !formData.contactName.trim() || !formData.contactPhone.trim()} style={{ flex: 1 }}>
-                        {isSubmitting ? 'Creating...' : 'Create'}
+                {/* Navigation */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-2)' }}>
+                    <Button variant="secondary" onClick={() => { if (step === 1) { resetForm(); onClose(); } else setStep(step - 1); }}>
+                        {step === 1 ? 'Cancel' : <><ChevronLeft size={14} style={{ marginRight: '4px' }} /> Back</>}
                     </Button>
+                    {step < 3 ? (
+                        <Button onClick={() => setStep(step + 1)} disabled={!canProceed()}>
+                            Next <ChevronRight size={14} style={{ marginLeft: '4px' }} />
+                        </Button>
+                    ) : (
+                        <Button onClick={handleSubmit} disabled={isSubmitting || !canProceed()}>
+                            <Check size={14} style={{ marginRight: '4px' }} />
+                            {isSubmitting ? 'Creating...' : 'Confirm Booking'}
+                        </Button>
+                    )}
                 </div>
-            </form>
+            </div>
         </Modal>
     );
 }

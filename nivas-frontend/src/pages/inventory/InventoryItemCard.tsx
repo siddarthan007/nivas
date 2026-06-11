@@ -157,7 +157,7 @@ export default function InventoryItemCard({ item, onEdit, onAdjust, onDelete }: 
                         Value
                     </div>
                     <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--notion-green)' }}>
-                        Rs {((item.costPrice || 0) * (item.currentStock || 0)).toLocaleString()}
+                        NPR {((item.costPrice || 0) * (item.currentStock || 0)).toLocaleString()}
                     </div>
                 </div>
                 {item.warehouse && (

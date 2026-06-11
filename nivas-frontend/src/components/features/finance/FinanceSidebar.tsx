@@ -45,7 +45,6 @@ const SECTIONS: Section[] = [
             { id: 'balance-sheet', label: 'Balance Sheet' },
         ],
     },
-    { id: 'revenue', label: 'Revenue Analytics', icon: TrendingUp },
     {
         id: 'operations',
         label: 'Operations',

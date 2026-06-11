@@ -20,7 +20,10 @@ import {
     CheckCircle,
     AlertTriangle,
     User,
-    Trash2
+    Trash2,
+    Search,
+    ChevronDown,
+    ChevronUp,
 } from 'lucide-react';
 import type { HousekeepingTask, HousekeepingStatus, HousekeepingPriority, HousekeepingTaskType, CreateHousekeepingPayload } from '@/lib/types/api.types';
 import SecurityConfirmModal from '@/components/modals/SecurityConfirmModal';
@@ -30,7 +33,7 @@ const STATUS_COLORS: Record<HousekeepingStatus, { bg: string; text: string; labe
     PENDING: { bg: 'var(--notion-yellow-bg)', text: 'var(--notion-orange)', label: 'Pending' },
     IN_PROGRESS: { bg: 'var(--notion-blue-bg)', text: 'var(--notion-blue)', label: 'In Progress' },
     COMPLETED: { bg: 'var(--notion-green-bg)', text: 'var(--notion-green)', label: 'Completed' },
-    DONE: { bg: 'var(--notion-bg-hover)', text: 'var(--notion-text-secondary)', label: 'Done' },
+    DONE: { bg: 'var(--notion-green-bg)', text: 'var(--notion-green)', label: 'Done' },
 };
 
 // Priority colors
@@ -212,6 +215,19 @@ function TaskCard({
     );
 }
 
+// Date bucket helper
+function getDateBucket(dateStr: string): string {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(startOfToday); startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+    const startOfWeek = new Date(startOfToday); startOfWeek.setDate(startOfWeek.getDate() - 6);
+    if (d >= startOfToday) return 'Today';
+    if (d >= startOfYesterday) return 'Yesterday';
+    if (d >= startOfWeek) return 'This Week';
+    return 'Older';
+}
+
 // Kanban Column
 function KanbanColumn({
     title,
@@ -231,10 +247,31 @@ function KanbanColumn({
     collapsible?: boolean;
 }) {
     const [expanded, setExpanded] = useState(false);
+    const [search, setSearch] = useState('');
     const VISIBLE = 3;
+
+    const filtered = expanded && search.trim()
+        ? tasks.filter(t =>
+            (t.room?.number?.toString() || '').includes(search) ||
+            (t.taskType || '').toLowerCase().includes(search.toLowerCase()) ||
+            (t.notes || '').toLowerCase().includes(search.toLowerCase()) ||
+            (t.assignedTo?.fullName || '').toLowerCase().includes(search.toLowerCase())
+        )
+        : tasks;
+
     const stackMode = collapsible && !expanded && tasks.length > VISIBLE;
-    const visible = stackMode ? tasks.slice(0, VISIBLE) : tasks;
+    const visible = stackMode ? filtered.slice(0, VISIBLE) : filtered;
     const stackedCount = tasks.length - VISIBLE;
+
+    const grouped = expanded && !stackMode
+        ? visible.reduce<Record<string, HousekeepingTask[]>>((acc, t) => {
+            const bucket = getDateBucket(t.createdAt);
+            (acc[bucket] = acc[bucket] || []).push(t);
+            return acc;
+        }, {})
+        : null;
+    const bucketOrder = ['Today', 'Yesterday', 'This Week', 'Older'];
+
     return (
         <div style={{
             flex: 1,
@@ -273,6 +310,15 @@ function KanbanColumn({
                 }}>
                     {tasks.length}
                 </span>
+                {collapsible && (
+                    <button
+                        onClick={() => setExpanded(v => !v)}
+                        title={expanded ? 'Collapse' : 'Expand'}
+                        style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text-secondary)', display: 'flex', padding: 2 }}
+                    >
+                        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </button>
+                )}
             </div>
 
             <div style={{
@@ -291,15 +337,70 @@ function KanbanColumn({
                     </div>
                 ) : (
                     <>
-                        {visible.map(task => (
-                            <TaskCard
-                                key={task.id}
-                                task={task}
-                                onStart={() => onStart(task.id)}
-                                onComplete={() => onComplete(task.id)}
-                                onDelete={() => onDelete(task)}
-                            />
-                        ))}
+                        {expanded && collapsible && (
+                            <div style={{ position: 'relative' }}>
+                                <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--notion-text-secondary)' }} />
+                                <input
+                                    type="text"
+                                    value={search}
+                                    onChange={e => setSearch(e.target.value)}
+                                    placeholder="Search completed tasks..."
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px 10px 8px 32px',
+                                        borderRadius: 'var(--radius-md)',
+                                        border: '1px solid var(--notion-border)',
+                                        backgroundColor: 'var(--notion-bg)',
+                                        color: 'var(--notion-text)',
+                                        fontSize: '13px',
+                                        outline: 'none',
+                                    }}
+                                />
+                            </div>
+                        )}
+
+                        {grouped
+                            ? bucketOrder.map(bucket => {
+                                const bucketTasks = grouped[bucket];
+                                if (!bucketTasks?.length) return null;
+                                return (
+                                    <div key={bucket}>
+                                        <div style={{
+                                            fontSize: '11px',
+                                            fontWeight: '600',
+                                            color: 'var(--notion-text-secondary)',
+                                            textTransform: 'uppercase',
+                                            letterSpacing: '0.5px',
+                                            marginBottom: 'var(--space-2)',
+                                            marginTop: 'var(--space-2)',
+                                        }}>
+                                            {bucket} ({bucketTasks.length})
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                            {bucketTasks.map(task => (
+                                                <TaskCard
+                                                    key={task.id}
+                                                    task={task}
+                                                    onStart={() => onStart(task.id)}
+                                                    onComplete={() => onComplete(task.id)}
+                                                    onDelete={() => onDelete(task)}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                            : visible.map(task => (
+                                <TaskCard
+                                    key={task.id}
+                                    task={task}
+                                    onStart={() => onStart(task.id)}
+                                    onComplete={() => onComplete(task.id)}
+                                    onDelete={() => onDelete(task)}
+                                />
+                            ))
+                        }
+
                         {stackMode && (
                             <button
                                 onClick={() => setExpanded(true)} title="Show all completed"
@@ -319,11 +420,6 @@ function KanbanColumn({
                                 <span style={{ position: 'absolute', inset: 0, zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: 'var(--notion-text)' }}>
                                     +{stackedCount} more completed — view
                                 </span>
-                            </button>
-                        )}
-                        {collapsible && expanded && tasks.length > VISIBLE && (
-                            <button onClick={() => setExpanded(false)} style={{ marginTop: 4, padding: '6px', border: '1px dashed var(--notion-border)', borderRadius: 'var(--radius-md)', background: 'transparent', color: 'var(--notion-text-secondary)', cursor: 'pointer', fontSize: 12 }}>
-                                Collapse completed
                             </button>
                         )}
                     </>

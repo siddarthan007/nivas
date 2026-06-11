@@ -47,12 +47,13 @@ const PlansPage = lazy(() => import("@/pages/plans/PlansPage"));
 const FinancePage = lazy(() => import("@/pages/finance/FinancePage"));
 const CRMPage = lazy(() => import("@/pages/crm/CRMPage"));
 const EventsPage = lazy(() => import("@/pages/events/EventsPage"));
+const CreateCustomerPage = lazy(() => import("@/pages/guests/CreateCustomerPage"));
+const CheckInPage = lazy(() => import("@/pages/bookings/CheckInPage"));
 const KitchenDisplayPage = lazy(() => import("@/pages/kitchen/KitchenDisplayPage"));
 const MessagesPage = lazy(() => import("@/pages/communications/MessagesPage"));
 const FacilitiesPage = lazy(() => import("@/pages/operations/FacilitiesPage"));
 const MaintenancePage = lazy(() => import("@/pages/operations/MaintenancePage"));
 const CorporatePage = lazy(() => import("@/pages/corporate/CorporatePage"));
-const ChannelManagerPage = lazy(() => import("@/pages/saas/ChannelManagerPage"));
 const SaaSBillingPage = lazy(() => import("@/pages/saas/SaaSBillingPage"));
 const GuestPage = lazy(() => import("@/pages/guests/GuestPage"));
 const CustomerDetailPage = lazy(() => import("@/pages/guests/CustomerDetailPage"));
@@ -110,8 +111,9 @@ const hotelRoutes: Record<string, RouteConfig> = {
   '/hotel/maintenance': { component: MaintenancePage, permission: PERMISSIONS.OPERATIONS.SETUP_FACILITIES },
   '/hotel/corporate': { component: CorporatePage, permission: PERMISSIONS.CRM.MANAGE_GUESTS },
   '/hotel/billing': { component: SaaSBillingPage, permission: PERMISSIONS.SAAS_ADMIN.MANAGE_SUBSCRIPTIONS },
-  '/hotel/channel-manager': { component: ChannelManagerPage, permission: PERMISSIONS.SETTINGS.MANAGE_GENERAL },
   '/hotel/guests': { component: GuestPage, permission: PERMISSIONS.CRM.VIEW_GUESTS },
+  '/hotel/guests/new': { component: CreateCustomerPage, permission: PERMISSIONS.CRM.MANAGE_GUESTS },
+  '/hotel/bookings/checkin': { component: CheckInPage, permission: PERMISSIONS.BOOKINGS.UPDATE },
   '/hotel/profile': { component: ProfilePage },
   '/hotel/finance/customer-ledger': { component: CustomerLedgerDetailPage, permission: PERMISSIONS.FINANCE.VIEW_RECORDS },
 };

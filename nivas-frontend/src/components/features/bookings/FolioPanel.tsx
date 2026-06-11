@@ -90,7 +90,7 @@ export default function FolioPanel({ isOpen, bookingId, onClose, otherBookings, 
                                             <div style={{ fontSize: 13, color: 'var(--notion-text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.description}</div>
                                             <div style={{ fontSize: 11, color: 'var(--notion-text-muted)' }}>{c.type}{locked ? ' · invoiced' : ''}</div>
                                         </div>
-                                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--notion-text)', whiteSpace: 'nowrap' }}>Rs {Number(c.amount).toLocaleString()}</div>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--notion-text)', whiteSpace: 'nowrap' }}>NPR {Number(c.amount).toLocaleString()}</div>
                                         {!locked && targets.length > 0 && (
                                             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                                                 <select value={moveTarget[c.id] || ''} onChange={e => setMoveTarget(prev => ({ ...prev, [c.id]: e.target.value }))}
@@ -114,7 +114,7 @@ export default function FolioPanel({ isOpen, bookingId, onClose, otherBookings, 
                         <Row label="Total charges" value={data.summary.totalCharges} />
                         <Row label="Payments" value={data.summary.totalPayments} />
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: 'var(--notion-text)', borderTop: '1px solid var(--notion-divider)', paddingTop: 6 }}>
-                            <span>Balance due</span><span>Rs {Number(data.summary.balance || 0).toLocaleString()}</span>
+                            <span>Balance due</span><span>NPR {Number(data.summary.balance || 0).toLocaleString()}</span>
                         </div>
                     </div>
                 )}
@@ -126,7 +126,7 @@ export default function FolioPanel({ isOpen, bookingId, onClose, otherBookings, 
 function Row({ label, value }: { label: string; value?: number }) {
     return (
         <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--notion-text-secondary)' }}>
-            <span>{label}</span><span>Rs {Number(value || 0).toLocaleString()}</span>
+            <span>{label}</span><span>NPR {Number(value || 0).toLocaleString()}</span>
         </div>
     );
 }

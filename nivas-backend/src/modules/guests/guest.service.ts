@@ -21,6 +21,7 @@ export const GuestService = {
         idType?: string;
         idNumber?: string;
         panNumber?: string;
+        vatNumber?: string;
         openingDueAmount?: string;
         photoUrl?: string;
         signatureUrl?: string;
@@ -53,7 +54,8 @@ export const GuestService = {
                 ilike(guests.phone, search),
                 ilike(guests.email, search),
                 ilike(guests.idNumber, search),
-                ilike(guests.panNumber, search)
+                ilike(guests.panNumber, search),
+                ilike(guests.vatNumber, search)
             )!);
         }
 
@@ -257,7 +259,7 @@ export const GuestService = {
             'firstName', 'lastName', 'fullName', 'uniqueId', 'phone', 'email',
             'fatherName', 'dob', 'occupation', 'nationality',
             'address', 'city', 'country',
-            'idType', 'idNumber', 'panNumber',
+            'idType', 'idNumber', 'panNumber', 'vatNumber',
             'openingDueAmount', 'photoUrl', 'signatureUrl', 'customerType',
             'notes', 'isVip', 'isBanned'
         ];

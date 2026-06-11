@@ -465,11 +465,11 @@ export default function StaffPage() {
                                         <tr key={p.id} style={{ borderBottom: '1px solid var(--notion-border)' }}>
                                             <td style={{ padding: '12px 16px', fontWeight: '500' }}>{p.employeeName}</td>
                                             <td style={{ padding: '12px 16px', color: 'var(--notion-text-secondary)' }}>{p.periodStart} to {p.periodEnd}</td>
-                                            <td style={{ padding: '12px 16px', textAlign: 'right' }}>${p.baseSalary.toFixed(2)}</td>
+                                            <td style={{ padding: '12px 16px', textAlign: 'right' }}>NPR {p.baseSalary.toLocaleString()}</td>
                                             <td style={{ padding: '12px 16px', textAlign: 'right', color: p.bonuses - p.deductions >= 0 ? 'var(--notion-green)' : 'var(--notion-red)' }}>
-                                                {p.bonuses - p.deductions >= 0 ? '+' : '-'}${Math.abs(p.bonuses - p.deductions).toFixed(2)}
+                                                {p.bonuses - p.deductions >= 0 ? '+' : '-'}NPR {Math.abs(p.bonuses - p.deductions).toLocaleString()}
                                             </td>
-                                            <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600' }}>${p.netPay.toFixed(2)}</td>
+                                            <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600' }}>NPR {p.netPay.toLocaleString()}</td>
                                             <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                                                 <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '12px', backgroundColor: p.status === 'PAID' ? 'var(--notion-green-bg)' : 'var(--notion-yellow-bg)', color: p.status === 'PAID' ? 'var(--notion-green)' : 'var(--notion-yellow)' }}>
                                                     {p.status}
@@ -534,16 +534,16 @@ export default function StaffPage() {
                         </div>
                         <div>
                             <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Base Salary</label>
-                            <Input type="number" min="0" step="0.01" value={newPayroll.baseSalary.toString()} onChange={e => setNewPayroll({...newPayroll, baseSalary: parseFloat(e.target.value) || 0})} required />
+                            <Input type="number" min="0" step="0.01" value={newPayroll.baseSalary || ''} onChange={e => setNewPayroll({...newPayroll, baseSalary: e.target.value === '' ? 0 : parseFloat(e.target.value)})} required />
                         </div>
                         <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
                             <div style={{ flex: 1 }}>
                                 <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Bonuses</label>
-                                <Input type="number" min="0" step="0.01" value={newPayroll.bonuses.toString()} onChange={e => setNewPayroll({...newPayroll, bonuses: parseFloat(e.target.value) || 0})} />
+                                <Input type="number" min="0" step="0.01" value={newPayroll.bonuses || ''} onChange={e => setNewPayroll({...newPayroll, bonuses: e.target.value === '' ? 0 : parseFloat(e.target.value)})} />
                             </div>
                             <div style={{ flex: 1 }}>
                                 <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>Deductions</label>
-                                <Input type="number" min="0" step="0.01" value={newPayroll.deductions.toString()} onChange={e => setNewPayroll({...newPayroll, deductions: parseFloat(e.target.value) || 0})} />
+                                <Input type="number" min="0" step="0.01" value={newPayroll.deductions || ''} onChange={e => setNewPayroll({...newPayroll, deductions: e.target.value === '' ? 0 : parseFloat(e.target.value)})} />
                             </div>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>

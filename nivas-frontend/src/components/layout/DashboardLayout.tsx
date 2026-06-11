@@ -66,7 +66,7 @@ function LicenseRibbon() {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
     const { impersonation, user } = useAuth();
-    const { plan } = useHotelPlan();
+    const { plan, isLoading: planLoading } = useHotelPlan();
     const { can } = usePermissions();
 
     // Calculate extra top padding for banners
@@ -74,11 +74,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <SidebarProvider>
             <ImpersonationBanner />
 
-            {/* Floating support button (hotel staff) — contacts set by SaaS admin. */}
-            {user?.userType !== 'SUPER_ADMIN' && <SupportButton />}
+            {/* Floating support button (hotel staff) — contacts set by SaaS admin.
+                Drops to AI button position when AI is not enabled in the plan. */}
+            {user?.userType !== 'SUPER_ADMIN' && (
+                <SupportButton bottomOffset={(!planLoading && !plan.featureIds.includes('enableAi')) ? 24 : 90} />
+            )}
 
-            {/* Floating "Ask your hotel" AI assistant (staff). Self-hides if AI off. */}
-            {user?.userType !== 'SUPER_ADMIN' && can('analytics:view_operations') && (
+            {/* Floating "Ask your hotel" AI assistant (staff). Only shown when AI feature is enabled in plan. */}
+            {user?.userType !== 'SUPER_ADMIN' && can('analytics:view_operations') && !planLoading && plan.featureIds.includes('enableAi') && (
                 <AiChatLauncher
                     endpoint="/ai/ask" field="question"
                     title="Ask your hotel" subtitle="AI analytics"

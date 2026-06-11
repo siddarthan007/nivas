@@ -37,7 +37,10 @@ export const NightAuditService = {
             let totalRoomRevenue = 0;
 
             for (const booking of activeBookings) {
-                const nightlyRate = parseFloat(booking.room.rate || '0');
+                const nights = Math.max(1, Math.ceil(
+                    (new Date(booking.checkOut).getTime() - new Date(booking.checkIn).getTime()) / (1000 * 60 * 60 * 24)
+                ));
+                const nightlyRate = parseFloat(booking.totalAmount || '0') / nights;
 
                 if (nightlyRate > 0) {
                     await tx.insert(folioCharges).values({
@@ -45,17 +48,19 @@ export const NightAuditService = {
                         bookingId: booking.id,
                         date: auditDateStr,
                         description: `Room Charge - Night of ${auditDateStr}`,
-                        amount: nightlyRate.toString(),
+                        amount: nightlyRate.toFixed(2),
                         type: 'ROOM_CHARGE'
                     });
                     totalRoomRevenue += nightlyRate;
                 }
             }
 
-            const fnbResult = await tx.select({ total: sum(orders.totalAmount) })
+            // Only count SERVED orders; use subTotal (pre-tax) to match room revenue basis.
+            const fnbResult = await tx.select({ total: sum(orders.subTotal) })
                 .from(orders)
                 .where(and(
                     eq(orders.hotelId, hotelId),
+                    eq(orders.status, 'SERVED'),
                     sql`DATE(${orders.createdAt}) = ${auditDateStr}`
                 ));
 

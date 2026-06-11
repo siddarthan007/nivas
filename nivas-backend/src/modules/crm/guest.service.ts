@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { guestProfiles, bookings } from '../../db/schema';
-import { eq, and, like, desc } from 'drizzle-orm';
+import { eq, and, like, desc, sql } from 'drizzle-orm';
 import { NotFoundError } from '../../utils/errors';
 
 export const GuestService = {
@@ -42,10 +42,37 @@ export const GuestService = {
             filters.push(like(guestProfiles.fullName, `%${query}%`));
         }
 
-        return await db.query.guestProfiles.findMany({
+        const profiles = await db.query.guestProfiles.findMany({
             where: and(...filters),
             orderBy: [desc(guestProfiles.updatedAt)],
             limit: 50
+        });
+
+        // Compute stays and total spend dynamically from bookings (matched by phone)
+        const phoneList = profiles.map(p => p.phone).filter(Boolean) as string[];
+        if (phoneList.length === 0) return profiles;
+
+        const stayCounts = await db.select({
+            phone: bookings.guestPhone,
+            count: sql<number>`count(${bookings.id})`,
+            total: sql<number>`COALESCE(SUM(${bookings.totalAmount}::numeric), 0)`
+        })
+            .from(bookings)
+            .where(and(
+                eq(bookings.hotelId, hotelId),
+                sql`${bookings.guestPhone} IN ${phoneList}`
+            ))
+            .groupBy(bookings.guestPhone);
+
+        const statsByPhone = new Map(stayCounts.map(s => [s.phone, { count: Number(s.count), total: Number(s.total) }]));
+
+        return profiles.map(p => {
+            const stats = statsByPhone.get(p.phone);
+            return {
+                ...p,
+                totalStays: stats?.count ?? p.totalStays ?? 0,
+                totalSpend: (stats?.total ?? Number(p.totalSpend ?? 0)).toString()
+            };
         });
     },
 

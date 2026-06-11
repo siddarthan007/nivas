@@ -169,8 +169,8 @@ export default function PaymentsTab({ payments, isLoading, onVoid, onRecordPayme
                                             <span style={{ color: 'var(--notion-text)', fontWeight: 500 }}>{payment.paymentMethod.replace('_', ' ')}</span>
                                         </span>
                                     </td>
-                                    <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: 'var(--notion-green)' }}>
-                                        +NPR {(parseFloat(payment.amount) || 0).toLocaleString()}
+                                    <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: parseFloat(payment.amount) < 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>
+                                        {parseFloat(payment.amount) < 0 ? '-' : '+'}NPR {Math.abs(parseFloat(payment.amount) || 0).toLocaleString()}
                                     </td>
                                     <td style={{ padding: '10px 14px', color: 'var(--notion-text-secondary)', fontSize: '13px' }}>
                                         {payment.transactionId || '—'}

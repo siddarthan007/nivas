@@ -106,7 +106,7 @@ function MenuItemCard({
                         fontWeight: '700',
                         color: 'var(--notion-green)',
                     }}>
-                        Rs {item.price}
+                        NPR {item.price}
                     </span>
                 </div>
 
@@ -268,7 +268,7 @@ function MenuFormModal({
                     </div>
                     <div>
                         <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: '4px', display: 'block' }}>
-                            Price (Rs ) *
+                            Price (NPR) *
                         </label>
                         <Input
                             type="number"

@@ -74,7 +74,7 @@ function TabNav({ activeTab, onTabChange }: { activeTab: string; onTabChange: (t
 }
 
 // Company Card
-function CompanyCard({ company, onEdit, onDelete }: { company: Company; onEdit: () => void; onDelete: () => void }) {
+function CompanyCard({ company, onEdit, onDelete, onViewLedger }: { company: Company; onEdit: () => void; onDelete: () => void; onViewLedger: () => void }) {
     return (
         <div style={{
             backgroundColor: 'var(--notion-bg-secondary)',
@@ -87,6 +87,16 @@ function CompanyCard({ company, onEdit, onDelete }: { company: Company; onEdit: 
                     {company.companyName}
                 </div>
                 <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
+                    <button
+                        onClick={onViewLedger}
+                        style={{
+                            background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
+                            color: 'var(--notion-text-secondary)', borderRadius: 'var(--radius-sm)',
+                        }}
+                        title="View ledger"
+                    >
+                        <Receipt size={14} />
+                    </button>
                     <button
                         onClick={onEdit}
                         style={{
@@ -125,8 +135,13 @@ function CompanyCard({ company, onEdit, onDelete }: { company: Company; onEdit: 
                     <span style={{ color: 'var(--notion-green)' }}>{company.discountPercentage}% discount</span>
                 )}
                 {company.creditLimit && (
-                    <span style={{ color: 'var(--notion-blue)' }}>Rs {(company.creditLimit || 0).toLocaleString()} limit</span>
+                    <span style={{ color: 'var(--notion-blue)' }}>NPR {(company.creditLimit || 0).toLocaleString()} limit</span>
                 )}
+            </div>
+            <div style={{ marginTop: 'var(--space-3)' }}>
+                <Button variant="secondary" size="sm" onClick={onViewLedger} style={{ width: '100%' }}>
+                    <Receipt size={12} style={{ marginRight: '4px' }} /> View Ledger
+                </Button>
             </div>
         </div>
     );
@@ -187,8 +202,19 @@ function AgentCard({ agent, onEdit, onDelete }: { agent: TravelAgent; onEdit: ()
 }
 
 // Guest Card
+function getCRMGuestDisplayName(guest: Guest): string {
+    const name = guest.fullName?.trim() || [guest.firstName, guest.lastName].filter(Boolean).join(' ').trim();
+    if (name) return name;
+    if (guest.phone?.trim()) return guest.phone.trim();
+    if (guest.email?.trim()) return guest.email.trim();
+    if (guest.uniqueId?.trim()) return `Guest #${guest.uniqueId.trim()}`;
+    return 'Unknown Guest';
+}
+
 function GuestCard({ guest, onToggleVip, onViewLedger }: { guest: Guest; onToggleVip: () => void; onViewLedger: () => void }) {
-    const fullName = [guest.firstName, guest.lastName].filter(Boolean).join(' ') || 'Unknown Guest';
+    const displayName = getCRMGuestDisplayName(guest);
+    const stays = guest.stays ?? guest.totalStays ?? 0;
+    const spend = Number(guest.totalSpend || 0);
     return (
         <div style={{
             backgroundColor: 'var(--notion-bg-secondary)',
@@ -207,7 +233,7 @@ function GuestCard({ guest, onToggleVip, onViewLedger }: { guest: Guest; onToggl
                         <User size={16} />
                     </div>
                     <div>
-                        <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--notion-text)' }}>{fullName}</div>
+                        <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--notion-text)' }}>{displayName}</div>
                         {guest.isVip && (
                             <span style={{ fontSize: '11px', color: 'var(--notion-yellow)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
                                 <Star size={10} fill="currentColor" /> VIP
@@ -238,10 +264,10 @@ function GuestCard({ guest, onToggleVip, onViewLedger }: { guest: Guest; onToggl
             )}
             <div style={{ display: 'flex', gap: 'var(--space-4)', marginTop: 'var(--space-3)', fontSize: '12px' }}>
                 <span style={{ color: 'var(--notion-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Hash size={12} /> {guest.stays ?? 0} stays
+                    <Hash size={12} /> {stays} stays
                 </span>
                 <span style={{ color: 'var(--notion-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Receipt size={12} /> NPR {guest.totalSpend?.toLocaleString() ?? 0}
+                    <Receipt size={12} /> NPR {spend.toLocaleString()}
                 </span>
             </div>
             <div style={{ marginTop: 'var(--space-3)' }}>
@@ -355,8 +381,8 @@ function CreateAgentModal({ isOpen, onClose, onSubmit }: {
                     step="0.01"
                     min="0"
                     max="1"
-                    value={formData.commissionRate}
-                    onChange={e => setFormData({ ...formData, commissionRate: parseFloat(e.target.value) || 0 })}
+                    value={formData.commissionRate || ''}
+                    onChange={e => setFormData({ ...formData, commissionRate: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
                     placeholder="Commission Rate (0.10 = 10%)"
                 />
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
@@ -513,7 +539,7 @@ function EditAgentModal({ isOpen, onClose, agent, onSubmit }: {
                     min="0"
                     max="1"
                     value={formData.commissionRate ?? ''}
-                    onChange={e => setFormData({ ...formData, commissionRate: parseFloat(e.target.value) || 0 })}
+                    onChange={e => setFormData({ ...formData, commissionRate: e.target.value === '' ? 0 : parseFloat(e.target.value) })}
                     placeholder="Commission Rate (0.10 = 10%)"
                 />
                 <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
@@ -573,6 +599,113 @@ function DeleteConfirmModal({ isOpen, onClose, onConfirm, entityName, entityType
     );
 }
 
+// Company Ledger Modal
+function CompanyLedgerModal({ isOpen, onClose, company, ledger, onAddEntry }: {
+    isOpen: boolean;
+    onClose: () => void;
+    company: Company | null;
+    ledger: { company: Company; entries: any[]; balance: number } | null;
+    onAddEntry: (data: { entryType: string; description: string; credit?: number }) => Promise<boolean>;
+}) {
+    const [entryForm, setEntryForm] = useState({ entryType: 'PAYMENT', description: '', credit: 0 });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        const success = await onAddEntry({
+            entryType: entryForm.entryType,
+            description: entryForm.description,
+            credit: entryForm.credit || 0
+        });
+        setIsSubmitting(false);
+        if (success) {
+            setEntryForm({ entryType: 'PAYMENT', description: '', credit: 0 });
+        }
+    };
+
+    if (!company) return null;
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={`Ledger — ${company.companyName}`} size="xl">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxHeight: '70vh', overflow: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-4)', backgroundColor: 'var(--notion-bg-tertiary)', borderRadius: 'var(--radius-lg)' }}>
+                    <div>
+                        <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Current Balance</div>
+                        <div style={{ fontSize: '24px', fontWeight: '700', color: (ledger?.balance || 0) > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>
+                            NPR {(ledger?.balance || 0).toLocaleString()}
+                        </div>
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>
+                        {ledger?.entries?.length || 0} entries
+                    </div>
+                </div>
+
+                {/* Add Payment */}
+                <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-end' }}>
+                    <div style={{ flex: 1 }}>
+                        <Input
+                            value={entryForm.description}
+                            onChange={e => setEntryForm({ ...entryForm, description: e.target.value })}
+                            placeholder="Payment description"
+                            required
+                        />
+                    </div>
+                    <div style={{ width: '140px' }}>
+                        <Input
+                            type="number"
+                            value={entryForm.credit || ''}
+                            onChange={e => setEntryForm({ ...entryForm, credit: parseFloat(e.target.value) || 0 })}
+                            placeholder="Amount"
+                            required
+                        />
+                    </div>
+                    <Button type="submit" disabled={isSubmitting || !entryForm.description.trim()}>
+                        {isSubmitting ? '...' : 'Record Payment'}
+                    </Button>
+                </form>
+
+                {/* Entries */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                    {(ledger?.entries || []).length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--notion-text-secondary)', fontSize: '13px' }}>
+                            No ledger entries yet.
+                        </div>
+                    ) : (
+                        (ledger?.entries || []).map((entry: any) => (
+                            <div key={entry.id} style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: 'var(--space-3)',
+                                backgroundColor: 'var(--notion-bg-secondary)',
+                                borderRadius: 'var(--radius-md)',
+                                border: '1px solid var(--notion-border)',
+                            }}>
+                                <div>
+                                    <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--notion-text)' }}>{entry.description}</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)' }}>
+                                        {entry.entryType} • {new Date(entry.createdAt).toLocaleDateString()}
+                                    </div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                    {parseFloat(entry.debit) > 0 && (
+                                        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--notion-red)' }}>+ NPR {parseFloat(entry.debit).toLocaleString()}</div>
+                                    )}
+                                    {parseFloat(entry.credit) > 0 && (
+                                        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--notion-green)' }}>- NPR {parseFloat(entry.credit).toLocaleString()}</div>
+                                    )}
+                                    <div style={{ fontSize: '11px', color: 'var(--notion-text-secondary)' }}>Bal: NPR {parseFloat(entry.balance).toLocaleString()}</div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        </Modal>
+    );
+}
+
 // Main Page
 export default function CRMPage() {
     const {
@@ -590,6 +723,9 @@ export default function CRMPage() {
         createAgent,
         updateAgent,
         deleteAgent,
+        fetchCompanyLedger,
+        addLedgerEntry,
+        companyLedger,
     } = useCRM();
 
     const [activeTab, setActiveTab] = useState('guests');
@@ -604,6 +740,9 @@ export default function CRMPage() {
     // Delete modals
     const [deletingCompany, setDeletingCompany] = useState<Company | null>(null);
     const [deletingAgent, setDeletingAgent] = useState<TravelAgent | null>(null);
+
+    // Ledger modal
+    const [viewingLedgerCompany, setViewingLedgerCompany] = useState<Company | null>(null);
 
     useEffect(() => {
         searchGuests();
@@ -731,6 +870,7 @@ export default function CRMPage() {
                                     company={company}
                                     onEdit={() => setEditingCompany(company)}
                                     onDelete={() => setDeletingCompany(company)}
+                                    onViewLedger={() => { setViewingLedgerCompany(company); fetchCompanyLedger(company.id); }}
                                 />
                             ))
                         )}
@@ -789,6 +929,14 @@ export default function CRMPage() {
                 onConfirm={() => deleteAgent(deletingAgent!.id)}
                 entityName={deletingAgent?.name || ''}
                 entityType="agent"
+            />
+
+            <CompanyLedgerModal
+                isOpen={!!viewingLedgerCompany}
+                onClose={() => setViewingLedgerCompany(null)}
+                company={viewingLedgerCompany}
+                ledger={companyLedger}
+                onAddEntry={(data) => viewingLedgerCompany ? addLedgerEntry(viewingLedgerCompany.id, { entryType: data.entryType, description: data.description, credit: data.credit }) : Promise.resolve(false)}
             />
         </DashboardLayout>
     );

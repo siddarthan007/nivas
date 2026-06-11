@@ -95,6 +95,41 @@ export const corporateController = new Elysia({ prefix: '/crm' })
         hasPermission: PERMISSIONS.CRM.MANAGE_GUESTS,
         detail: { summary: 'Delete corporate account', tags: ['CRM'] }
     })
+    .get('/companies/:id/ledger', async ({ params, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const data = await CorporateService.getLedger(user.hotelId, parseInt(params.id));
+        return createResponse(data, 'Corporate ledger fetched successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.CRM.MANAGE_GUESTS,
+        detail: { summary: 'Get corporate ledger', tags: ['CRM'] }
+    })
+    .post('/companies/:id/ledger', async ({ params, body, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const entry = await CorporateService.addLedgerEntry(user.hotelId, parseInt(params.id), body, user.id);
+        return createResponse(entry, 'Ledger entry added successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.CRM.MANAGE_GUESTS,
+        body: t.Object({
+            entryType: t.Union([t.Literal('ROOM_BOOKING'), t.Literal('F_B_ORDER'), t.Literal('BANQUET'), t.Literal('PAYMENT'), t.Literal('ADJUSTMENT')]),
+            description: t.String(),
+            debit: t.Optional(t.Number()),
+            credit: t.Optional(t.Number()),
+            referenceId: t.Optional(t.String()),
+            referenceType: t.Optional(t.String())
+        }),
+        detail: { summary: 'Add ledger entry', tags: ['CRM'] }
+    })
+    .get('/companies/:id/balance', async ({ params, user }) => {
+        if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
+        const data = await CorporateService.getCompanyWithBalance(user.hotelId, parseInt(params.id));
+        return createResponse(data, 'Company balance fetched successfully');
+    }, {
+        isSignedIn: true,
+        hasPermission: PERMISSIONS.CRM.MANAGE_GUESTS,
+        detail: { summary: 'Get company with balance', tags: ['CRM'] }
+    })
     .get('/agents/:id', async ({ params, user }) => {
         if (!user?.hotelId) throw new ValidationError('Hotel ID is required');
         const agent = await CorporateService.getAgentById(user.hotelId, parseInt(params.id));

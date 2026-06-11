@@ -29,6 +29,8 @@ import {
     Printer,
     Gift,
     X,
+    ChevronDown,
+    ChevronUp,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import DualDate from '@/components/ui/DualDate';
@@ -217,7 +219,7 @@ function OrderCard({
                             {item.quantity}× {item.menuItem?.name || `Item #${item.menuItemId}`}
                         </span>
                         <span style={{ color: 'var(--notion-text-secondary)' }}>
-                            Rs {(item.price * item.quantity).toLocaleString()}
+                            NPR {(item.price * item.quantity).toLocaleString()}
                         </span>
                     </div>
                 ))}
@@ -243,7 +245,7 @@ function OrderCard({
                     fontWeight: '600',
                     color: 'var(--notion-text)',
                 }}>
-                    Rs {(Number(order.totalAmount) || 0).toLocaleString()}
+                    NPR {(Number(order.totalAmount) || 0).toLocaleString()}
                 </span>
 
                 <div style={{ display: 'flex', gap: '6px' }}>
@@ -296,7 +298,7 @@ function OrderCard({
 }
 
 // Order Detail Modal
-function OrderDetailModal({ order, isOpen, onClose, onStatusChange, onCancel, onRefresh, openOrders = [] }: {
+function OrderDetailModal({ order, isOpen, onClose, onStatusChange, onCancel, onRefresh, openOrders = [], onAddItems, onUpdateItem }: {
     order: Order | null;
     isOpen: boolean;
     onClose: () => void;
@@ -304,14 +306,26 @@ function OrderDetailModal({ order, isOpen, onClose, onStatusChange, onCancel, on
     onCancel: (id: string) => void;
     onRefresh?: () => void;
     openOrders?: Order[];
+    onAddItems?: (id: string, items: { menuItemId: number; quantity: number; price: number; notes?: string }[]) => Promise<any>;
+    onUpdateItem?: (orderId: string, itemId: number, data: { quantity?: number; notes?: string }) => Promise<boolean>;
 }) {
     const [tables, setTables] = useState<{ id: number; tableNumber: string }[]>([]);
     const [moveTo, setMoveTo] = useState('');
     const [mergeFrom, setMergeFrom] = useState('');
     const [actionBusy, setActionBusy] = useState(false);
     const { confirm: pwConfirm, modal: pwModal } = usePasswordConfirm();
+    const [menuItems, setMenuItems] = useState<any[]>([]);
+    const [menuSearch, setMenuSearch] = useState('');
+    const [showAddItems, setShowAddItems] = useState(false);
+    const [pendingAddItems, setPendingAddItems] = useState<{ menuItemId: number; name: string; price: number; quantity: number }[]>([]);
 
     useEffect(() => {
+        if (isOpen) {
+            api.get<any[]>('/menu').then(r => setMenuItems(r.data || [])).catch(() => { });
+            setShowAddItems(false);
+            setPendingAddItems([]);
+            setMenuSearch('');
+        }
         if (isOpen && order?.orderType === 'DINE_IN') {
             api.get<{ id: number; tableNumber: string }[]>('/operations/tables')
                 .then(r => setTables(r.data || [])).catch(() => setTables([]));
@@ -390,7 +404,17 @@ function OrderDetailModal({ order, isOpen, onClose, onStatusChange, onCancel, on
 
                 {/* Items */}
                 <div>
-                    <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-2)', display: 'block' }}>Order Items</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
+                        <label style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', display: 'block' }}>Order Items</label>
+                        {isOpenOrder && (
+                            <button
+                                onClick={() => setShowAddItems(v => !v)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-blue)', fontSize: '13px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                                <Plus size={14} /> {showAddItems ? 'Hide' : 'Add Items'}
+                            </button>
+                        )}
+                    </div>
                     <div style={{ border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                         {order.items.map((item, idx) => (
                             <div key={idx} style={{
@@ -399,18 +423,52 @@ function OrderDetailModal({ order, isOpen, onClose, onStatusChange, onCancel, on
                                 borderBottom: idx < order.items.length - 1 ? '1px solid var(--notion-divider)' : 'none',
                                 backgroundColor: 'var(--notion-bg-tertiary)'
                             }}>
-                                <div>
+                                <div style={{ flex: 1 }}>
                                     <span style={{ fontSize: '13px', color: 'var(--notion-text)', fontWeight: '500' }}>{item.quantity}× {item.menuItem?.name || `Item #${item.menuItemId}`}</span>
                                     {item.notes && <span style={{ fontSize: '11px', color: 'var(--notion-text-secondary)', display: 'block' }}>{item.notes}</span>}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>Rs {(item.price * item.quantity).toLocaleString()}</span>
-                                    {order.status !== 'SERVED' && order.status !== 'CANCELLED' && (item as any).id && (
+                                    {isOpenOrder && (item as any).id && onUpdateItem && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <button
+                                                title="Decrease quantity"
+                                                onClick={async () => {
+                                                    if (item.quantity <= 1) return;
+                                                    setActionBusy(true);
+                                                    try {
+                                                        await onUpdateItem(order.id, (item as any).id, { quantity: item.quantity - 1 });
+                                                        toast.success('Quantity updated');
+                                                        onRefresh?.();
+                                                    } catch (e: any) { toast.error(e?.message || 'Failed'); }
+                                                    finally { setActionBusy(false); }
+                                                }}
+                                                disabled={actionBusy}
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text-secondary)', padding: '2px' }}
+                                            ><Minus size={14} /></button>
+                                            <span style={{ fontSize: '13px', fontWeight: '500', minWidth: '20px', textAlign: 'center' }}>{item.quantity}</span>
+                                            <button
+                                                title="Increase quantity"
+                                                onClick={async () => {
+                                                    setActionBusy(true);
+                                                    try {
+                                                        await onUpdateItem(order.id, (item as any).id, { quantity: item.quantity + 1 });
+                                                        toast.success('Quantity updated');
+                                                        onRefresh?.();
+                                                    } catch (e: any) { toast.error(e?.message || 'Failed'); }
+                                                    finally { setActionBusy(false); }
+                                                }}
+                                                disabled={actionBusy}
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text-secondary)', padding: '2px' }}
+                                            ><Plus size={14} /></button>
+                                        </div>
+                                    )}
+                                    <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>NPR {(item.price * item.quantity).toLocaleString()}</span>
+                                    {isOpenOrder && (item as any).id && (
                                         <button
                                             title="Void item"
                                             onClick={async () => {
                                                 const reason = window.prompt('Reason for voiding this item? (required)')?.trim();
-                                                if (reason == null) return;       // cancelled
+                                                if (reason == null) return;
                                                 if (!reason) { toast.error('A reason is required to void an item'); return; }
                                                 try {
                                                     await api.post(`/orders/${order.id}/items/${(item as any).id}/void`, { reason });
@@ -425,29 +483,118 @@ function OrderDetailModal({ order, isOpen, onClose, onStatusChange, onCancel, on
                             </div>
                         ))}
                     </div>
+
+                    {/* Add Items Panel */}
+                    {showAddItems && isOpenOrder && (
+                        <div style={{ marginTop: 'var(--space-3)', padding: 'var(--space-3)', backgroundColor: 'var(--notion-bg-secondary)', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)' }}>
+                            <div style={{ position: 'relative', marginBottom: 'var(--space-2)' }}>
+                                <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--notion-text-secondary)' }} />
+                                <input
+                                    type="text"
+                                    value={menuSearch}
+                                    onChange={e => setMenuSearch(e.target.value)}
+                                    placeholder="Search menu items..."
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px 10px 8px 32px',
+                                        borderRadius: 'var(--radius-md)',
+                                        border: '1px solid var(--notion-border)',
+                                        backgroundColor: 'var(--notion-bg)',
+                                        color: 'var(--notion-text)',
+                                        fontSize: '13px',
+                                        outline: 'none',
+                                    }}
+                                />
+                            </div>
+                            <div style={{ maxHeight: '140px', overflowY: 'auto', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)', padding: '4px', marginBottom: 'var(--space-2)' }}>
+                                {menuItems
+                                    .filter((mi: any) => mi.isAvailable !== false)
+                                    .filter((mi: any) => !menuSearch || mi.name?.toLowerCase().includes(menuSearch.toLowerCase()))
+                                    .map((mi: any) => (
+                                        <button key={mi.id} type="button" onClick={() => {
+                                            setPendingAddItems(prev => {
+                                                const existing = prev.find(p => p.menuItemId === mi.id);
+                                                if (existing) return prev.map(p => p.menuItemId === mi.id ? { ...p, quantity: p.quantity + 1 } : p);
+                                                return [...prev, { menuItemId: mi.id, name: mi.name, price: Number(mi.price || 0), quantity: 1 }];
+                                            });
+                                        }} style={{
+                                            display: 'flex', justifyContent: 'space-between', width: '100%', padding: '8px 10px',
+                                            background: 'none', border: 'none', cursor: 'pointer', borderRadius: 'var(--radius-sm)',
+                                            color: 'var(--notion-text)', fontSize: '13px', textAlign: 'left',
+                                        }}
+                                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--notion-bg-tertiary)'}
+                                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                        >
+                                            <span>{mi.name}</span>
+                                            <span style={{ color: 'var(--notion-text-secondary)' }}>NPR {Number(mi.price || 0).toLocaleString()}</span>
+                                        </button>
+                                    ))}
+                                {menuItems.length === 0 && <div style={{ padding: '16px', textAlign: 'center', color: 'var(--notion-text-secondary)', fontSize: '13px' }}>No menu items available.</div>}
+                            </div>
+                            {pendingAddItems.length > 0 && (
+                                <div style={{ border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden', marginBottom: 'var(--space-2)' }}>
+                                    {pendingAddItems.map(item => (
+                                        <div key={item.menuItemId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderBottom: '1px solid var(--notion-divider)' }}>
+                                            <span style={{ fontSize: '13px', color: 'var(--notion-text)' }}>{item.name}</span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <button type="button" onClick={() => setPendingAddItems(prev => prev.map(p => p.menuItemId === item.menuItemId ? { ...p, quantity: Math.max(1, p.quantity - 1) } : p))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text-secondary)', padding: '2px' }}><Minus size={14} /></button>
+                                                <span style={{ fontSize: '13px', fontWeight: '500', minWidth: '20px', textAlign: 'center' }}>{item.quantity}</span>
+                                                <button type="button" onClick={() => setPendingAddItems(prev => prev.map(p => p.menuItemId === item.menuItemId ? { ...p, quantity: p.quantity + 1 } : p))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text-secondary)', padding: '2px' }}><Plus size={14} /></button>
+                                                <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', minWidth: '60px', textAlign: 'right' }}>NPR {(item.price * item.quantity).toLocaleString()}</span>
+                                                <button type="button" onClick={() => setPendingAddItems(prev => prev.filter(p => p.menuItemId !== item.menuItemId))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-red)', padding: '2px' }}><Trash2 size={14} /></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {pendingAddItems.length > 0 && (
+                                <Button
+                                    size="sm"
+                                    onClick={async () => {
+                                        setActionBusy(true);
+                                        try {
+                                            await onAddItems?.(order.id, pendingAddItems.map(p => ({ menuItemId: p.menuItemId, quantity: p.quantity, price: p.price })));
+                                            toast.success('Items added');
+                                            setPendingAddItems([]);
+                                            setShowAddItems(false);
+                                            onRefresh?.();
+                                            // Auto-print KOT for the new items
+                                            try { await api.post(`/orders/kot/print/${order.id}`); } catch { /* silent */ }
+                                        } catch (e: any) { toast.error(e?.message || 'Failed to add items'); }
+                                        finally { setActionBusy(false); }
+                                    }}
+                                    disabled={actionBusy}
+                                    style={{ width: '100%' }}
+                                >
+                                    <Plus size={14} style={{ marginRight: '4px' }} />
+                                    Add {pendingAddItems.reduce((s, p) => s + p.quantity, 0)} item(s) & Print KOT
+                                </Button>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* Totals */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: 'var(--space-3)', backgroundColor: 'var(--notion-bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
                         <span>Subtotal</span>
-                        <span>Rs {(order.subTotal || 0).toLocaleString()}</span>
+                        <span>NPR {(Number(order.subTotal) || 0).toLocaleString()}</span>
                     </div>
-                    {(order.serviceChargeAmount || 0) > 0 && (
+                    {(Number(order.serviceChargeAmount) || 0) > 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
-                            <span>Service Charge ({((order.serviceChargeRate || 0.10) * 100).toFixed(0)}%)</span>
-                            <span>Rs {(order.serviceChargeAmount || 0).toLocaleString()}</span>
+                            <span>Service Charge ({((Number(order.serviceChargeRate) || 0.10) * 100).toFixed(0)}%)</span>
+                            <span>NPR {(Number(order.serviceChargeAmount) || 0).toLocaleString()}</span>
                         </div>
                     )}
-                    {(order.vatAmount || 0) > 0 && (
+                    {(Number(order.vatAmount) || 0) > 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
-                            <span>VAT ({((order.vatRate || 0.13) * 100).toFixed(0)}%)</span>
-                            <span>Rs {(order.vatAmount || 0).toLocaleString()}</span>
+                            <span>VAT ({((Number(order.vatRate) || 0.13) * 100).toFixed(0)}%)</span>
+                            <span>NPR {(Number(order.vatAmount) || 0).toLocaleString()}</span>
                         </div>
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: '600', color: 'var(--notion-text)', borderTop: '1px solid var(--notion-divider)', paddingTop: '6px' }}>
                         <span>Total</span>
-                        <span>Rs {(Number(order.totalAmount) || 0).toLocaleString()}</span>
+                        <span>NPR {(Number(order.totalAmount) || 0).toLocaleString()}</span>
                     </div>
                 </div>
 
@@ -504,6 +651,19 @@ function OrderDetailModal({ order, isOpen, onClose, onStatusChange, onCancel, on
     );
 }
 
+// Date bucket helper
+function getDateBucket(dateStr: string): string {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(startOfToday); startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+    const startOfWeek = new Date(startOfToday); startOfWeek.setDate(startOfWeek.getDate() - 6);
+    if (d >= startOfToday) return 'Today';
+    if (d >= startOfYesterday) return 'Yesterday';
+    if (d >= startOfWeek) return 'This Week';
+    return 'Older';
+}
+
 // Kanban Column
 function KanbanColumn({
     title,
@@ -525,12 +685,32 @@ function KanbanColumn({
     collapsible?: boolean;
 }) {
     const [expanded, setExpanded] = useState(false);
+    const [search, setSearch] = useState('');
     const VISIBLE = 3;
-    // For a "completed" column, keep the most-recent few open and compress the rest
-    // into a stacked-card pile that fans open on click (manages the never-ending pile).
+
+    const filtered = expanded && search.trim()
+        ? orders.filter(o =>
+            o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
+            (o.customerName || '').toLowerCase().includes(search.toLowerCase()) ||
+            (o.room?.number?.toString() || '').includes(search) ||
+            o.items.some(it => (it.menuItem?.name || '').toLowerCase().includes(search.toLowerCase()))
+        )
+        : orders;
+
     const stackMode = collapsible && !expanded && orders.length > VISIBLE;
-    const visible = stackMode ? orders.slice(0, VISIBLE) : orders;
+    const visible = stackMode ? filtered.slice(0, VISIBLE) : filtered;
     const stackedCount = orders.length - VISIBLE;
+
+    // Group by date bucket when expanded
+    const grouped = expanded && !stackMode
+        ? visible.reduce<Record<string, Order[]>>((acc, o) => {
+            const bucket = getDateBucket(o.createdAt);
+            (acc[bucket] = acc[bucket] || []).push(o);
+            return acc;
+        }, {})
+        : null;
+    const bucketOrder = ['Today', 'Yesterday', 'This Week', 'Older'];
+
     return (
         <div style={{
             flex: 1,
@@ -570,6 +750,15 @@ function KanbanColumn({
                 }}>
                     {orders.length}
                 </span>
+                {collapsible && (
+                    <button
+                        onClick={() => setExpanded(v => !v)}
+                        title={expanded ? 'Collapse' : 'Expand'}
+                        style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text-secondary)', display: 'flex', padding: 2 }}
+                    >
+                        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </button>
+                )}
             </div>
 
             {/* Cards */}
@@ -589,16 +778,72 @@ function KanbanColumn({
                     </div>
                 ) : (
                     <>
-                        {visible.map(order => (
-                            <OrderCard
-                                key={order.id}
-                                order={order}
-                                onStatusChange={onStatusChange}
-                                onCancel={onCancel}
-                                onRecordPayment={onRecordPayment}
-                                onView={onView}
-                            />
-                        ))}
+                        {/* Search bar inside expanded completed column */}
+                        {expanded && collapsible && (
+                            <div style={{ position: 'relative' }}>
+                                <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--notion-text-secondary)' }} />
+                                <input
+                                    type="text"
+                                    value={search}
+                                    onChange={e => setSearch(e.target.value)}
+                                    placeholder="Search completed orders..."
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px 10px 8px 32px',
+                                        borderRadius: 'var(--radius-md)',
+                                        border: '1px solid var(--notion-border)',
+                                        backgroundColor: 'var(--notion-bg)',
+                                        color: 'var(--notion-text)',
+                                        fontSize: '13px',
+                                        outline: 'none',
+                                    }}
+                                />
+                            </div>
+                        )}
+
+                        {grouped
+                            ? bucketOrder.map(bucket => {
+                                const bucketOrders = grouped[bucket];
+                                if (!bucketOrders?.length) return null;
+                                return (
+                                    <div key={bucket}>
+                                        <div style={{
+                                            fontSize: '11px',
+                                            fontWeight: '600',
+                                            color: 'var(--notion-text-secondary)',
+                                            textTransform: 'uppercase',
+                                            letterSpacing: '0.5px',
+                                            marginBottom: 'var(--space-2)',
+                                            marginTop: 'var(--space-2)',
+                                        }}>
+                                            {bucket} ({bucketOrders.length})
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                                            {bucketOrders.map(order => (
+                                                <OrderCard
+                                                    key={order.id}
+                                                    order={order}
+                                                    onStatusChange={onStatusChange}
+                                                    onCancel={onCancel}
+                                                    onRecordPayment={onRecordPayment}
+                                                    onView={onView}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                            : visible.map(order => (
+                                <OrderCard
+                                    key={order.id}
+                                    order={order}
+                                    onStatusChange={onStatusChange}
+                                    onCancel={onCancel}
+                                    onRecordPayment={onRecordPayment}
+                                    onView={onView}
+                                />
+                            ))
+                        }
 
                         {/* Stacked "book" pile for the rest of the completed items. */}
                         {stackMode && (
@@ -622,11 +867,6 @@ function KanbanColumn({
                                 <span style={{ position: 'absolute', inset: 0, zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: 'var(--notion-text)' }}>
                                     +{stackedCount} more completed — view
                                 </span>
-                            </button>
-                        )}
-                        {collapsible && expanded && orders.length > VISIBLE && (
-                            <button onClick={() => setExpanded(false)} style={{ marginTop: 4, padding: '6px', border: '1px dashed var(--notion-border)', borderRadius: 'var(--radius-md)', background: 'transparent', color: 'var(--notion-text-secondary)', cursor: 'pointer', fontSize: 12 }}>
-                                Collapse completed
                             </button>
                         )}
                     </>
@@ -934,7 +1174,7 @@ function NewOrderModal({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
                                     onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                                 >
                                     <span>{mi.name}</span>
-                                    <span style={{ color: 'var(--notion-text-secondary)' }}>Rs {Number(mi.price || 0).toLocaleString()}</span>
+                                    <span style={{ color: 'var(--notion-text-secondary)' }}>NPR {Number(mi.price || 0).toLocaleString()}</span>
                                 </button>
                             ))}
                         {menuItems.length === 0 && <div style={{ padding: '16px', textAlign: 'center', color: 'var(--notion-text-secondary)', fontSize: '13px' }}>No menu items. Add items in the Menu page first.</div>}
@@ -956,30 +1196,30 @@ function NewOrderModal({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
                                         <button type="button" onClick={() => updateQty(item.menuItemId, item.quantity - 1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text-secondary)', padding: '2px' }}><Minus size={14} /></button>
                                         <span style={{ fontSize: '13px', fontWeight: '500', minWidth: '20px', textAlign: 'center' }}>{item.quantity}</span>
                                         <button type="button" onClick={() => updateQty(item.menuItemId, item.quantity + 1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text-secondary)', padding: '2px' }}><Plus size={14} /></button>
-                                        <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', minWidth: '60px', textAlign: 'right' }}>Rs {(item.price * item.quantity).toLocaleString()}</span>
+                                        <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', minWidth: '60px', textAlign: 'right' }}>NPR {(item.price * item.quantity).toLocaleString()}</span>
                                         <button type="button" onClick={() => removeItem(item.menuItemId)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-red)', padding: '2px' }}><Trash2 size={14} /></button>
                                     </div>
                                 </div>
                             ))}
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', backgroundColor: 'var(--notion-bg-secondary)', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
                                 <span>Subtotal</span>
-                                <span>Rs {subTotal.toLocaleString()}</span>
+                                <span>NPR {subTotal.toLocaleString()}</span>
                             </div>
                             {applyServiceCharge && (
                                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', backgroundColor: 'var(--notion-bg-secondary)', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
                                     <span>Service Charge (10%)</span>
-                                    <span>Rs {serviceCharge.toLocaleString()}</span>
+                                    <span>NPR {serviceCharge.toLocaleString()}</span>
                                 </div>
                             )}
                             {applyVat && (
                                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', backgroundColor: 'var(--notion-bg-secondary)', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
                                     <span>VAT (13%)</span>
-                                    <span>Rs {vatAmount.toLocaleString()}</span>
+                                    <span>NPR {vatAmount.toLocaleString()}</span>
                                 </div>
                             )}
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: 'var(--notion-bg-tertiary)', fontWeight: '600', fontSize: '14px' }}>
                                 <span>Grand Total</span>
-                                <span>Rs {grandTotal.toLocaleString()}</span>
+                                <span>NPR {grandTotal.toLocaleString()}</span>
                             </div>
                         </div>
                     </div>
@@ -1000,7 +1240,7 @@ function NewOrderModal({ isOpen, onClose, onCreated }: { isOpen: boolean; onClos
                 <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
                     <Button type="button" variant="secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</Button>
                     <Button onClick={handleSubmit} disabled={isSubmitting || items.length === 0} style={{ flex: 1 }}>
-                        {isSubmitting ? 'Creating...' : `Create Order (Rs ${grandTotal.toLocaleString()})`}
+                        {isSubmitting ? 'Creating...' : `Create Order (NPR ${grandTotal.toLocaleString()})`}
                     </Button>
                 </div>
             </div>
@@ -1014,7 +1254,9 @@ export default function OrdersPage() {
         orders,
         fetchOrders,
         updateOrderStatus,
-        cancelOrder
+        cancelOrder,
+        addItemsToOrder,
+        updateOrderItem
     } = useOrders();
 
     const [showNewOrder, setShowNewOrder] = useState(false);
@@ -1140,7 +1382,7 @@ export default function OrdersPage() {
                     ].map(stat => (
                         <div key={stat.label} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                             <span style={{ fontSize: '20px', fontWeight: '600', color: stat.color }}>
-                                {stat.isCurrency ? `Rs ${(stat.value as number).toLocaleString()}` : stat.value}
+                                {stat.isCurrency ? `NPR ${(stat.value as number).toLocaleString()}` : stat.value}
                             </span>
                             <span style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{stat.label}</span>
                         </div>
@@ -1309,6 +1551,8 @@ export default function OrdersPage() {
                 onCancel={(id) => handleCancelOrder(id)}
                 onRefresh={() => fetchOrders()}
                 openOrders={orders}
+                onAddItems={addItemsToOrder}
+                onUpdateItem={updateOrderItem}
             />
 
             <RecordPaymentModal

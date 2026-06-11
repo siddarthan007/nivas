@@ -317,8 +317,8 @@ function RenewalModal({
                     </label>
                     <Input
                         type="number"
-                        value={formData.paymentAmount}
-                        onChange={e => setFormData({ ...formData, paymentAmount: Number(e.target.value) })}
+                        value={formData.paymentAmount || ''}
+                        onChange={e => setFormData({ ...formData, paymentAmount: e.target.value === '' ? 0 : Number(e.target.value) })}
                         placeholder="50000"
                         required
                     />

@@ -92,7 +92,7 @@ export default function CreditSettlementTab({ invoices, onRecordPayment }: {
                                     <td style={{ padding: '8px 12px', fontWeight: 600, color: 'var(--notion-text)' }}>{inv.invoiceNumber || inv.id.slice(0, 8)}</td>
                                     <td style={{ padding: '8px 12px', color: 'var(--notion-text)' }}>{inv.booking?.guestName || '—'}<div style={{ fontSize: 11, color: 'var(--notion-text-muted)' }}>{inv.booking?.guestPhone || ''}</div></td>
                                     <td style={{ padding: '8px 12px', color: 'var(--notion-text-secondary)', fontSize: 12 }}>{inv.booking?.checkIn ? new Date(inv.booking.checkIn).toLocaleDateString() : ''}{inv.booking?.checkOut ? ` → ${new Date(inv.booking.checkOut).toLocaleDateString()}` : ''}</td>
-                                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--notion-red)' }}>Rs {Number(inv.grandTotal || 0).toLocaleString()}</td>
+                                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--notion-red)' }}>NPR {Number(inv.grandTotal || 0).toLocaleString()}</td>
                                     <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                         <Button size="sm" onClick={() => openSettle(inv)}><CreditCard size={14} style={{ marginRight: 6 }} />Record Payment</Button>
                                     </td>
@@ -108,7 +108,7 @@ export default function CreditSettlementTab({ invoices, onRecordPayment }: {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                         <div style={{ background: 'var(--notion-bg-tertiary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)', fontSize: 13 }}>
                             <div><strong>{target.booking?.guestName || 'Guest'}</strong> · {target.booking?.guestPhone || ''}</div>
-                            <div style={{ color: 'var(--notion-text-secondary)' }}>Invoice {target.invoiceNumber} · Due Rs {Number(target.grandTotal || 0).toLocaleString()}</div>
+                            <div style={{ color: 'var(--notion-text-secondary)' }}>Invoice {target.invoiceNumber} · Due NPR {Number(target.grandTotal || 0).toLocaleString()}</div>
                         </div>
                         <div>
                             <label style={{ fontSize: 13, color: 'var(--notion-text-secondary)', display: 'block', marginBottom: 4 }}>Amount Received</label>

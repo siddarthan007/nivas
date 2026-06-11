@@ -115,8 +115,8 @@ export const PdfService = {
         const lightBg = '#F9FAFB';
 
         const money = (n: number) => `${cur} ${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        const scPct = Math.round((parseFloat(h.serviceChargeRate ?? '0.10') > 1 ? parseFloat(h.serviceChargeRate) : parseFloat(h.serviceChargeRate ?? '0.10') * 100));
-        const vatPct = Math.round((parseFloat(h.vatRate ?? '0.13') > 1 ? parseFloat(h.vatRate) : parseFloat(h.vatRate ?? '0.13') * 100));
+        const scPct = Math.round((parseFloat(h.serviceChargeRate || '0.10') > 1 ? parseFloat(h.serviceChargeRate || '0.10') : parseFloat(h.serviceChargeRate || '0.10') * 100));
+        const vatPct = Math.round((parseFloat(h.vatRate || '0.13') > 1 ? parseFloat(h.vatRate || '0.13') : parseFloat(h.vatRate || '0.13') * 100));
         const paid = (inv.paymentStatus || 'PAID');
 
         const totalsRows: any[] = [

@@ -56,17 +56,12 @@ import { attendanceController } from "./modules/iam/attendance.controller";
 import { guestActionsController } from "./modules/iam/guest-actions.controller";
 import { guestController } from "./modules/guests/guest.controller";
 import { outletsController } from "./modules/settings/outlets.controller";
-import { pricingController } from "./modules/revenue/pricing.controller";
 import { reportsController } from "./modules/reports/reports.controller";
 import { corporateController } from "./modules/corporate/corporate.controller";
-import { discountsController } from "./modules/revenue/discounts.controller";
-import { losDiscountsController } from "./modules/revenue/los-discounts.controller";
 import { kotController } from "./modules/orders/kot.controller";
 import { upsellController } from "./modules/bookings/upsells.controller";
 import { banquetsController } from "./modules/events/banquets.controller";
 import { saasSettingsController } from "./modules/saas/saas-settings.controller";
-import { channelManagerController } from "./modules/saas/channel-manager.controller";
-import { revenueController } from "./modules/revenue/revenue.controller";
 import { saasAdminController } from "./modules/saas/saas-admin.controller";
 import { saasBillingController } from "./modules/saas/saas-billing.controller";
 import { glController } from "./modules/finance/gl.controller";
@@ -161,7 +156,6 @@ const app = new Elysia()
                 { name: 'Storage', description: 'File / image uploads' },
                 { name: 'Settings', description: 'Hotel configuration, payment & messaging providers' },
                 { name: 'Bulk Import', description: 'Strict CSV import for menu items & rooms' },
-                { name: 'Revenue', description: 'Dynamic pricing & yield management' },
                 { name: 'Events', description: 'Banquets & event management' },
                 { name: 'Public', description: 'Unauthenticated — digital menu & invoice view' },
                 { name: 'SaaS', description: 'Subscription, billing & tenant settings' },
@@ -212,7 +206,6 @@ const app = new Elysia()
         .use(guestActionsController)
         .use(guestController)
         .use(outletsController)
-        .use(pricingController)
         .use(reportsController)
         .use(corporateController)
         .use(maintenanceController)
@@ -230,14 +223,10 @@ const app = new Elysia()
         .use(bulkImportController)
         .use(reviewsController)
         .use(aiController)
-        .use(discountsController)
-        .use(losDiscountsController)
         .use(kotController)
         .use(upsellController)
         .use(banquetsController)
         .use(saasSettingsController)
-        .use(channelManagerController)
-        .use(revenueController)
         .use(saasAdminController)
         .use(saasBillingController)
         .use(glController)

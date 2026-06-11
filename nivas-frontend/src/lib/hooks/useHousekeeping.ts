@@ -111,7 +111,7 @@ export function useHousekeeping() {
     // Filtered tasks by status
     const pendingTasks = tasks.filter(t => t.status === 'PENDING');
     const inProgressTasks = tasks.filter(t => t.status === 'IN_PROGRESS');
-    const completedTasks = tasks.filter(t => t.status === 'COMPLETED');
+    const completedTasks = tasks.filter(t => t.status === 'COMPLETED' || t.status === 'DONE');
 
     // Stats
     const stats = {

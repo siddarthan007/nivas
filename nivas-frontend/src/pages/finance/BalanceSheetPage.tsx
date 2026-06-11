@@ -57,7 +57,7 @@ export default function BalanceSheetPage() {
                     <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: color }} />
                     <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--notion-text)' }}>{title}</span>
                 </div>
-                <span style={{ fontWeight: 700, fontSize: '16px', color }}>Rs {total.toLocaleString()}</span>
+                <span style={{ fontWeight: 700, fontSize: '16px', color }}>NPR {total.toLocaleString()}</span>
             </div>
             <div style={{ padding: 'var(--space-2)' }}>
                 {items.length === 0 ? (

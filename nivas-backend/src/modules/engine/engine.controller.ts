@@ -123,7 +123,7 @@ export const engineController = new Elysia({ prefix: '/engine' })
         const byType: Record<string, any> = {};
         for (const r of allRooms) {
             if (taken.has(r.id)) continue;
-            if (r.status === 'MAINTENANCE' || r.status === 'OUT_OF_ORDER') continue;
+            if (r.status === 'MAINTENANCE' || r.status === 'OUT_OF_ORDER' || r.status === 'CLEANING') continue;
             const cap = r.capacity || 2;
             if (cap < guests) continue; // capacity filter
             const rate = parseFloat(r.rate || '0');
@@ -200,7 +200,7 @@ export const engineController = new Elysia({ prefix: '/engine' })
         });
         const taken = new Set(overlapping.map(b => b.roomId));
         const room = free
-            .filter(r => !taken.has(r.id) && r.status !== 'MAINTENANCE' && r.status !== 'OUT_OF_ORDER' && (r.capacity || 2) >= guests)
+            .filter(r => !taken.has(r.id) && r.status !== 'MAINTENANCE' && r.status !== 'OUT_OF_ORDER' && r.status !== 'CLEANING' && (r.capacity || 2) >= guests)
             .sort((a, b) => parseFloat(a.rate || '0') - parseFloat(b.rate || '0'))[0];
         if (!room) { set.status = 409; return createResponse(null, 'No rooms available for the selected type, dates and party size'); }
 

@@ -71,6 +71,15 @@ export const InvoiceService = {
 
             const { number, sequence, fiscalYear } = await this.getNextInvoiceNumber(hotelId, tx);
 
+            // Revenue split for proper GL credit-note reversal later.
+            const { roomCharge, ordersTotal, subTotal, serviceCharge, vat } = billingSummary;
+            let roomRev = roomCharge;
+            let fbRev = ordersTotal;
+            if (subTotal > 0 && serviceCharge > 0) {
+                roomRev += serviceCharge * (roomCharge / subTotal);
+                fbRev += serviceCharge * (ordersTotal / subTotal);
+            }
+
             const [inv] = await tx.insert(invoices).values({
                 hotelId,
                 bookingId: data.bookingId,
@@ -83,6 +92,8 @@ export const InvoiceService = {
                 serviceCharge: billingSummary.serviceCharge.toFixed(2),
                 vatAmount: billingSummary.vat.toFixed(2),
                 discountAmount: discountAmount.toFixed(2),
+                roomRevenue: roomRev.toFixed(2),
+                fbRevenue: fbRev.toFixed(2),
                 grandTotal: finalGrandTotal.toFixed(2),
                 currency: currency,
                 createdById: userId
@@ -108,9 +119,11 @@ export const InvoiceService = {
                     .where(eq(rooms.id, booking.roomId));
             }
 
-            // Auto-post to GL
+            // Auto-post to GL — split revenue by source so Room Revenue and F&B
+            // Revenue are tracked separately (proportional service-charge split).
             const arAccount = await GLService.getOrCreateControlAccount(hotelId, '1100', 'Accounts Receivable', 'ASSET', tx);
-            const revAccount = await GLService.getOrCreateControlAccount(hotelId, '4000', 'Room Revenue', 'REVENUE', tx);
+            const roomRevAccount = await GLService.getOrCreateControlAccount(hotelId, '4000', 'Room Revenue', 'REVENUE', tx);
+            const fbRevAccount = await GLService.getOrCreateControlAccount(hotelId, '4100', 'F&B Revenue', 'REVENUE', tx);
             const taxAccount = await GLService.getOrCreateControlAccount(hotelId, '2100', 'Sales Tax Payable', 'LIABILITY', tx);
             const discountAccount = await GLService.getOrCreateControlAccount(hotelId, '4900', 'Sales Discounts', 'EXPENSE', tx);
 
@@ -123,10 +136,12 @@ export const InvoiceService = {
                 lines.push({ accountId: discountAccount!.id, debit: discountAmount, credit: 0, description: 'Discount' });
             }
 
-            // Credit Revenue (Subtotal + Service Charge)
-            const revenueAmt = billingSummary.subTotal + billingSummary.serviceCharge;
-            if (revenueAmt > 0) {
-                lines.push({ accountId: revAccount!.id, debit: 0, credit: revenueAmt, description: 'Revenue' });
+            // Credit Room Revenue (room charges + their share of service charge)
+            if (roomRev > 0) {
+                lines.push({ accountId: roomRevAccount!.id, debit: 0, credit: Math.round(roomRev * 100) / 100, description: 'Room Revenue' });
+            }
+            if (fbRev > 0) {
+                lines.push({ accountId: fbRevAccount!.id, debit: 0, credit: Math.round(fbRev * 100) / 100, description: 'F&B Revenue' });
             }
 
             // Credit Tax (VAT)
@@ -317,8 +332,8 @@ export const InvoiceService = {
             tax: {
                 panNumber: hotel.panNumber,
                 vatNumber: hotel.vatNumber,
-                serviceChargeRate: parseFloat(hotel.serviceChargeRate ?? '0.10') * 100,
-                taxRate: parseFloat(hotel.taxRate ?? '0.13') * 100
+                serviceChargeRate: parseFloat(hotel.serviceChargeRate || '0.10') * 100,
+                taxRate: parseFloat(hotel.taxRate || '0.13') * 100
             },
             regional: {
                 currency: hotel.currency,

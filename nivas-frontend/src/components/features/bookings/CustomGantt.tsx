@@ -81,7 +81,7 @@ function BarTooltip({ booking, bar, isHovered }: { booking: Booking; bar: { full
                     }} />
                     <span>{statusConfig[booking.status]?.label || booking.status}</span>
                     <span style={{ opacity: 0.4 }}>·</span>
-                    <span>Rs {booking.totalAmount.toLocaleString()}</span>
+                    <span>NPR {booking.totalAmount.toLocaleString()}</span>
                     <span style={{ opacity: 0.4 }}>·</span>
                     <span>{bar.fullNights} night{bar.fullNights !== 1 ? 's' : ''}</span>
                 </div>
@@ -595,7 +595,7 @@ export default function CustomGantt({ bookings, rooms, onCreateBooking }: Custom
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                                 <CreditCard size={14} style={{ color: 'var(--notion-text-muted)', flexShrink: 0 }} />
-                                <span style={{ fontSize: '13px', color: 'var(--notion-text)' }}>Rs {selectedBooking.totalAmount.toLocaleString()}</span>
+                                <span style={{ fontSize: '13px', color: 'var(--notion-text)' }}>NPR {selectedBooking.totalAmount.toLocaleString()}</span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                                 <Clock size={14} style={{ color: 'var(--notion-text-muted)', flexShrink: 0 }} />
@@ -615,13 +615,13 @@ export default function CustomGantt({ bookings, rooms, onCreateBooking }: Custom
                                 {selectedBooking.advancePayment !== undefined && (
                                     <div>
                                         <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)', textTransform: 'uppercase' }}>Advance</div>
-                                        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--notion-green)' }}>Rs {selectedBooking.advancePayment.toLocaleString()}</div>
+                                        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--notion-green)' }}>NPR {selectedBooking.advancePayment.toLocaleString()}</div>
                                     </div>
                                 )}
                                 {selectedBooking.balanceAmount !== undefined && (
                                     <div>
                                         <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)', textTransform: 'uppercase' }}>Balance</div>
-                                        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--notion-orange)' }}>Rs {selectedBooking.balanceAmount.toLocaleString()}</div>
+                                        <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--notion-orange)' }}>NPR {selectedBooking.balanceAmount.toLocaleString()}</div>
                                     </div>
                                 )}
                             </div>

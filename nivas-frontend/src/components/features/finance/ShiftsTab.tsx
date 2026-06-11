@@ -50,7 +50,7 @@ export default function ShiftsTab({ currentShift, isLoading, onStart, onEnd }: S
 
                 <div style={{ marginBottom: 'var(--space-4)' }}>
                     <div style={{ fontSize: '14px', color: 'var(--notion-text-secondary)', marginBottom: 'var(--space-2)' }}>
-                        Starting Float: Rs {(parseFloat(currentShift.startFloat) || 0).toLocaleString()}
+                        Starting Float: NPR {(parseFloat(currentShift.startFloat) || 0).toLocaleString()}
                     </div>
                 </div>
 
@@ -58,8 +58,8 @@ export default function ShiftsTab({ currentShift, isLoading, onStart, onEnd }: S
                     <Input
                         type="number"
                         min={0}
-                        value={endCashCount}
-                        onChange={e => setEndCashCount(parseFloat(e.target.value) || 0)}
+                        value={endCashCount || ''}
+                        onChange={e => setEndCashCount(e.target.value === '' ? 0 : parseFloat(e.target.value))}
                         placeholder="Count cash in drawer"
                     />
                 </div>
@@ -93,8 +93,8 @@ export default function ShiftsTab({ currentShift, isLoading, onStart, onEnd }: S
                 <Input
                     type="number"
                     min={0}
-                    value={startFloat}
-                    onChange={e => setStartFloat(parseFloat(e.target.value) || 0)}
+                    value={startFloat || ''}
+                    onChange={e => setStartFloat(e.target.value === '' ? 0 : parseFloat(e.target.value))}
                     placeholder="Starting float amount"
                     style={{ maxWidth: '200px' }}
                 />

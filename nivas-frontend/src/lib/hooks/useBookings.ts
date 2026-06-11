@@ -9,7 +9,7 @@ function getErrorMessage(err: unknown, fallback: string): string {
     return fallback;
 }
 
-export type BookingSegment = 'all' | 'arrivals' | 'reservations' | 'inhouse' | 'departures';
+export type BookingSegment = 'all' | 'active' | 'arrivals' | 'reservations' | 'inhouse' | 'departures';
 
 export interface BookingFilters {
     page?: number;

@@ -51,15 +51,19 @@ interface CustomerLedger {
 
 interface LiveFolio {
     booking: any;
+    bookings?: any[];
     charges: any[];
     payments: any[];
     orders: any[];
+    invoices?: any[];
     summary: {
         folioTotal: number;
         ordersTotal: number;
         totalCharges: number;
         totalPayments: number;
         balance: number;
+        stayCount?: number;
+        orderCount?: number;
     };
 }
 
@@ -375,7 +379,8 @@ export default function CustomerLedgerDetailPage() {
             });
         });
 
-        creditNotes.forEach(cn => {
+        const voidedInvoiceIds = new Set(invoices.filter(i => i.isVoided).map(i => i.id));
+        creditNotes.filter(cn => !voidedInvoiceIds.has(cn.originalInvoiceId)).forEach(cn => {
             const original = invoices.find(i => i.id === cn.originalInvoiceId);
             const bid = original?.bookingId || cn.originalInvoiceId;
             const name = original?.guestName || cn.originalInvoice?.guestName || 'Credit Note';
@@ -416,26 +421,80 @@ export default function CustomerLedgerDetailPage() {
         return result;
     }, [invoices, payments, creditNotes, bookingId]);
 
+    // Unified ledger across all bookings for a guest (when viewing by guestId)
+    const guestLedger: CustomerLedger | null = useMemo(() => {
+        if (!guestId || !liveFolio) return null;
+        const entries: LedgerEntry[] = [];
+
+        (liveFolio.invoices || []).forEach((inv: any) => {
+            const amount = parseFloat(inv.grandTotal) || 0;
+            entries.push({
+                id: inv.id,
+                date: inv.createdAt,
+                description: `Invoice ${inv.invoiceNumber}`,
+                debit: amount,
+                credit: 0,
+                balance: 0,
+                type: 'invoice',
+                reference: inv.invoiceNumber,
+            });
+        });
+
+        (liveFolio.payments || []).forEach((pay: any) => {
+            const amount = parseFloat(pay.amount) || 0;
+            entries.push({
+                id: pay.id,
+                date: pay.createdAt,
+                description: `Payment (${pay.paymentMethod})`,
+                debit: 0,
+                credit: amount,
+                balance: 0,
+                type: 'payment',
+                reference: pay.transactionId || pay.id,
+            });
+        });
+
+        entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        let running = 0;
+        entries.forEach(e => {
+            running += e.debit - e.credit;
+            e.balance = running;
+        });
+
+        const firstBooking = liveFolio.bookings?.[0] || liveFolio.booking;
+        return {
+            bookingId: firstBooking?.id || guestId,
+            customerName: firstBooking?.guestName || firstBooking?.guest?.fullName || 'Guest',
+            customerPhone: firstBooking?.guestPhone,
+            totalDebit: entries.reduce((s, e) => s + e.debit, 0),
+            totalCredit: entries.reduce((s, e) => s + e.credit, 0),
+            balance: running,
+            entries,
+        };
+    }, [liveFolio, guestId]);
+
+    const activeLedger = ledger || guestLedger;
+
     const filteredEntries = useMemo(() => {
-        if (!ledger) return [];
-        if (filterType === 'all') return ledger.entries;
-        return ledger.entries.filter(e => e.type === filterType);
-    }, [ledger, filterType]);
+        if (!activeLedger) return [];
+        if (filterType === 'all') return activeLedger.entries;
+        return activeLedger.entries.filter(e => e.type === filterType);
+    }, [activeLedger, filterType]);
 
     const exportToExcel = useCallback(() => {
-        if (!ledger) return;
+        if (!activeLedger) return;
         const rows: string[][] = [];
 
         rows.push(['Nivas PMS - Customer Ledger Report']);
-        rows.push(['Guest:', ledger.customerName]);
-        rows.push(['Booking ID:', ledger.bookingId]);
-        rows.push(['Total Debits:', `NPR ${ledger.totalDebit.toLocaleString()}`]);
-        rows.push(['Total Credits:', `NPR ${ledger.totalCredit.toLocaleString()}`]);
-        rows.push(['Closing Balance:', `NPR ${Math.abs(ledger.balance).toLocaleString()} ${ledger.balance >= 0 ? 'Dr' : 'Cr'}`]);
+        rows.push(['Guest:', activeLedger.customerName]);
+        rows.push(['Booking ID:', activeLedger.bookingId]);
+        rows.push(['Total Debits:', `NPR ${activeLedger.totalDebit.toLocaleString()}`]);
+        rows.push(['Total Credits:', `NPR ${activeLedger.totalCredit.toLocaleString()}`]);
+        rows.push(['Closing Balance:', `NPR ${Math.abs(activeLedger.balance).toLocaleString()} ${activeLedger.balance >= 0 ? 'Dr' : 'Cr'}`]);
         rows.push([]);
 
         rows.push(['#', 'Date', 'Type', 'Description', 'Reference', 'Debit', 'Credit', 'Balance', 'PAN', 'Phone', 'Email', 'Check-in', 'Check-out', 'Room']);
-        ledger.entries.forEach((entry, idx) => {
+        activeLedger.entries.forEach((entry, idx) => {
             const inv = entry.type === 'invoice' ? invoices.find(i => i.id === entry.id) : null;
             rows.push([
                 String(idx + 1),
@@ -458,7 +517,7 @@ export default function CustomerLedgerDetailPage() {
 
         rows.push(['Invoice Line Items Detail']);
         rows.push(['Invoice #', 'Description', 'Qty', 'Rate', 'Amount']);
-        ledger.entries.filter(e => e.type === 'invoice').forEach(entry => {
+        activeLedger.entries.filter(e => e.type === 'invoice').forEach(entry => {
             const detail = invoiceDetails.get(entry.id);
             const items = detail?.lineItems || [];
             if (items.length === 0) {
@@ -475,12 +534,12 @@ export default function CustomerLedgerDetailPage() {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `ledger-${ledger.customerName.replace(/\s+/g, '_')}-${new Date().toISOString().slice(0, 10)}.csv`;
+        link.download = `ledger-${activeLedger.customerName.replace(/\s+/g, '_')}-${new Date().toISOString().slice(0, 10)}.csv`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
-    }, [ledger, invoices, invoiceDetails]);
+    }, [activeLedger, invoices, invoiceDetails]);
 
     if (isLoading) {
         return (
@@ -492,7 +551,7 @@ export default function CustomerLedgerDetailPage() {
         );
     }
 
-    if (!ledger && !liveFolio) {
+    if (!activeLedger && !liveFolio) {
         return (
             <DashboardLayout>
                 <div style={{ padding: 'var(--space-8)', maxWidth: '1200px', margin: '0 auto' }}>
@@ -509,11 +568,11 @@ export default function CustomerLedgerDetailPage() {
         );
     }
 
-    const stats = ledger ? [
-        { label: 'Total Debits', value: `NPR ${ledger.totalDebit.toLocaleString()}`, color: 'var(--notion-red)' },
-        { label: 'Total Credits', value: `NPR ${ledger.totalCredit.toLocaleString()}`, color: 'var(--notion-green)' },
-        { label: 'Balance', value: `NPR ${Math.abs(ledger.balance).toLocaleString()} ${ledger.balance >= 0 ? 'Dr' : 'Cr'}`, color: ledger.balance > 0 ? 'var(--notion-red)' : 'var(--notion-green)' },
-        { label: 'Transactions', value: String(ledger.entries.length), color: 'var(--notion-text)' },
+    const stats = activeLedger ? [
+        { label: 'Total Debits', value: `NPR ${activeLedger.totalDebit.toLocaleString()}`, color: 'var(--notion-red)' },
+        { label: 'Total Credits', value: `NPR ${activeLedger.totalCredit.toLocaleString()}`, color: 'var(--notion-green)' },
+        { label: 'Balance', value: `NPR ${Math.abs(activeLedger.balance).toLocaleString()} ${activeLedger.balance >= 0 ? 'Dr' : 'Cr'}`, color: activeLedger.balance > 0 ? 'var(--notion-red)' : 'var(--notion-green)' },
+        { label: 'Transactions', value: String(activeLedger.entries.length), color: 'var(--notion-text)' },
     ] : liveFolio ? [
         { label: 'Folio Charges', value: `NPR ${liveFolio.summary.folioTotal.toLocaleString()}`, color: 'var(--notion-red)' },
         { label: 'Orders', value: `NPR ${liveFolio.summary.ordersTotal.toLocaleString()}`, color: 'var(--notion-orange)' },
@@ -521,7 +580,7 @@ export default function CustomerLedgerDetailPage() {
         { label: 'Balance', value: `NPR ${Math.abs(liveFolio.summary.balance).toLocaleString()} ${liveFolio.summary.balance >= 0 ? 'Dr' : 'Cr'}`, color: liveFolio.summary.balance > 0 ? 'var(--notion-red)' : 'var(--notion-green)' },
     ] : [];
 
-    const displayName = ledger?.customerName || liveFolio?.booking?.guest?.fullName || liveFolio?.booking?.guest?.name || 'Guest';
+    const displayName = activeLedger?.customerName || liveFolio?.booking?.guestName || liveFolio?.booking?.guest?.fullName || liveFolio?.booking?.guest?.name || 'Guest';
 
     return (
         <DashboardLayout>
@@ -542,7 +601,7 @@ export default function CustomerLedgerDetailPage() {
                                 <h1 style={{ fontSize: '22px', fontWeight: 600, color: 'var(--notion-text)' }}>{displayName}</h1>
                                 <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)', display: 'flex', gap: 'var(--space-3)', marginTop: '4px' }}>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Building2 size={12} /> Guest Ledger</span>
-                                    {ledger && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Hash size={12} /> {ledger.entries.length} entries</span>}
+                                    {activeLedger && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Hash size={12} /> {activeLedger.entries.length} entries</span>}
                                 </div>
                             </div>
                         </div>
@@ -689,9 +748,9 @@ export default function CustomerLedgerDetailPage() {
                     <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
                         Generated on <DualDate date={new Date()} format="full" />
                     </div>
-                    {ledger && (
-                        <div style={{ fontSize: '15px', fontWeight: 700, color: ledger.balance > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>
-                            Closing Balance: NPR {Math.abs(ledger.balance).toLocaleString()} {ledger.balance >= 0 ? 'Dr' : 'Cr'}
+                    {activeLedger && (
+                        <div style={{ fontSize: '15px', fontWeight: 700, color: activeLedger.balance > 0 ? 'var(--notion-red)' : 'var(--notion-green)' }}>
+                            Closing Balance: NPR {Math.abs(activeLedger.balance).toLocaleString()} {activeLedger.balance >= 0 ? 'Dr' : 'Cr'}
                         </div>
                     )}
                 </div>

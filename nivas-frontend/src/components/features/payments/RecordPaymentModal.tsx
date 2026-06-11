@@ -116,7 +116,7 @@ export default function RecordPaymentModal({ isOpen, onClose, onSuccess, context
                                     fontSize: '18px', fontWeight: '700',
                                     color: context.totalDue > 0 ? 'var(--notion-red)' : 'var(--notion-green)',
                                 }}>
-                                    Rs {context.totalDue.toLocaleString()}
+                                    NPR {context.totalDue.toLocaleString()}
                                 </div>
                             </div>
                         )}
@@ -130,7 +130,7 @@ export default function RecordPaymentModal({ isOpen, onClose, onSuccess, context
                             type="number"
                             value={amount}
                             onChange={(e: any) => setAmount(e.target.value)}
-                            placeholder={context?.totalDue ? `Max Rs ${context.totalDue.toLocaleString()}` : '0.00'}
+                            placeholder={context?.totalDue ? `Max NPR ${context.totalDue.toLocaleString()}` : '0.00'}
                         />
                         {context?.totalDue && (
                             <button
@@ -141,7 +141,7 @@ export default function RecordPaymentModal({ isOpen, onClose, onSuccess, context
                                     border: 'none', cursor: 'pointer', marginTop: '4px', padding: 0,
                                 }}
                             >
-                                Pay full amount (Rs {context.totalDue.toLocaleString()})
+                                Pay full amount (NPR {context.totalDue.toLocaleString()})
                             </button>
                         )}
                     </div>
@@ -185,7 +185,7 @@ export default function RecordPaymentModal({ isOpen, onClose, onSuccess, context
                     <Button variant="secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</Button>
                     <Button onClick={handleSubmit} disabled={isSubmitting || !amount} style={{ flex: 1 }}>
                         <CreditCard size={14} style={{ marginRight: '6px' }} />
-                        {isSubmitting ? 'Recording...' : `Record Payment${amount ? ` (Rs ${parseFloat(amount || '0').toLocaleString()})` : ''}`}
+                        {isSubmitting ? 'Recording...' : `Record Payment${amount ? ` (NPR ${parseFloat(amount || '0').toLocaleString()})` : ''}`}
                     </Button>
                 </div>
             </div>

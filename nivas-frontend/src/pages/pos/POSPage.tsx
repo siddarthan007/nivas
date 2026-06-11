@@ -191,7 +191,7 @@ export default function POSPage() {
             );
             if (res.data?.discount != null) {
                 setAppliedCoupon({ couponId: res.data.couponId, code: res.data.code, discount: res.data.discount });
-                toast.success(`Coupon ${res.data.code} applied — Rs ${res.data.discount.toFixed(2)} off`);
+                toast.success(`Coupon ${res.data.code} applied — NPR ${res.data.discount.toFixed(2)} off`);
             }
         } catch (e: any) {
             toast.error(e?.message || 'Invalid coupon');
@@ -257,7 +257,7 @@ export default function POSPage() {
         }
         // Block finalizing a cash sale with insufficient tender (if entered).
         if (paymentMethod === 'CASH' && cashTendered.trim() && parseFloat(cashTendered) < cartTotal) {
-            toast.error(`Cash tendered (Rs ${parseFloat(cashTendered || '0').toFixed(2)}) is less than the total Rs ${cartTotal.toFixed(2)}`);
+            toast.error(`Cash tendered (NPR ${parseFloat(cashTendered || '0').toFixed(2)}) is less than the total NPR ${cartTotal.toFixed(2)}`);
             return;
         }
         setIsPlacing(true);
@@ -336,13 +336,13 @@ export default function POSPage() {
             <div class="center">${new Date(lastOrder.createdAt).toLocaleString()}</div>
             <div class="center">${lastOrder.orderType.replace('_', ' ')} | ${lastOrder.customerName}</div>
             <hr style="border: none; border-top: 1px dashed #000; margin: 8px 0;"/>
-            ${lastOrder.items.map((i: any) => `<div class="line"><span>${i.quantity}x ${i.name}</span><span>Rs ${(i.price * i.quantity).toFixed(2)}</span></div>`).join('')}
-            <div class="line total"><span>Subtotal</span><span>Rs ${lastOrder.subTotal.toFixed(2)}</span></div>
-            ${lastOrder.serviceCharge > 0 ? `<div class="line"><span>Service Charge</span><span>Rs ${lastOrder.serviceCharge.toFixed(2)}</span></div>` : ''}
-            ${lastOrder.vatAmount > 0 ? `<div class="line"><span>VAT</span><span>Rs ${lastOrder.vatAmount.toFixed(2)}</span></div>` : ''}
-            <div class="line total"><span>GRAND TOTAL</span><span>Rs ${lastOrder.cartTotal.toFixed(2)}</span></div>
+            ${lastOrder.items.map((i: any) => `<div class="line"><span>${i.quantity}x ${i.name}</span><span>NPR ${(i.price * i.quantity).toFixed(2)}</span></div>`).join('')}
+            <div class="line total"><span>Subtotal</span><span>NPR ${lastOrder.subTotal.toFixed(2)}</span></div>
+            ${lastOrder.serviceCharge > 0 ? `<div class="line"><span>Service Charge</span><span>NPR ${lastOrder.serviceCharge.toFixed(2)}</span></div>` : ''}
+            ${lastOrder.vatAmount > 0 ? `<div class="line"><span>VAT</span><span>NPR ${lastOrder.vatAmount.toFixed(2)}</span></div>` : ''}
+            <div class="line total"><span>GRAND TOTAL</span><span>NPR ${lastOrder.cartTotal.toFixed(2)}</span></div>
             <div class="line"><span>Payment</span><span>${lastOrder.paymentMethod}</span></div>
-            ${lastOrder.cashTendered ? `<div class="line"><span>Tendered</span><span>Rs ${lastOrder.cashTendered.toFixed(2)}</span></div><div class="line"><span>Change</span><span>Rs ${Math.max(0, change).toFixed(2)}</span></div>` : ''}
+            ${lastOrder.cashTendered ? `<div class="line"><span>Tendered</span><span>NPR ${lastOrder.cashTendered.toFixed(2)}</span></div><div class="line"><span>Change</span><span>NPR ${Math.max(0, change).toFixed(2)}</span></div>` : ''}
             <div class="footer">Thank you for dining with us!</div>
             </body></html>
         `);
@@ -520,7 +520,7 @@ export default function POSPage() {
                                             {item.description || item.category}
                                         </div>
                                         <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                            <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--notion-blue)' }}>Rs {Number(item.price).toFixed(0)}</span>
+                                            <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--notion-blue)' }}>NPR {Number(item.price).toFixed(0)}</span>
                                             <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--notion-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                 <Plus size={14} color="var(--foreground-inverse)" />
                                             </span>
@@ -569,7 +569,7 @@ export default function POSPage() {
                                     <div key={item.menuItemId} style={{ padding: '10px 12px', background: 'var(--notion-bg-secondary)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: '10px' }}>
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--notion-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
-                                            <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>Rs {item.price} each</div>
+                                            <div style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>NPR {item.price} each</div>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                                             <button onClick={() => updateQty(item.menuItemId, -1)} style={{ width: '24px', height: '24px', borderRadius: '4px', border: '1px solid var(--notion-border)', background: 'var(--notion-bg)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -581,7 +581,7 @@ export default function POSPage() {
                                             </button>
                                         </div>
                                         <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--notion-text)', minWidth: '56px', textAlign: 'right' }}>
-                                            Rs {(item.price * item.quantity).toFixed(0)}
+                                            NPR {(item.price * item.quantity).toFixed(0)}
                                         </div>
                                         <button onClick={() => removeFromCart(item.menuItemId)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--notion-text-muted)', padding: '2px' }}>
                                             <X size={14} />
@@ -614,12 +614,12 @@ export default function POSPage() {
                             {discount > 0 && (
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px', color: 'var(--notion-green)' }}>
                                     <span>Discount ({appliedCoupon?.code})</span>
-                                    <span>− Rs {discount.toFixed(2)}</span>
+                                    <span>− NPR {discount.toFixed(2)}</span>
                                 </div>
                             )}
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                                 <span style={{ fontSize: '14px', color: 'var(--notion-text-secondary)' }}>Total</span>
-                                <span style={{ fontSize: '14px', fontWeight: 600 }}>Rs {cartTotal.toFixed(2)}</span>
+                                <span style={{ fontSize: '14px', fontWeight: 600 }}>NPR {cartTotal.toFixed(2)}</span>
                             </div>
                             <Button
                                 onClick={() => setIsCheckoutOpen(true)}
@@ -627,7 +627,7 @@ export default function POSPage() {
                                 style={{ padding: '12px', fontSize: '15px', fontWeight: 600 }}
                             >
                                 <CreditCard size={16} style={{ marginRight: '6px' }} />
-                                Checkout — Rs {cartTotal.toFixed(2)}
+                                Checkout — NPR {cartTotal.toFixed(2)}
                             </Button>
                         </div>
                     )}
@@ -700,7 +700,7 @@ export default function POSPage() {
                                         <div style={{ display: 'flex', gap: '6px' }}>
                                             <select value={amenityChargeId} onChange={e => setAmenityChargeId(e.target.value)} style={{ flex: 2, padding: '8px 10px', fontSize: '13px', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)', background: 'var(--notion-bg)', color: 'var(--notion-text)' }}>
                                                 <option value="">Select charge…</option>
-                                                {amenities.map(a => <option key={a.id} value={a.id}>{a.name} — Rs {a.price.toFixed(2)}</option>)}
+                                                {amenities.map(a => <option key={a.id} value={a.id}>{a.name} — NPR {a.price.toFixed(2)}</option>)}
                                             </select>
                                             <Input type="number" min={1} value={amenityChargeQty} onChange={e => setAmenityChargeQty(e.target.value)} style={{ width: '64px' }} />
                                             <Button variant="secondary" onClick={() => chargeAmenityToRoom(bookingId)} disabled={addingAmenityCharge || !amenityChargeId}>{addingAmenityCharge ? '…' : 'Add'}</Button>
@@ -794,7 +794,7 @@ export default function POSPage() {
                             ) : (
                                 <QrCode size={80} style={{ color: 'var(--notion-text)', marginBottom: '8px' }} />
                             )}
-                            <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{paymentQrs[paymentMethod]?.label || `Scan ${paymentMethod === 'FONEPAY' ? 'Fonepay' : paymentMethod} to pay Rs ${cartTotal.toFixed(2)}`}</div>
+                            <div style={{ fontSize: '13px', color: 'var(--notion-text-secondary)' }}>{paymentQrs[paymentMethod]?.label || `Scan ${paymentMethod === 'FONEPAY' ? 'Fonepay' : paymentMethod} to pay NPR ${cartTotal.toFixed(2)}`}</div>
                             {paymentMethod === 'FONEPAY' && fonepayQr && (
                                 <div style={{ fontSize: '11px', color: 'var(--notion-text-muted)', marginTop: '4px' }}>{fonepayQr}</div>
                             )}
@@ -810,7 +810,7 @@ export default function POSPage() {
                             </div>
                             {parseFloat(cashTendered || '0') >= cartTotal && (
                                 <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--notion-green)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <Coins size={14} /> Change: Rs {(parseFloat(cashTendered || '0') - cartTotal).toFixed(2)}
+                                    <Coins size={14} /> Change: NPR {(parseFloat(cashTendered || '0') - cartTotal).toFixed(2)}
                                 </div>
                             )}
                         </div>
@@ -855,28 +855,28 @@ export default function POSPage() {
                         {cart.map(item => (
                             <div key={item.menuItemId} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
                                 <span style={{ color: 'var(--notion-text-secondary)' }}>{item.quantity}× {item.name}</span>
-                                <span style={{ color: 'var(--notion-text)', fontWeight: 500 }}>Rs {(item.price * item.quantity).toFixed(2)}</span>
+                                <span style={{ color: 'var(--notion-text)', fontWeight: 500 }}>NPR {(item.price * item.quantity).toFixed(2)}</span>
                             </div>
                         ))}
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '8px', color: 'var(--notion-text-secondary)' }}>
                             <span>Subtotal</span>
-                            <span>Rs {subTotal.toFixed(2)}</span>
+                            <span>NPR {subTotal.toFixed(2)}</span>
                         </div>
                         {applyServiceCharge && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
                                 <span>Service Charge (10%)</span>
-                                <span>Rs {serviceCharge.toFixed(2)}</span>
+                                <span>NPR {serviceCharge.toFixed(2)}</span>
                             </div>
                         )}
                         {applyVat && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
                                 <span>VAT (13%)</span>
-                                <span>Rs {vatAmount.toFixed(2)}</span>
+                                <span>NPR {vatAmount.toFixed(2)}</span>
                             </div>
                         )}
                         <div style={{ borderTop: '1px solid var(--notion-border)', marginTop: '8px', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 700 }}>
                             <span>Grand Total</span>
-                            <span>Rs {cartTotal.toFixed(2)}</span>
+                            <span>NPR {cartTotal.toFixed(2)}</span>
                         </div>
                     </div>
 
@@ -917,25 +917,25 @@ export default function POSPage() {
                             {lastOrder.items.map((item: any) => (
                                 <div key={item.menuItemId} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
                                     <span>{item.quantity}x {item.name}</span>
-                                    <span>Rs {(item.price * item.quantity).toFixed(2)}</span>
+                                    <span>NPR {(item.price * item.quantity).toFixed(2)}</span>
                                 </div>
                             ))}
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                            <span>Subtotal</span><span>Rs {lastOrder.subTotal.toFixed(2)}</span>
+                            <span>Subtotal</span><span>NPR {lastOrder.subTotal.toFixed(2)}</span>
                         </div>
                         {lastOrder.serviceCharge > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                                <span>Service Charge</span><span>Rs {lastOrder.serviceCharge.toFixed(2)}</span>
+                                <span>Service Charge</span><span>NPR {lastOrder.serviceCharge.toFixed(2)}</span>
                             </div>
                         )}
                         {lastOrder.vatAmount > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                                <span>VAT</span><span>Rs {lastOrder.vatAmount.toFixed(2)}</span>
+                                <span>VAT</span><span>NPR {lastOrder.vatAmount.toFixed(2)}</span>
                             </div>
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 700, borderTop: '1px solid var(--notion-border)', paddingTop: '8px' }}>
-                            <span>Total</span><span>Rs {lastOrder.cartTotal.toFixed(2)}</span>
+                            <span>Total</span><span>NPR {lastOrder.cartTotal.toFixed(2)}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
                             <span>Payment</span><span>{lastOrder.paymentMethod}</span>
@@ -943,10 +943,10 @@ export default function POSPage() {
                         {lastOrder.cashTendered ? (
                             <>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--notion-text-secondary)' }}>
-                                    <span>Tendered</span><span>Rs {lastOrder.cashTendered.toFixed(2)}</span>
+                                    <span>Tendered</span><span>NPR {lastOrder.cashTendered.toFixed(2)}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--notion-green)', fontWeight: 600 }}>
-                                    <span>Change</span><span>Rs {Math.max(0, lastOrder.cashTendered - lastOrder.cartTotal).toFixed(2)}</span>
+                                    <span>Change</span><span>NPR {Math.max(0, lastOrder.cashTendered - lastOrder.cartTotal).toFixed(2)}</span>
                                 </div>
                             </>
                         ) : null}

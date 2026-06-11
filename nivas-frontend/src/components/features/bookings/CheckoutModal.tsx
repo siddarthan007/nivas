@@ -44,6 +44,10 @@ interface CheckoutPreview {
         }>;
     };
     balanceDue: number;
+    creditBalance?: number;
+    billingSummary?: {
+        creditBalance?: number;
+    };
     itemized: Array<{
         description: string;
         category: 'ROOM' | 'F&B' | 'EXTRA';
@@ -172,7 +176,7 @@ export default function CheckoutModal({ isOpen, bookingId, onClose, onPreview, o
             if (res.data?.discount != null) {
                 setDiscount(String(res.data.discount));
                 setAppliedCoupon({ couponId: res.data.couponId, code: res.data.code });
-                toast.success(`Coupon ${res.data.code} — Rs ${res.data.discount.toFixed(2)} off`);
+                toast.success(`Coupon ${res.data.code} — NPR ${res.data.discount.toFixed(2)} off`);
             }
         } catch (e: any) {
             toast.error(e?.message || 'Invalid coupon');
@@ -185,7 +189,8 @@ export default function CheckoutModal({ isOpen, bookingId, onClose, onPreview, o
 
     const totalPaymentInput = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
     const discountAmt = parseFloat(discount) || 0;
-    const balanceAfterDiscount = (preview?.balanceDue || 0) - discountAmt;
+    const creditBal = preview?.creditBalance || 0;
+    const balanceAfterDiscount = Math.max(0, (preview?.balanceDue || 0) - discountAmt - creditBal);
     const remainingBalance = Math.max(0, balanceAfterDiscount - totalPaymentInput);
 
     const handleCheckout = async () => {
@@ -342,8 +347,8 @@ export default function CheckoutModal({ isOpen, bookingId, onClose, onPreview, o
                                                         {item.description}
                                                     </td>
                                                     <td style={{ padding: '8px 12px', textAlign: 'center', color: 'var(--notion-text-secondary)' }}>{item.quantity}</td>
-                                                    <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--notion-text-secondary)' }}>Rs {item.rate.toLocaleString()}</td>
-                                                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '500', color: 'var(--notion-text)' }}>Rs {item.amount.toLocaleString()}</td>
+                                                    <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--notion-text-secondary)' }}>NPR {item.rate.toLocaleString()}</td>
+                                                    <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '500', color: 'var(--notion-text)' }}>NPR {item.amount.toLocaleString()}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -364,7 +369,7 @@ export default function CheckoutModal({ isOpen, bookingId, onClose, onPreview, o
                                             style={{ flex: 2, padding: '8px 10px', fontSize: '13px', border: '1px solid var(--notion-border)', borderRadius: 'var(--radius-md)', background: 'var(--notion-bg)', color: 'var(--notion-text)' }}
                                         >
                                             <option value="">Select amenity / charge…</option>
-                                            {amenities.map(a => <option key={a.id} value={a.id}>{a.name} — Rs {a.price.toFixed(2)}</option>)}
+                                            {amenities.map(a => <option key={a.id} value={a.id}>{a.name} — NPR {a.price.toFixed(2)}</option>)}
                                         </select>
                                         <Input type="number" min={1} value={amenityQty} onChange={e => setAmenityQty(e.target.value)} style={{ width: '70px' }} />
                                         <Button variant="secondary" onClick={addAmenityCharge} disabled={addingAmenity || !amenityId} style={{ whiteSpace: 'nowrap' }}>
@@ -385,42 +390,48 @@ export default function CheckoutModal({ isOpen, bookingId, onClose, onPreview, o
                             }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                                     <span style={{ color: 'var(--notion-text-secondary)' }}>Room Charges</span>
-                                    <span style={{ color: 'var(--notion-text)' }}>Rs {preview.charges.roomCharges.toLocaleString()}</span>
+                                    <span style={{ color: 'var(--notion-text)' }}>NPR {preview.charges.roomCharges.toLocaleString()}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                                     <span style={{ color: 'var(--notion-text-secondary)' }}>Food & Beverage</span>
-                                    <span style={{ color: 'var(--notion-text)' }}>Rs {preview.charges.foodBeverage.toLocaleString()}</span>
+                                    <span style={{ color: 'var(--notion-text)' }}>NPR {preview.charges.foodBeverage.toLocaleString()}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                                     <span style={{ color: 'var(--notion-text-secondary)' }}>Subtotal</span>
-                                    <span style={{ color: 'var(--notion-text)' }}>Rs {preview.charges.subTotal.toLocaleString()}</span>
+                                    <span style={{ color: 'var(--notion-text)' }}>NPR {preview.charges.subTotal.toLocaleString()}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                                     <span style={{ color: 'var(--notion-text-secondary)' }}>Service Charge</span>
-                                    <span style={{ color: 'var(--notion-text)' }}>Rs {preview.charges.serviceCharge.toLocaleString()}</span>
+                                    <span style={{ color: 'var(--notion-text)' }}>NPR {preview.charges.serviceCharge.toLocaleString()}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                                     <span style={{ color: 'var(--notion-text-secondary)' }}>VAT</span>
-                                    <span style={{ color: 'var(--notion-text)' }}>Rs {preview.charges.vat.toLocaleString()}</span>
+                                    <span style={{ color: 'var(--notion-text)' }}>NPR {preview.charges.vat.toLocaleString()}</span>
                                 </div>
                                 {discountAmt > 0 && (
                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                                         <span style={{ color: 'var(--notion-red)' }}>Discount</span>
-                                        <span style={{ color: 'var(--notion-red)' }}>-Rs {discountAmt.toLocaleString()}</span>
+                                        <span style={{ color: 'var(--notion-red)' }}>-NPR {discountAmt.toLocaleString()}</span>
                                     </div>
                                 )}
                                 <div style={{ borderTop: '1px solid var(--notion-border)', marginTop: 'var(--space-2)', paddingTop: 'var(--space-2)', display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: '700' }}>
                                     <span style={{ color: 'var(--notion-text)' }}>Grand Total</span>
-                                    <span style={{ color: 'var(--notion-text)' }}>Rs {preview.charges.grandTotal.toLocaleString()}</span>
+                                    <span style={{ color: 'var(--notion-text)' }}>NPR {preview.charges.grandTotal.toLocaleString()}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                                     <span style={{ color: 'var(--notion-text-secondary)' }}>Already Paid</span>
-                                    <span style={{ color: 'var(--notion-green)' }}>Rs {preview.payments.totalPaid.toLocaleString()}</span>
+                                    <span style={{ color: 'var(--notion-green)' }}>NPR {preview.payments.totalPaid.toLocaleString()}</span>
                                 </div>
+                                {creditBal > 0 && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                                        <span style={{ color: 'var(--notion-text-secondary)' }}>Guest Credit</span>
+                                        <span style={{ color: 'var(--notion-blue)' }}>-NPR {creditBal.toLocaleString()}</span>
+                                    </div>
+                                )}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: '700' }}>
                                     <span style={{ color: 'var(--notion-text)' }}>Balance Due</span>
                                     <span style={{ color: remainingBalance > 0.01 ? 'var(--notion-orange)' : 'var(--notion-green)' }}>
-                                        Rs {remainingBalance.toLocaleString()}
+                                        NPR {remainingBalance.toLocaleString()}
                                     </span>
                                 </div>
                             </div>
@@ -447,7 +458,7 @@ export default function CheckoutModal({ isOpen, bookingId, onClose, onPreview, o
                                                     <span style={{ fontSize: '13px', color: 'var(--notion-text)', fontWeight: '500' }}>{p.method.replace('_', ' ')}</span>
                                                     <span style={{ fontSize: '12px', color: 'var(--notion-text-secondary)' }}>{new Date(p.date).toLocaleDateString()}</span>
                                                 </div>
-                                                <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--notion-green)' }}>Rs {p.amount.toLocaleString()}</span>
+                                                <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--notion-green)' }}>NPR {p.amount.toLocaleString()}</span>
                                             </div>
                                         ))}
                                     </div>
@@ -654,7 +665,7 @@ export default function CheckoutModal({ isOpen, bookingId, onClose, onPreview, o
                         <Calculator size={16} color="var(--notion-text-secondary)" />
                         <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--notion-text)' }}>
                             Balance: <span style={{ color: remainingBalance > 0.01 ? 'var(--notion-orange)' : 'var(--notion-green)' }}>
-                                Rs {remainingBalance.toLocaleString()}
+                                NPR {remainingBalance.toLocaleString()}
                             </span>
                         </span>
                     </div>

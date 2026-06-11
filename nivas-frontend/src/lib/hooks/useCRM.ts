@@ -8,12 +8,15 @@ export interface Guest {
     email?: string;
     firstName?: string;
     lastName?: string;
+    fullName?: string;
     phone?: string;
+    uniqueId?: string;
     preferences?: any;
     tags?: string[];
     isVip: boolean;
     createdAt: string;
     stays?: number;
+    totalStays?: number;
     totalSpend?: number;
 }
 
@@ -94,6 +97,25 @@ export interface UpdateAgentPayload {
     commissionRate?: number;
 }
 
+export interface LedgerEntry {
+    id: number;
+    entryType: string;
+    description: string;
+    debit: string;
+    credit: string;
+    balance: string;
+    referenceId?: string;
+    referenceType?: string;
+    createdAt: string;
+    createdBy?: { name: string };
+}
+
+export interface CompanyLedger {
+    company: Company;
+    entries: LedgerEntry[];
+    balance: number;
+}
+
 export interface SendMessagePayload {
     receiverId?: string;
     roomId?: number;
@@ -106,6 +128,7 @@ export function useCRM() {
     const [companies, setCompanies] = useState<Company[]>([]);
     const [agents, setAgents] = useState<TravelAgent[]>([]);
     const [messages, setMessages] = useState<Message[]>([]);
+    const [companyLedger, setCompanyLedger] = useState<CompanyLedger | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 
     // Guests
@@ -290,12 +313,42 @@ export function useCRM() {
         }
     };
 
+    const fetchCompanyLedger = async (companyId: number) => {
+        setIsLoading(true);
+        try {
+            const res = await api.get<CompanyLedger>(`/crm/companies/${companyId}/ledger`);
+            setCompanyLedger(res.data || null);
+            return res.data || null;
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to fetch ledger');
+            return null;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const addLedgerEntry = async (companyId: number, data: { entryType: string; description: string; debit?: number; credit?: number; referenceId?: string; referenceType?: string }) => {
+        setIsLoading(true);
+        try {
+            await api.post(`/crm/companies/${companyId}/ledger`, data);
+            await fetchCompanyLedger(companyId);
+            toast.success('Ledger entry added');
+            return true;
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to add ledger entry');
+            return false;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     return {
         // State
         guests,
         companies,
         agents,
         messages,
+        companyLedger,
         isLoading,
         // Guests
         searchGuests,
@@ -310,7 +363,9 @@ export function useCRM() {
         createAgent,
         updateAgent,
         deleteAgent,
-        // Messages  
+        fetchCompanyLedger,
+        addLedgerEntry,
+        // Messages
         fetchInbox,
         sendMessage
     };

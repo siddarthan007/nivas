@@ -74,7 +74,7 @@ export const GLService = {
             throw new BusinessLogicError(`Journal entry is not balanced. Debits: ${totalDebit}, Credits: ${totalCredit}`);
         }
 
-        if (totalDebit === 0) {
+        if (Math.abs(totalDebit) < 0.001) {
             throw new BusinessLogicError('Journal entry must have a non-zero amount');
         }
 
@@ -170,8 +170,9 @@ export const GLService = {
             ORDER BY a.code ASC
         `;
         
-        const res = await db.execute(query);
-        return res;
+        const res: any = await db.execute(query);
+        const rows: any[] = Array.isArray(res) ? res : (res?.rows ?? []);
+        return rows;
     },
 
     /**

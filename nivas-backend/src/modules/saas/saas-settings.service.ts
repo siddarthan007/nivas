@@ -1,5 +1,5 @@
 import { db } from '../../db';
-import { tenantFeatures, notificationSettings, exchangeRates, hotels } from '../../db/schema';
+import { tenantFeatures, notificationSettings, hotels } from '../../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { NotFoundError, BusinessLogicError, ValidationError } from '../../utils/errors';
 import { NotificationChannelService } from '../notifications/notification-channel.service';
@@ -21,7 +21,7 @@ export const SaasSettingsService = {
     },
 
     async updateTenantFeatures(hotelId: number, data: any) {
-        const allowed = ['enableMultiCurrency', 'enableChannelManager', 'enableAdvancedRevenue', 'enableSmsNotifications', 'enableWhatsappNotifications', 'enableEmailNotifications', 'enableBanquets', 'enablePosIntegration', 'enableInventory', 'enableHousekeeping', 'enableGuestPortal', 'enableHotel', 'enableFoodAndBeverage', 'enableFonepay', 'enableCbms', 'enableAi'];
+        const allowed = ['enableSmsNotifications', 'enableWhatsappNotifications', 'enableEmailNotifications', 'enableBanquets', 'enablePosIntegration', 'enableInventory', 'enableHousekeeping', 'enableGuestPortal', 'enableHotel', 'enableFoodAndBeverage', 'enableFonepay', 'enableCbms', 'enableAi'];
         const updateData: any = {};
         for (const key of allowed) {
             if (data[key] !== undefined) updateData[key] = data[key];
@@ -112,82 +112,6 @@ export const SaasSettingsService = {
             testResult: 'SENT',
             message: `Test ${channel} notification sent to ${recipient}`,
         };
-    },
-
-    async getExchangeRates() {
-        return await db.query.exchangeRates.findMany({
-            orderBy: [desc(exchangeRates.effectiveFrom)]
-        });
-    },
-
-    async createExchangeRate(data: any) {
-        const [rate] = await db.insert(exchangeRates).values({
-            baseCurrency: data.baseCurrency,
-            targetCurrency: data.targetCurrency,
-            rate: data.rate.toString(),
-            effectiveFrom: data.effectiveFrom,
-            effectiveTo: data.effectiveTo,
-            source: data.source
-        }).returning();
-        return rate;
-    },
-
-    async convertCurrency(from: string, to: string, amountStr: string) {
-        const amount = parseFloat(amountStr);
-        if (isNaN(amount)) throw new BusinessLogicError('Invalid amount');
-
-        const rate = await db.query.exchangeRates.findFirst({
-            where: and(
-                eq(exchangeRates.baseCurrency, from),
-                eq(exchangeRates.targetCurrency, to)
-            ),
-            orderBy: [desc(exchangeRates.effectiveFrom)]
-        });
-
-        if (rate) {
-            const rateVal = parseFloat(rate.rate);
-            const convertedAmount = amount * rateVal;
-            return {
-                from,
-                to,
-                amount,
-                convertedAmount: Math.round(convertedAmount * 100) / 100,
-                rate: rateVal
-            };
-        }
-
-        // Try reverse rate
-        const reverseRate = await db.query.exchangeRates.findFirst({
-            where: and(
-                eq(exchangeRates.baseCurrency, to),
-                eq(exchangeRates.targetCurrency, from)
-            ),
-            orderBy: [desc(exchangeRates.effectiveFrom)]
-        });
-
-        if (reverseRate) {
-            const reverseRateVal = parseFloat(reverseRate.rate);
-            const convertedAmount = amount / reverseRateVal;
-            return {
-                from,
-                to,
-                amount,
-                convertedAmount: Math.round(convertedAmount * 100) / 100,
-                rate: 1 / reverseRateVal
-            };
-        }
-
-        throw new NotFoundError('Exchange rate');
-    },
-
-    async updateHotelCurrency(hotelId: number, currency: string) {
-        const [updated] = await db.update(hotels)
-            .set({ currency, updatedAt: new Date() })
-            .where(eq(hotels.id, hotelId))
-            .returning();
-
-        if (!updated) throw new NotFoundError('Hotel');
-        return updated;
     },
 
     /** Per-hotel AI engine config (Gemini). API key masked on read. */

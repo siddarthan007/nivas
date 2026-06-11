@@ -4,6 +4,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { usePermissions } from '@/lib/hooks/usePermissions';
+import { useHotelPlan } from '@/lib/hooks/useHotelPlan';
 import { useRouter } from '@/lib/router';
 import { useAnalytics, useSaaSAnalytics } from '@/lib/hooks/useAnalytics';
 import { api } from '@/lib/api';
@@ -71,6 +72,46 @@ interface QuickAction {
     color: string;
 }
 
+// Widget ID → plan module id (null = core / always allowed)
+const WIDGET_MODULE_MAP: Record<string, string | null> = {
+    orders: 'orders',
+    housekeeping: 'housekeeping',
+    inventory: 'inventory',
+    menuItems: 'menu',
+    employees: 'staff',
+    reports: 'reports',
+    qrOrders: 'orders',
+    finance: 'finance',
+    events: 'events',
+    kitchen: 'kitchen',
+    purchase: 'inventory',
+    bestHour: 'orders',
+    totalOrders: 'orders',
+    profit: 'finance',
+};
+
+// Quick-action href → plan module id
+const ACTION_MODULE_MAP: Record<string, string> = {
+    '/hotel/pos': 'orders',
+    '/hotel/finance': 'finance',
+    '/hotel/reports': 'reports',
+    '/hotel/housekeeping': 'housekeeping',
+    '/hotel/inventory': 'inventory',
+    '/hotel/menu': 'menu',
+    '/hotel/kitchen': 'kitchen',
+    '/hotel/operations/tables': 'table-plan',
+    '/hotel/operations/floor-plan': 'floor-plan',
+    '/hotel/messages': 'messages',
+    '/hotel/procurement': 'inventory',
+};
+
+function getActionModule(href: string): string | null {
+    for (const [prefix, mod] of Object.entries(ACTION_MODULE_MAP)) {
+        if (href.startsWith(prefix)) return mod;
+    }
+    return null;
+}
+
 const SUPER_ADMIN_WIDGETS: WidgetConfig[] = [
     {
         id: 'hotels',
@@ -93,7 +134,7 @@ const SUPER_ADMIN_WIDGETS: WidgetConfig[] = [
         title: 'Monthly Revenue',
         icon: TrendingUp,
         color: 'orange',
-        getValue: (_, saas) => saas?.monthlyRevenue ? `Rs.${saas.monthlyRevenue.toLocaleString()}` : '--',
+        getValue: (_, saas) => saas?.monthlyRevenue ? `NPR ${saas.monthlyRevenue.toLocaleString()}` : '--',
         href: '/admin/analytics'
     },
     {
@@ -113,42 +154,42 @@ const HOTEL_WIDGETS: Record<string, WidgetConfig[]> = {
             title: "Today's Total Sales",
             icon: IndianRupee,
             color: 'green',
-            getValue: (stats) => stats?.todayRevenue != null ? `Rs. ${stats.todayRevenue.toLocaleString()}` : '--',
+            getValue: (stats) => stats?.todayRevenue != null ? `NPR ${stats.todayRevenue.toLocaleString()}` : '--',
         },
         {
             id: 'unpaid',
             title: "Today's Unpaid Amount",
             icon: Wallet,
             color: 'red',
-            getValue: (stats) => stats?.todayUnpaid != null ? `Rs. ${stats.todayUnpaid.toLocaleString()}` : '--',
+            getValue: (stats) => stats?.todayUnpaid != null ? `NPR ${stats.todayUnpaid.toLocaleString()}` : '--',
         },
         {
             id: 'discount',
             title: "Today's Total Discount",
             icon: Percent,
             color: 'blue',
-            getValue: (stats) => stats?.todayDiscount != null ? `Rs. ${stats.todayDiscount.toLocaleString()}` : '--',
+            getValue: (stats) => stats?.todayDiscount != null ? `NPR ${stats.todayDiscount.toLocaleString()}` : '--',
         },
         {
             id: 'totalDue',
             title: 'Total Due Till Today',
             icon: AlertCircle,
             color: 'orange',
-            getValue: (stats) => stats?.totalDue != null ? `Rs. ${stats.totalDue.toLocaleString()}` : '--',
+            getValue: (stats) => stats?.totalDue != null ? `NPR ${stats.totalDue.toLocaleString()}` : '--',
         },
         {
             id: 'purchase',
             title: 'Total Purchase Today',
             icon: ShoppingCart,
             color: 'purple',
-            getValue: (stats) => stats?.totalPurchase != null ? `Rs. ${stats.totalPurchase.toLocaleString()}` : '--',
+            getValue: (stats) => stats?.totalPurchase != null ? `NPR ${stats.totalPurchase.toLocaleString()}` : '--',
         },
         {
             id: 'profit',
             title: "Today's P/L Summary",
             icon: PieChart,
             color: 'green',
-            getValue: (stats) => stats?.todayProfit != null ? `Rs. ${stats.todayProfit.toLocaleString()}` : '--',
+            getValue: (stats) => stats?.todayProfit != null ? `NPR ${stats.todayProfit.toLocaleString()}` : '--',
         },
         {
             id: 'totalOrders',
@@ -190,7 +231,7 @@ const HOTEL_WIDGETS: Record<string, WidgetConfig[]> = {
             title: 'Total Advance Payments',
             icon: Banknote,
             color: 'purple',
-            getValue: (stats) => stats?.totalAdvancePayments != null ? `Rs. ${stats.totalAdvancePayments.toLocaleString()}` : '--',
+            getValue: (stats) => stats?.totalAdvancePayments != null ? `NPR ${stats.totalAdvancePayments.toLocaleString()}` : '--',
         },
     ],
     MANAGER: [
@@ -449,7 +490,6 @@ const ROLE_QUICK_ACTIONS: Record<string, QuickAction[]> = {
         { label: 'Finance', icon: CreditCard, href: '/hotel/finance', color: 'blue' },
         { label: 'Reports', icon: FileText, href: '/hotel/reports', color: 'green' },
         { label: 'Procurement', icon: Package, href: '/hotel/procurement', color: 'orange' },
-        { label: 'Revenue', icon: TrendingUp, href: '/hotel/revenue', color: 'purple' },
     ],
 };
 
@@ -655,7 +695,7 @@ const PERIODS = [
 ];
 
 const fmtNpr = (n: number) =>
-    `Rs ${Math.round(n).toLocaleString()}`;
+    `NPR ${Math.round(n).toLocaleString()}`;
 
 /**
  * Hotel sales trend: daily revenue area chart with period toggle and a
@@ -782,9 +822,9 @@ function SalesTrendCard() {
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" stroke="var(--notion-border)" vertical={false} />
                                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--notion-text-secondary)' }} tickLine={false} axisLine={{ stroke: 'var(--notion-border)' }} minTickGap={24} />
-                                <YAxis tick={{ fontSize: 11, fill: 'var(--notion-text-secondary)' }} tickLine={false} axisLine={false} width={64} tickFormatter={(v: number) => v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)} />
+                                <YAxis tick={{ fontSize: 11, fill: 'var(--notion-text-secondary)' }} tickLine={false} axisLine={false} width={64} tickFormatter={(v: any) => v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)} />
                                 <Tooltip
-                                    formatter={(v: number) => [fmtNpr(v), 'Revenue']}
+                                    formatter={(v: any) => [fmtNpr(v), 'Revenue']}
                                     contentStyle={{ background: 'var(--notion-bg)', border: '1px solid var(--notion-border)', borderRadius: '8px', fontSize: '12px' }}
                                 />
                                 <Area type="monotone" dataKey="amount" stroke="var(--notion-blue)" strokeWidth={2} fill="url(#salesFill)" />
@@ -849,8 +889,8 @@ function SalesInsights() {
                             <BarChart data={data.weeklyByWeekday} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="var(--notion-border)" vertical={false} />
                                 <XAxis dataKey="weekday" tick={{ fontSize: 11, fill: 'var(--notion-text-secondary)' }} tickLine={false} axisLine={{ stroke: 'var(--notion-border)' }} />
-                                <YAxis tick={{ fontSize: 11, fill: 'var(--notion-text-secondary)' }} tickLine={false} axisLine={false} width={52} tickFormatter={(v: number) => v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)} />
-                                <Tooltip formatter={(v: number) => [fmtNpr(v), 'Sales']} contentStyle={chartTooltipStyle} cursor={{ fill: 'var(--notion-bg-tertiary)' }} />
+                                <YAxis tick={{ fontSize: 11, fill: 'var(--notion-text-secondary)' }} tickLine={false} axisLine={false} width={52} tickFormatter={(v: any) => v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)} />
+                                <Tooltip formatter={(v: any) => [fmtNpr(v), 'Sales']} contentStyle={chartTooltipStyle} cursor={{ fill: 'var(--notion-bg-tertiary)' }} />
                                 <Bar dataKey="amount" fill="var(--notion-purple)" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
@@ -867,7 +907,7 @@ function SalesInsights() {
                                     <CartesianGrid strokeDasharray="3 3" stroke="var(--notion-border)" vertical={false} />
                                     <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--notion-text-secondary)' }} tickLine={false} axisLine={{ stroke: 'var(--notion-border)' }} minTickGap={4} />
                                     <YAxis tick={{ fontSize: 11, fill: 'var(--notion-text-secondary)' }} tickLine={false} axisLine={false} width={36} allowDecimals={false} />
-                                    <Tooltip formatter={(v: number, _n, p: any) => [`${v} orders · ${fmtNpr(p?.payload?.amount || 0)}`, p?.payload?.label]} contentStyle={chartTooltipStyle} cursor={{ fill: 'var(--notion-bg-tertiary)' }} />
+                                    <Tooltip formatter={(v: any, _n: any, p: any) => [`${v} orders · ${fmtNpr(p?.payload?.amount || 0)}`, p?.payload?.label]} contentStyle={chartTooltipStyle} cursor={{ fill: 'var(--notion-bg-tertiary)' }} />
                                     <Bar dataKey="orders" fill="var(--notion-orange)" radius={[4, 4, 0, 0]} />
                                 </BarChart>
                             </ResponsiveContainer>
@@ -885,7 +925,7 @@ function SalesInsights() {
                                     <CartesianGrid strokeDasharray="3 3" stroke="var(--notion-border)" vertical={false} />
                                     <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--notion-text-secondary)' }} tickLine={false} axisLine={{ stroke: 'var(--notion-border)' }} minTickGap={24} />
                                     <YAxis tick={{ fontSize: 11, fill: 'var(--notion-text-secondary)' }} tickLine={false} axisLine={false} width={32} allowDecimals={false} />
-                                    <Tooltip formatter={(v: number) => [`${v} guests`, 'Arrivals']} contentStyle={chartTooltipStyle} />
+                                    <Tooltip formatter={(v: any) => [`${v} guests`, 'Arrivals']} contentStyle={chartTooltipStyle} />
                                     <Line type="monotone" dataKey="count" stroke="var(--notion-green)" strokeWidth={2} dot={false} />
                                 </LineChart>
                             </ResponsiveContainer>
@@ -1023,6 +1063,7 @@ function SaaSAdminPanels({ tenants }: { tenants: any[] }) {
 export default function DashboardPage() {
     const { user } = useAuth();
     const { isUserType, can } = usePermissions();
+    const { hasModule } = useHotelPlan();
     const { dashboardStats, isLoading, fetchDashboard } = useAnalytics();
     const { overview: saasStats, payments: saasPayments, tenants: saasTenants } = useSaaSAnalytics();
 
@@ -1034,17 +1075,27 @@ export default function DashboardPage() {
     const widgets = useMemo((): WidgetConfig[] => {
         if (!user) return [];
         if (isUserType('SUPER_ADMIN')) return SUPER_ADMIN_WIDGETS;
-        if (isUserType('HOTEL_STAFF')) {
-            return HOTEL_WIDGETS[roleKey] ?? HOTEL_WIDGETS.DEFAULT ?? [];
-        }
-        return HOTEL_WIDGETS.DEFAULT ?? [];
-    }, [user, isUserType, roleKey]);
+        const base = isUserType('HOTEL_STAFF')
+            ? (HOTEL_WIDGETS[roleKey] ?? HOTEL_WIDGETS.DEFAULT ?? [])
+            : (HOTEL_WIDGETS.DEFAULT ?? []);
+        // Filter out widgets for modules not included in the subscription plan
+        return base.filter(w => {
+            const mod = WIDGET_MODULE_MAP[w.id];
+            if (mod === undefined) return true; // core widgets (not in map) always show
+            return mod === null || hasModule(mod);
+        });
+    }, [user, isUserType, roleKey, hasModule]);
 
     const quickActions = useMemo((): QuickAction[] => {
         if (!user) return [];
         if (isUserType('SUPER_ADMIN')) return SUPER_ADMIN_QUICK_ACTIONS;
-        return ROLE_QUICK_ACTIONS[roleKey] ?? [];
-    }, [user, isUserType, roleKey]);
+        const base = ROLE_QUICK_ACTIONS[roleKey] ?? [];
+        // Filter out actions for modules not included in the subscription plan
+        return base.filter(a => {
+            const mod = getActionModule(a.href);
+            return mod === null || hasModule(mod);
+        });
+    }, [user, isUserType, roleKey, hasModule]);
 
     const greeting = useMemo(() => {
         const hour = new Date().getHours();
@@ -1202,7 +1253,7 @@ export default function DashboardPage() {
                                                 <td style={{ padding: '10px 14px', color: 'var(--notion-text)' }}>{new Date(p.createdAt).toLocaleDateString()}</td>
                                                 <td style={{ padding: '10px 14px', color: 'var(--notion-text)' }}>{p.hotelName}</td>
                                                 <td style={{ padding: '10px 14px', color: 'var(--notion-text)' }}>{p.paymentMethod}</td>
-                                                <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--notion-text)', fontWeight: '600' }}>Rs {p.amount.toLocaleString()}</td>
+                                                <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--notion-text)', fontWeight: '600' }}>NPR {Number(p.amount || 0).toLocaleString()}</td>
                                                 <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                                                     <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: 'var(--radius-full)', backgroundColor: p.status === 'COMPLETED' ? 'var(--notion-green-bg)' : p.status === 'PENDING' ? 'var(--notion-yellow-bg)' : 'var(--notion-red-bg)', color: p.status === 'COMPLETED' ? 'var(--notion-green)' : p.status === 'PENDING' ? 'var(--notion-orange)' : 'var(--notion-red)', fontWeight: 600 }}>
                                                         {p.status}

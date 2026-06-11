@@ -313,21 +313,19 @@ export const LicenseService = {
         const pkg = await db.query.subscriptionPackages.findFirst({ where: eq(subscriptionPackages.id, packageId) });
         if (!pkg) return;
         const FEATURE_KEYS = [
-            'enableMultiCurrency', 'enableChannelManager', 'enableAdvancedRevenue',
             'enableSmsNotifications', 'enableWhatsappNotifications', 'enableEmailNotifications',
             'enableBanquets', 'enablePosIntegration', 'enableInventory', 'enableHousekeeping',
             'enableGuestPortal', 'enableFonepay', 'enableCbms', 'enableAi',
         ];
         const featSet = new Set((pkg.features || []) as string[]);
-        const enabled: Record<string, boolean> = {};
-        for (const k of FEATURE_KEYS) if (featSet.has(k)) enabled[k] = true;
-        if (Object.keys(enabled).length === 0) return;
+        const flags: Record<string, boolean> = {};
+        for (const k of FEATURE_KEYS) flags[k] = featSet.has(k);
 
         const existing = await db.query.tenantFeatures.findFirst({ where: eq(tenantFeatures.hotelId, hotelId) });
         if (existing) {
-            await db.update(tenantFeatures).set({ ...enabled, updatedAt: new Date() }).where(eq(tenantFeatures.hotelId, hotelId));
+            await db.update(tenantFeatures).set({ ...flags, updatedAt: new Date() }).where(eq(tenantFeatures.hotelId, hotelId));
         } else {
-            await db.insert(tenantFeatures).values({ hotelId, ...enabled });
+            await db.insert(tenantFeatures).values({ hotelId, ...flags });
         }
     },
 
