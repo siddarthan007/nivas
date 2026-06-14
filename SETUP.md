@@ -2,9 +2,18 @@
 
 Two ways to run: **Docker (recommended)** or manual local setup.
 
+## Monorepo layout
+
+| Path | Role |
+|------|------|
+| `apps/web` | Staff/admin React SPA |
+| `apps/mobile` | Expo staff mobile app |
+| `services/backend` | Elysia API server |
+| `packages/*` | Shared types, API client, theme, utils |
+
 ---
 
-## 🐳 Docker Setup (Recommended)
+## Docker Setup (Recommended)
 
 ### Prerequisites
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes Docker Compose v2)
@@ -20,13 +29,16 @@ cd nivas-pms
 
 ```bash
 # Backend
-cp nivas-backend/.env.example nivas-backend/.env
+cp services/backend/.env.example services/backend/.env
 
-# Frontend
-cp nivas-frontend/.env.example nivas-frontend/.env
+# Web
+cp apps/web/.env.example apps/web/.env
+
+# Mobile (optional)
+cp apps/mobile/.env.example apps/mobile/.env
 ```
 
-Edit `nivas-backend/.env` — at minimum set:
+Edit `services/backend/.env` — at minimum set:
 ```env
 POSTGRES_PASSWORD=your-db-password
 JWT_SECRET=your-random-32-char-secret
@@ -42,21 +54,25 @@ docker compose up --build
 
 | Service  | URL                        |
 |----------|---------------------------|
-| Frontend | http://localhost:5173      |
+| Web      | http://localhost:5173      |
 | Backend  | http://localhost:3000      |
-| API Docs | http://localhost:3000/swagger |
+| API Docs | http://localhost:3000/docs |
 | DB       | localhost:5432             |
 
 On first boot the backend container automatically:
 1. Waits for PostgreSQL to be ready
-2. Runs DB migrations (`drizzle-kit push`)
+2. Syncs the database schema (`drizzle-kit push` via `docker-entrypoint.sh`)
 3. Seeds the super admin account
+
+On every API start, supplemental boot SQL in `src/db/migrations.ts` also runs (extensions, constraints, idempotent column adds).
+
+> **Docker vs versioned migrations:** Docker uses `db:push` (schema.ts → DB). The `drizzle/` SQL folder is for `DB_MIGRATION_MODE=migrate` or manual `bun run db:migrate` outside Docker — not used by default compose startup.
 
 **Default admin credentials:**
 - Email: `admin@nivaspms.com`
 - Password: `Admin@123`
 
-> ⚠️ Change the password after first login.
+> Change the password after first login.
 
 ### 4. Start (production)
 
@@ -68,7 +84,9 @@ export JWT_SECRET=$(openssl rand -hex 32)
 docker compose -f docker-compose.prod.yml up --build -d
 ```
 
-Production serves everything on **port 80** via nginx. No separate frontend port.
+Production backend uses the same entrypoint: `drizzle-kit push` on start, then boot SQL in `src/db/migrations.ts` when the API boots. Set `DB_MIGRATION_MODE=migrate` on the backend service only if you maintain versioned SQL in `services/backend/drizzle/`.
+
+Production serves everything on **port 80** via nginx. No separate web port.
 
 ### 5. Common commands
 
@@ -83,11 +101,17 @@ docker compose down
 # Stop + remove volumes (wipes DB!)
 docker compose down -v
 
-# Re-run migrations manually
-docker compose exec backend bun run db:migrate
+# Re-run schema sync manually (same as container entrypoint)
+docker compose exec backend bun run db:push
+
+# Optional: apply versioned SQL migrations instead
+# docker compose exec -e DB_MIGRATION_MODE=migrate backend bun run db:migrate
 
 # Re-seed super admin
 docker compose exec backend bun run db:seed
+
+# Audit API route permissions
+docker compose exec backend bun run audit:permissions
 
 # Open DB shell
 docker compose exec postgres psql -U postgres -d nivas_db
@@ -95,7 +119,7 @@ docker compose exec postgres psql -U postgres -d nivas_db
 
 ---
 
-## 🛠 Manual Local Setup
+## Manual Local Setup
 
 ### Prerequisites
 1. **Bun** — [bun.sh](https://bun.sh/) (`powershell -c "irm bun.sh/install.ps1 | iex"` on Windows)
@@ -105,33 +129,43 @@ docker compose exec postgres psql -U postgres -d nivas_db
 ### Backend
 
 ```bash
-cd nivas-backend
+cd services/backend
 bun install
 cp .env.example .env
 # Edit .env — set DATABASE_URL to local postgres
-bun run db:push          # run migrations
+bun run db:push          # sync schema (same as Docker entrypoint)
 bun run db:seed          # seed super admin
 bun run dev              # start with hot reload → localhost:3000
 ```
 
-### Frontend
+### Web
 
 ```bash
-cd nivas-frontend
+cd apps/web
 bun install
 cp .env.example .env
 # Edit .env — set BACKEND_URL=http://localhost:3000
 bun run dev              # start → localhost:5173
 ```
 
+### Mobile (optional)
+
+```bash
+cd apps/mobile
+bun install
+cp .env.example .env
+# Set EXPO_PUBLIC_API_URL to your LAN IP, e.g. http://192.168.1.10:3000
+bun run start
+```
+
 ---
 
-## 4. Troubleshooting
+## Troubleshooting
 
 - **DB connection error in Docker:** Check `POSTGRES_PASSWORD` matches in `.env` and docker-compose env.
 - **Port conflict:** Change host ports in `docker-compose.yml` (e.g. `"3001:3000"`).
 - **Migration fails:** Run `docker compose logs backend` for details.
-- **CORS errors (local):** Ensure `ALLOWED_ORIGINS` in `nivas-backend/.env` includes `http://localhost:5173`.
+- **CORS errors (local):** Ensure `ALLOWED_ORIGINS` in `services/backend/.env` includes `http://localhost:5173`.
 
 ---
 

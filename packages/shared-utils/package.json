@@ -1,0 +1,36 @@
+{
+  "name": "@nivas/shared-utils",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    },
+    "./notification-routes": {
+      "import": "./src/notification-routes.ts",
+      "types": "./src/notification-routes.ts"
+    },
+    "./payment-methods": {
+      "import": "./src/payment-methods.ts",
+      "types": "./src/payment-methods.ts"
+    },
+    "./nepali-dates": {
+      "import": "./src/nepali-dates.ts",
+      "types": "./src/nepali-dates.ts"
+    },
+    "./dates": {
+      "import": "./src/dates.ts",
+      "types": "./src/dates.ts"
+    }
+  },
+  "dependencies": {
+    "nepali-date-converter": "^3.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

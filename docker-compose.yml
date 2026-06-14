@@ -18,6 +18,12 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - max_connections=60
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nivas_dev_password}
@@ -67,7 +73,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-nivas_minio}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-nivas_minio_secret_dev}
     ports:
-      - "127.0.0.1:9000:9000"    # S3 API
+      - "9000:9000"    # S3 API (LAN devices need host IP, not 127.0.0.1)
       - "127.0.0.1:9001:9001"    # MinIO Console UI
     volumes:
       - minio_data:/data
@@ -82,11 +88,11 @@ services:
   # ── Backend ────────────────────────────────────────────────
   backend:
     build:
-      context: ./nivas-backend
-      dockerfile: Dockerfile.dev
+      context: .
+      dockerfile: ./services/backend/Dockerfile.dev
     restart: unless-stopped
     env_file:
-      - ./nivas-backend/.env
+      - ./services/backend/.env
     environment:
       NODE_ENV: development
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-nivas_dev_password}@postgres:5432/nivas_db
@@ -99,15 +105,18 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-nivas_minio_secret_dev}
       MINIO_BUCKET: ${MINIO_BUCKET:-nivas}
     ports:
+      # Bind all interfaces so phones on the same Wi‑Fi can reach the API
+      # (127.0.0.1:3000 would block LAN devices). Use http://<your-pc-ip>:3000 in apps/mobile/.env
       - "3000:3000"
-    volumes:
-      # Hot-reload: mount source (exclude node_modules — use container's)
-      - ./nivas-backend/src:/usr/src/app/src
-      - ./nivas-backend/public:/usr/src/app/public
-      - ./nivas-backend/scripts:/usr/src/app/scripts
-      - ./nivas-backend/drizzle.config.ts:/usr/src/app/drizzle.config.ts
     networks:
       - nivas-net
+    volumes:
+      # Hot-reload: mount source (exclude node_modules — use container's)
+      - ./services/backend/src:/usr/src/app/services/backend/src
+      - ./services/backend/public:/usr/src/app/services/backend/public
+      - ./services/backend/scripts:/usr/src/app/services/backend/scripts
+      - ./services/backend/drizzle.config.ts:/usr/src/app/services/backend/drizzle.config.ts
+      - ./packages:/usr/src/app/packages
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,11 +128,11 @@ services:
   # ── Frontend ───────────────────────────────────────────────
   frontend:
     build:
-      context: ./nivas-frontend
-      dockerfile: Dockerfile.dev
+      context: .
+      dockerfile: ./apps/web/Dockerfile.dev
     restart: unless-stopped
     env_file:
-      - ./nivas-frontend/.env
+      - ./apps/web/.env
     environment:
       NODE_ENV: development
       BACKEND_URL: http://backend:3000
@@ -131,10 +140,12 @@ services:
       - "5173:5173"
     volumes:
       # Hot-reload: mount source (exclude node_modules)
-      - ./nivas-frontend/src:/usr/src/app/src
-      - ./nivas-frontend/public:/usr/src/app/public
+      - ./apps/web/src:/usr/src/app/apps/web/src
+      - ./apps/web/public:/usr/src/app/apps/web/public
       # Required: tsconfig.json needed by Bun dev server to resolve @/* path aliases
-      - ./nivas-frontend/tsconfig.json:/usr/src/app/tsconfig.json:ro
+      - ./apps/web/tsconfig.json:/usr/src/app/apps/web/tsconfig.json:ro
+      # Hot-reload workspace packages
+      - ./packages:/usr/src/app/packages
     networks:
       - nivas-net
     depends_on:

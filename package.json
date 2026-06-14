@@ -1,5 +1,32 @@
 {
+  "name": "nivas-pms",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "db:push": "turbo run db:push",
+    "db:generate": "turbo run db:generate",
+    "clean": "turbo run clean"
+  },
+  "devDependencies": {
+    "turbo": "^2.9.0"
+  },
   "dependencies": {
-    "@types/pdfmake": "^0.3.1"
-  }
+    "date-fns": "^4.4.0"
+  },
+  "overrides": {
+    "@sinclair/typebox": "^0.34.15"
+  },
+  "trustedDependencies": [
+    "@shopify/react-native-skia"
+  ]
 }

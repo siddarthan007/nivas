@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "318936890884",
+    "project_id": "nivas-7e49c",
+    "storage_bucket": "nivas-7e49c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:318936890884:android:dae256d9a238a28345ff51",
+        "android_client_info": {
+          "package_name": "com.nivas.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB3Yw9dtalcKieGEoxB0VQ9EufhklKkD_8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

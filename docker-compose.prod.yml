@@ -4,7 +4,8 @@
 #
 # Services:
 #   postgres  — PostgreSQL 16 (no external port exposure)
-#   backend   — Elysia + Bun (internal only)
+#   pgbouncer — connection pooler (required before backend scale >2)
+#   backend   — Elysia + Bun (internal only; scale with --scale backend=3)
 #   frontend  — nginx serving SPA + proxying /api/* (port 80)
 # ============================================================
 
@@ -16,6 +17,20 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: always
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=384MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=80
+      - -c
+      - random_page_cost=1.1
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
@@ -39,6 +54,31 @@ services:
       retries: 5
       start_period: 10s
 
+  # ── PgBouncer ──────────────────────────────────────────────
+  # Connection pooler in front of Postgres. Required before scaling backend to
+  # 3+ replicas — each replica has its own pool (DB_POOL_MAX); without PgBouncer
+  # N×pool can exhaust Postgres max_connections.
+  pgbouncer:
+    image: edoburu/pgbouncer:1.22.1-p0
+    restart: always
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/nivas_db
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 20
+      AUTH_TYPE: scram-sha-256
+    networks:
+      - nivas-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U postgres || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   # ── Redis ──────────────────────────────────────────────────
   # Shared cache + rate-limit + auth + WS pub/sub store. Required for the
   # caching/rate-limit/session features and for running multiple backend
@@ -49,10 +89,12 @@ services:
     command: >
       redis-server
       --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
-      --maxmemory 256mb
+      --maxmemory 512mb
       --maxmemory-policy allkeys-lru
       --appendonly yes
       --appendfsync everysec
+      --auto-aof-rewrite-percentage 100
+      --auto-aof-rewrite-min-size 64mb
     volumes:
       - redis_data:/data
     networks:
@@ -61,7 +103,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${REDIS_MEM_LIMIT:-320M}   # maxmemory 256mb + overhead
+          memory: ${REDIS_MEM_LIMIT:-640M}   # maxmemory 512mb + overhead
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -105,16 +147,22 @@ services:
   # ── Backend ────────────────────────────────────────────────
   backend:
     build:
-      context: ./nivas-backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/backend/Dockerfile
     restart: always
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/nivas_db
+      LOG_LEVEL: ${LOG_LEVEL:-warn}
+      LOG_SAMPLE_RATE: ${LOG_SAMPLE_RATE:-0.05}
+      ENABLE_SWAGGER: ${ENABLE_SWAGGER:-false}
+      DB_POOL_MAX: ${DB_POOL_MAX:-8}
+      # App traffic → PgBouncer; migrations/backups → Postgres directly.
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@pgbouncer:5432/nivas_db
+      DATABASE_DIRECT_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/nivas_db
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       JWT_EXPIRY: ${JWT_EXPIRY:-7d}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost,exp://*,http://+}
       UPLOAD_DIR: public/uploads
       SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL:-admin@nivaspms.com}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:?set SUPER_ADMIN_PASSWORD}
@@ -138,10 +186,14 @@ services:
     # No external port — nginx proxies internally. Scale with:
     #   docker compose -f docker-compose.prod.yml up -d --scale backend=3
     volumes:
-      - uploads_data:/usr/src/app/public/uploads
+      - uploads_data:/usr/src/app/services/backend/public/uploads
     networks:
       - nivas-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -168,7 +220,7 @@ services:
   # ── Frontend (nginx) ───────────────────────────────────────
   frontend:
     build:
-      context: ./nivas-frontend
+      context: ./apps/web
       dockerfile: Dockerfile
     restart: always
     mem_swappiness: 0

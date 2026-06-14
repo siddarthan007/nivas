@@ -15,7 +15,7 @@ The system follows a modular monolithic architecture where business logic is org
 
 ### Primary Tech Stack
 
-#### Backend (`nivas-backend/`)
+#### Backend (`services/backend/`)
 - **Runtime**: Bun (high-performance JavaScript runtime)
 - **Framework**: Elysia (TypeScript-first web framework)
 - **Database**: PostgreSQL with Drizzle ORM
@@ -29,7 +29,7 @@ The system follows a modular monolithic architecture where business logic is org
 - **Validation**: Zod
 - **Logging**: Pino with pino-pretty
 
-#### Frontend (`nivas-frontend/`)
+#### Frontend (`apps/web/`)
 - **Framework**: React 19 with TypeScript
 - **Styling**: TailwindCSS v4
 - **State Management**: TanStack React Query (server state)
@@ -53,19 +53,20 @@ The system follows a modular monolithic architecture where business logic is org
 ### Root Structure
 ```
 development/
-├── nivas-backend/          # Backend API server
-├── nivas-frontend/         # React frontend application
-├── .agents/                # AI agent configurations
-├── .claude/                # Claude AI settings
-├── .cursor/                # Cursor IDE settings
+├── apps/
+│   ├── web/                # React staff/admin SPA
+│   └── mobile/             # Expo staff mobile app
+├── services/
+│   └── backend/            # Elysia API server
+├── packages/               # shared-types, shared-api, shared-theme, shared-utils
 ├── docker-compose.yml      # Development environment
 ├── docker-compose.prod.yml # Production environment
-├── CLAUDE.md              # AI assistant instructions
-├── DOC.md                 # API documentation
-└── SETUP.md               # Setup instructions
+├── SETUP.md                # Setup instructions
+├── ARCHITECTURE.md         # This file
+└── DOC.md                  # API reference
 ```
 
-### Backend Structure (`nivas-backend/`)
+### Backend Structure (`services/backend/`)
 ```
 src/
 ├── config/                # Environment configuration

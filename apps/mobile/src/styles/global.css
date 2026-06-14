@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Base Notion Colors */
+    --notion-bg: #ffffff;
+    --notion-bg-secondary: #f7f7f5;
+    --notion-bg-tertiary: #edece9;
+    --notion-text: #37352f;
+    --notion-text-secondary: #6f6e6b;
+    --notion-border: #e9e9e7;
+    --notion-overlay: rgba(15, 15, 15, 0.4);
+
+    /* Notion Accents */
+    --notion-blue: #2eaadc;
+    --notion-blue-bg: rgba(46, 170, 220, 0.1);
+    --notion-green: #0f7b6c;
+    --notion-green-bg: rgba(15, 123, 108, 0.1);
+    --notion-orange: #d9730d;
+    --notion-orange-bg: rgba(217, 115, 13, 0.1);
+    --notion-red: #e03e3e;
+    --notion-red-bg: rgba(224, 62, 62, 0.1);
+    --notion-purple: #9065b0;
+    --notion-purple-bg: rgba(144, 101, 176, 0.1);
+    --notion-brown: #976d57;
+    --notion-gray: #9b9a97;
+
+    /* Theme Tokens */
+    --background: var(--notion-bg);
+    --foreground: var(--notion-text);
+    --foreground-muted: var(--notion-text-secondary);
+    --foreground-faint: rgba(55, 53, 47, 0.4);
+    
+    --surface: var(--notion-bg);
+    --surface-hover: var(--notion-bg-secondary);
+    --surface-active: var(--notion-bg-tertiary);
+    --surface-elevated: #ffffff;
+
+    --border: var(--notion-border);
+    --border-strong: #d3d3d1;
+    --divider: rgba(55, 53, 47, 0.09);
+
+    --accent-primary: var(--notion-text);
+    --accent-primary-foreground: #ffffff;
+    --destructive: var(--notion-red);
+    --destructive-foreground: #ffffff;
+    --destructive-muted: var(--notion-red-bg);
+
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 10px;
+    --radius-xl: 16px;
+
+    /* Primary Palette (fallback / existing logic) */
+    --color-primary-50: #f0f4f8;
+    --color-primary-100: #d9e2ec;
+    --color-primary-200: #bcccdc;
+    --color-primary-300: #9fb3c8;
+    --color-primary-400: #829ab1;
+    --color-primary-500: #627d98;
+    --color-primary-600: #486581;
+    --color-primary-700: #334e68;
+    --color-primary-800: #243b53;
+    --color-primary-900: #102a43;
+    --color-primary-950: #0a1929;
+  }
+
+  .dark {
+    /* Base Notion Colors - Dark (aligned with web) */
+    --notion-bg: #191919;
+    --notion-bg-secondary: #252525;
+    --notion-bg-tertiary: #2f2f2f;
+    --notion-text: #f0efed;
+    --notion-text-secondary: rgba(255, 255, 255, 0.55);
+    --notion-border: rgba(255, 255, 255, 0.08);
+    --notion-overlay: rgba(15, 15, 15, 0.85);
+
+    /* Dark mode accents */
+    --notion-blue: #5eb3e8;
+    --notion-blue-bg: rgba(94, 179, 232, 0.15);
+    --notion-green: #4ade80;
+    --notion-green-bg: rgba(74, 222, 128, 0.12);
+    --notion-orange: #fb923c;
+    --notion-orange-bg: rgba(251, 146, 60, 0.12);
+    --notion-red: #ff7369;
+    --notion-red-bg: rgba(255, 115, 105, 0.15);
+    --notion-purple: #c084fc;
+    --notion-purple-bg: rgba(192, 132, 252, 0.12);
+    --notion-gray: rgba(255, 255, 255, 0.4);
+
+    /* Theme Tokens */
+    --background: var(--notion-bg);
+    --foreground: var(--notion-text);
+    --foreground-muted: var(--notion-text-secondary);
+    --foreground-faint: rgba(255, 255, 255, 0.25);
+    
+    --surface: var(--notion-bg-secondary);
+    --surface-hover: var(--notion-bg-tertiary);
+    --surface-active: #383838;
+    --surface-elevated: #2f2f2f;
+
+    --border: var(--notion-border);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --divider: rgba(255, 255, 255, 0.06);
+
+    --accent-primary: var(--notion-blue);
+    --accent-primary-foreground: #ffffff;
+    --destructive: var(--notion-red);
+    --destructive-foreground: #ffffff;
+    --destructive-muted: var(--notion-red-bg);
+  }
+}

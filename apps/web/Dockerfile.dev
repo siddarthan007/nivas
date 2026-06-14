@@ -1,0 +1,24 @@
+# ============================================================
+# Nivas PMS Frontend — Development Dockerfile
+# Runs Bun server with HMR, source mounted via volume
+# ============================================================
+
+FROM oven/bun:1
+WORKDIR /usr/src/app
+
+# Install deps first (cached layer) — monorepo root lockfile, web graph only
+COPY package.json bun.lock ./
+COPY packages/ ./packages/
+COPY apps/web/package.json ./apps/web/
+COPY apps/mobile/package.json ./apps/mobile/
+COPY services/backend/package.json ./services/backend/
+
+RUN bun install --frozen-lockfile --filter bun-react-template --filter @nivas/shared-utils
+
+WORKDIR /usr/src/app/apps/web
+
+COPY apps/web/tsconfig.json ./
+
+EXPOSE 5173
+
+CMD ["bun", "--hot", "src/index.ts"]
